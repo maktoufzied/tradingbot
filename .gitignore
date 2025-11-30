@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+.venv/
+
+# Build
+dist/
+*.egg-info/
+
+# Testing
+.pytest_cache/
+
+# Generated output
+*_backtest.png

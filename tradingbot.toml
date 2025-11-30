@@ -1,0 +1,27 @@
+[tradingbot]
+fetcher = "yahoo"
+
+[tradingbot.strategy]
+# Options: "swing", "atr"
+stop = "swing"
+
+[tradingbot.bot]
+# Bot parameters - tune these via optimizer
+swing_lb = 5       # Swing lookback period (in bars)
+risk_pct = 0.01    # Risk per trade (1% = 0.01)
+rr_ratio = 2.0     # Reward/risk ratio
+capital = 100000   # Starting capital
+
+[tradingbot.live]
+# Live trading configuration
+broker = "paper"   # Options: "paper" (more coming)
+feed = "polling"   # Options: "polling" (more coming)
+symbols = ["SPY"]  # Default symbols to trade
+
+[tradingbot.live.risk]
+# Risk controls for live trading
+max_daily_loss_pct = 0.05        # Stop trading after 5% daily loss
+circuit_breaker_loss_pct = 0.03  # Pause after 3% loss
+max_open_positions = 5           # Max concurrent positions
+max_position_size_pct = 0.10     # Max 10% of equity per position
+trading_hours_only = true        # Only trade 9:30 AM - 4:00 PM ET

@@ -1,0 +1,1 @@
+"""Data feed plugin implementations."""
