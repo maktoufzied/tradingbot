@@ -70,6 +70,7 @@ uv run tradingbot-live SPY      # Run live trading
 
 - **README.md**: User-facing documentation. Update when adding CLI commands, options, or changing the public API
 - **guide-strategy.md**: Trading strategy specification. Update when modifying entry/exit rules or risk parameters
+- **glossary.md**: Definitions for trading terms, parameters, and metrics (swing_lb, rr_ratio, profit factor, etc.)
 
 ## Key Concepts
 

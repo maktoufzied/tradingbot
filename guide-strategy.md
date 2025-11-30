@@ -177,7 +177,76 @@ To avoid overfitting, split data into training and testing periods:
 
 ---
 
-## 8. Implementation Roadmap
+## 8. Optimization Guide
+
+### Running Optimization
+
+```bash
+task optimize -- SPY --heatmap --overfit
+```
+
+### Understanding "Best By" Results
+
+The optimizer reports three "best" parameter sets, each optimizing for a different goal:
+
+| Result | Optimizes For | Best When |
+|--------|---------------|-----------|
+| **Best by Total Return** | Maximum profit | You want aggressive growth and can tolerate drawdowns |
+| **Best by Risk-Adjusted** | Return ÷ Drawdown | You want balanced risk/reward (recommended for most) |
+| **Best by Profit Factor** | Win quality (gross profit ÷ gross loss) | You want consistent trade selection, regardless of size |
+
+### Why Different "Best" Results Have Different Returns
+
+Consider this example output:
+
+```
+Best by Total Return:     +14.92% (risk=2.0%, drawdown=4.92%)
+Best by Risk-Adjusted:    +12.97% (risk=2.0%, drawdown=1.92%)
+Best by Profit Factor:    +3.19%  (risk=0.5%, drawdown=0.48%)
+```
+
+**Key insight:** Profit Factor measures trade selection quality, not position sizing.
+
+- Same strategy with 0.5% risk vs 2.0% risk will have identical Profit Factor
+- But 2.0% risk produces 4x larger returns (and 4x larger drawdowns)
+- "Best by Profit Factor" often uses conservative risk settings
+
+### Applying Results to Configuration
+
+After running optimization, update `tradingbot.toml` with the recommended parameters:
+
+```toml
+[tradingbot.bot]
+# From "Best by Risk-Adjusted Return" (balanced approach)
+swing_lb = 6       # swing_lookback from optimization
+risk_pct = 0.02    # risk_pct (2.0% = 0.02)
+rr_ratio = 2.5     # rr_ratio from optimization
+```
+
+### Which Result to Use?
+
+| Your Goal | Use This Result | Config Focus |
+|-----------|-----------------|--------------|
+| Maximum growth, accept volatility | Best by Total Return | Higher `risk_pct` (1.5-2%) |
+| Steady growth, controlled risk | Best by Risk-Adjusted | Moderate `risk_pct` (1-1.5%) |
+| Capital preservation first | Best by Profit Factor | Lower `risk_pct` (0.5-1%) |
+
+### Red Flags in Optimization Results
+
+⚠️ **Be cautious if:**
+- Win rate is very high (>80%) with few trades → likely overfitting
+- Large gap between training and test returns → parameters don't generalize
+- High parameter sensitivity → small changes cause big performance swings
+- Only 1-3 trades in the test period → insufficient data for validation
+
+✅ **Good signs:**
+- Consistent performance across training/test periods
+- Multiple nearby parameter combinations perform similarly
+- Reasonable win rate (40-60%) with good R:R ratio
+
+---
+
+## 9. Implementation Roadmap
 
 > **Code Reference:** See [README.md](README.md) for project structure and file locations.
 
@@ -208,7 +277,7 @@ To avoid overfitting, split data into training and testing periods:
 
 ---
 
-## 9. Common Pitfalls to Avoid
+## 10. Common Pitfalls to Avoid
 
 1. **Over-optimization** → Use walk-forward testing
 2. **Ignoring transaction costs** → Include in backtest
@@ -218,7 +287,7 @@ To avoid overfitting, split data into training and testing periods:
 
 ---
 
-## 10. Quick Reference Card
+## 11. Quick Reference Card
 
 ```
 ┌────────────────────────────────────────────┐
