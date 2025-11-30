@@ -2,6 +2,7 @@ import importlib
 import pkgutil
 import tomllib
 from pathlib import Path
+from typing import Any
 
 from .protocol import StopStrategyProtocol
 from .registry import StopStrategy, StrategyRegistry, get_registry
@@ -16,9 +17,10 @@ def _load_config() -> str:
         return "swing"
 
     with open(config_path, "rb") as f:
-        data: dict = tomllib.load(f)
+        data: dict[str, Any] = tomllib.load(f)
 
-    return data.get("tradingbot", {}).get("strategy", {}).get("stop", "swing")
+    result = data.get("tradingbot", {}).get("strategy", {}).get("stop", "swing")
+    return str(result)
 
 
 def _load_plugins(registry: StrategyRegistry, default_strategy: str) -> None:

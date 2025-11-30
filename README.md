@@ -21,28 +21,44 @@ cd tradingbot
 uv sync
 ```
 
+### Optional: Install Task Runner
+
+[Task](https://taskfile.dev) provides convenient shortcuts for common commands:
+
+```bash
+# macOS
+brew install go-task
+
+# Linux
+sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin
+
+# Windows
+choco install go-task
+```
+
 ## Quick Start
 
 ### Run a Backtest
 
 ```bash
-# Basic backtest on SPY
-uv run tradingbot
+# Using task (recommended)
+task backtest -- SPY
+task backtest -- AAPL --period 5y
 
-# Or use Python
-uv run python -c "from tradingbot import run_single_backtest; run_single_backtest('AAPL')"
+# Or using uv directly
+uv run tradingbot SPY
+uv run tradingbot AAPL TSLA GOOGL
 ```
 
 ### Run Parameter Optimization
 
 ```bash
-# Optimize parameters for a symbol
+# Using task
+task optimize -- SPY
+task optimize -- AAPL --heatmap --overfit
+
+# Or using uv directly
 uv run tradingbot-optimize SPY
-
-# With heatmaps and overfitting analysis
-uv run tradingbot-optimize AAPL --heatmap --overfit
-
-# Custom parameter ranges
 uv run tradingbot-optimize TSLA --swing 5,6,7,8 --rr 2.0,2.5,3.0
 ```
 
@@ -50,10 +66,33 @@ uv run tradingbot-optimize TSLA --swing 5,6,7,8 --rr 2.0,2.5,3.0
 
 ### `tradingbot`
 
-Run a single backtest with default parameters.
+Run backtests on one or more symbols.
 
 ```bash
-uv run tradingbot
+task backtest -- <SYMBOLS> [OPTIONS]
+
+# Or using uv directly
+uv run tradingbot <SYMBOLS> [OPTIONS]
+```
+
+**Options:**
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--period` | Data period | `2y` |
+| `--interval` | Data interval | `1d` |
+| `--capital` | Starting capital | config value |
+| `--risk` | Risk per trade (e.g., 0.01 for 1%) | config value |
+| `--rr` | Reward/risk ratio | config value |
+| `--swing-lb` | Swing lookback period | config value |
+
+**Examples:**
+
+```bash
+task backtest -- SPY
+task backtest -- AAPL TSLA GOOGL
+task backtest -- SPY --period 5y --interval 1d
+task backtest -- AAPL --capital 50000 --risk 0.02
 ```
 
 ### `tradingbot-optimize`
@@ -61,6 +100,9 @@ uv run tradingbot
 Optimize trading parameters with grid search.
 
 ```bash
+task optimize -- <SYMBOL> [OPTIONS]
+
+# Or using uv directly
 uv run tradingbot-optimize <SYMBOL> [OPTIONS]
 ```
 
@@ -83,6 +125,9 @@ uv run tradingbot-optimize <SYMBOL> [OPTIONS]
 Run live trading (paper trading by default).
 
 ```bash
+task live -- <SYMBOLS> [OPTIONS]
+
+# Or using uv directly
 uv run tradingbot-live <SYMBOLS> [OPTIONS]
 ```
 
@@ -90,13 +135,13 @@ uv run tradingbot-live <SYMBOLS> [OPTIONS]
 
 ```bash
 # Dry run (log signals without trading)
-uv run tradingbot-live SPY --dry-run
+task live -- SPY --dry-run
 
 # Paper trading with multiple symbols
-uv run tradingbot-live SPY QQQ AAPL
+task live -- SPY QQQ AAPL
 
 # Specify broker and feed
-uv run tradingbot-live SPY --broker paper --feed polling
+task live -- SPY --broker paper --feed polling
 ```
 
 **Options:**
@@ -396,6 +441,11 @@ stop = "custom"
 ## Running Tests
 
 ```bash
+# Using task
+task test
+task check    # Run lint, typecheck, and tests
+
+# Or using uv directly
 uv run pytest -v
 ```
 

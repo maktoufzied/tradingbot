@@ -1,0 +1,45 @@
+version: "3"
+
+tasks:
+  install:
+    desc: Install dependencies
+    cmd: uv sync
+
+  test:
+    desc: Run tests
+    cmd: uv run pytest {{.CLI_ARGS}}
+
+  lint:
+    desc: Run linter
+    cmd: uv run ruff check src tests {{.CLI_ARGS}}
+
+  format:
+    desc: Format code
+    cmd: uv run ruff format src tests
+
+  typecheck:
+    desc: Run type checker
+    cmd: uv run mypy
+
+  check:
+    desc: Run all checks (lint, typecheck, test)
+    cmds:
+      - task: lint
+      - task: typecheck
+      - task: test
+
+  backtest:
+    desc: Run backtest
+    cmd: uv run tradingbot {{.CLI_ARGS}}
+
+  optimize:
+    desc: Run parameter optimization
+    cmd: uv run tradingbot-optimize {{.CLI_ARGS}}
+
+  live:
+    desc: Run live trading
+    cmd: uv run tradingbot-live {{.CLI_ARGS}}
+
+  pre-commit:
+    desc: Run pre-commit hooks
+    cmd: uv run pre-commit run --all-files

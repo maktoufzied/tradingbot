@@ -21,10 +21,29 @@ You are an expert quantitative trader and algorithmic trading architect with dee
 
 ## Commands
 
+Using [Task](https://taskfile.dev) (recommended):
+
 ```bash
-uv sync          # Install dependencies
-uv run main.py   # Run backtest
-uv run pytest    # Run tests
+task install                    # Install dependencies
+task test                       # Run tests
+task lint                       # Run linter
+task typecheck                  # Run type checker
+task check                      # Run all checks (lint, typecheck, test)
+task backtest -- SPY            # Run backtest
+task optimize -- SPY            # Run parameter optimization
+task live -- SPY                # Run live trading
+```
+
+Alternative using `uv` directly:
+
+```bash
+uv sync                         # Install dependencies
+uv run pytest                   # Run tests
+uv run ruff check src tests     # Run linter
+uv run mypy                     # Run type checker
+uv run tradingbot SPY           # Run backtest
+uv run tradingbot-optimize SPY  # Run parameter optimization
+uv run tradingbot-live SPY      # Run live trading
 ```
 
 ## Code Style

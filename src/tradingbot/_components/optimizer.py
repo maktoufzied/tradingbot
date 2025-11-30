@@ -168,9 +168,9 @@ class Optimizer:
                     task = progress.add_task(f"Testing {total} combinations...", total=total)
 
                     for swing_lb, risk, rr in combinations:
-                        result: OptimizationResult | None = self._run_single(swing_lb, risk, rr)
-                        if result:
-                            self.results.append(result)
+                        opt_result = self._run_single(swing_lb, risk, rr)
+                        if opt_result:
+                            self.results.append(opt_result)
                         progress.update(task, advance=1)
 
                 console.print(f"[green]Completed {len(self.results)} valid backtests[/green]")

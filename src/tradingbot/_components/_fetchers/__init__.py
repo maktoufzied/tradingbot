@@ -2,6 +2,7 @@ import importlib
 import pkgutil
 import tomllib
 from pathlib import Path
+from typing import Any
 
 from .protocol import DataFetcherProtocol
 from .registry import DataFetcher, FetcherRegistry, get_registry
@@ -16,9 +17,10 @@ def _load_config() -> str:
         return "yahoo"
 
     with open(config_path, "rb") as f:
-        data: dict = tomllib.load(f)
+        data: dict[str, Any] = tomllib.load(f)
 
-    return data.get("tradingbot", {}).get("fetcher", "yahoo")
+    result = data.get("tradingbot", {}).get("fetcher", "yahoo")
+    return str(result)
 
 
 def _load_plugins(registry: FetcherRegistry, default_fetcher: str) -> None:

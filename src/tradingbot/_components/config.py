@@ -52,13 +52,15 @@ def _load_toml() -> dict[str, Any]:
 def get_fetcher() -> str:
     """Get configured fetcher name."""
     data = _load_toml()
-    return data.get("tradingbot", {}).get("fetcher", "yahoo")
+    result = data.get("tradingbot", {}).get("fetcher", "yahoo")
+    return str(result)
 
 
 def get_stop_strategy() -> str:
     """Get configured stop strategy name."""
     data = _load_toml()
-    return data.get("tradingbot", {}).get("strategy", {}).get("stop", "swing")
+    result = data.get("tradingbot", {}).get("strategy", {}).get("stop", "swing")
+    return str(result)
 
 
 def get_bot_config() -> BotConfig:

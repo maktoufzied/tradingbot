@@ -4,6 +4,7 @@ import importlib
 import pkgutil
 import tomllib
 from pathlib import Path
+from typing import Any
 
 from .protocol import BrokerProtocol
 from .registry import Broker, BrokerRegistry, get_registry
@@ -18,9 +19,10 @@ def _load_config() -> str:
         return "paper"
 
     with open(config_path, "rb") as f:
-        data: dict = tomllib.load(f)
+        data: dict[str, Any] = tomllib.load(f)
 
-    return data.get("tradingbot", {}).get("live", {}).get("broker", "paper")
+    result = data.get("tradingbot", {}).get("live", {}).get("broker", "paper")
+    return str(result)
 
 
 def _load_plugins(registry: BrokerRegistry, default_broker: str) -> None:

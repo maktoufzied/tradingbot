@@ -37,7 +37,8 @@ def _load_fetch_metadata() -> dict[str, str]:
     path = _get_metadata_path()
     if path.exists():
         try:
-            return json.loads(path.read_text())
+            data = json.loads(path.read_text())
+            return {str(k): str(v) for k, v in data.items()}
         except Exception:
             return {}
     return {}

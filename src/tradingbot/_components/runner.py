@@ -127,4 +127,48 @@ def run_multi_backtest(symbols: list[str], **kwargs: Unpack[BacktestParams]) -> 
 
 
 def main() -> None:
-    run_single_backtest("SPY")
+    """CLI entry point for backtest."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Run trading bot backtest",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  tradingbot SPY
+  tradingbot AAPL TSLA GOOGL
+  tradingbot SPY --period 5y --interval 1d
+  tradingbot AAPL --capital 50000 --risk 0.02
+        """,
+    )
+
+    parser.add_argument("symbols", nargs="+", help="Stock symbol(s) to backtest (e.g., SPY, AAPL)")
+    parser.add_argument("--period", default="2y", help="Data period (default: 2y)")
+    parser.add_argument("--interval", default="1d", help="Data interval (default: 1d)")
+    parser.add_argument("--capital", type=float, help="Starting capital (uses config default)")
+    parser.add_argument("--risk", type=float, help="Risk per trade as decimal (e.g., 0.01 for 1%%)")
+    parser.add_argument("--rr", type=float, help="Reward/risk ratio (e.g., 2.0)")
+    parser.add_argument("--swing-lb", type=int, help="Swing lookback period")
+
+    args = parser.parse_args()
+
+    if len(args.symbols) == 1:
+        run_single_backtest(
+            args.symbols[0],
+            period=args.period,
+            interval=args.interval,
+            capital=args.capital,
+            risk=args.risk,
+            rr=args.rr,
+            swing_lb=args.swing_lb,
+        )
+    else:
+        run_multi_backtest(
+            args.symbols,
+            period=args.period,
+            interval=args.interval,
+            capital=args.capital,
+            risk=args.risk,
+            rr=args.rr,
+            swing_lb=args.swing_lb,
+        )

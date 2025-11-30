@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 from collections import deque
+from collections.abc import Mapping
 from typing import Final
 
 import polars as pl
@@ -14,7 +15,7 @@ from ._feeds import get_registry as get_feed_registry
 from ._fetchers import DataFetcher
 from .config import get_bot_config, get_live_config
 from .live_risk import LiveRiskManager
-from .models import Bar, Order, Position, Signal, SwingPoint
+from .models import Bar, Direction, Order, Position, Signal, SwingPoint
 from .risk import RiskManager
 from .signals import SignalGenerator
 from .swing import find_swing_points
@@ -178,7 +179,7 @@ class LiveTradingEngine:
 
     async def _open_position(self, bar: Bar, signal: Signal, df: pl.DataFrame) -> None:
         """Open a new position."""
-        direction = "LONG" if signal == Signal.BUY else "SHORT"
+        direction: Direction = "LONG" if signal == Signal.BUY else "SHORT"
         price = bar.close
         idx = len(df) - 1
 
@@ -282,7 +283,7 @@ class LiveTradingEngine:
             return
 
         # Submit closing order (opposite direction)
-        close_direction = "SHORT" if position.direction == "LONG" else "LONG"
+        close_direction: Direction = "SHORT" if position.direction == "LONG" else "LONG"
         order = Order(
             symbol=bar.symbol,
             direction=close_direction,
@@ -313,7 +314,7 @@ class LiveTradingEngine:
         else:
             console.print(f"  [red]✗ Close order {result.status}: {result.message}[/red]")
 
-    def _log_bar(self, bar: Bar, signal: Signal, details: dict) -> None:
+    def _log_bar(self, bar: Bar, signal: Signal, details: Mapping[str, object]) -> None:
         """Log incoming bar information."""
         trend = details.get("trend", "N/A")
         position = self._positions.get(bar.symbol)

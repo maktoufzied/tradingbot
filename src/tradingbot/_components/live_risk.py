@@ -1,6 +1,6 @@
 """Live trading risk controls and safety measures."""
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
@@ -18,7 +18,7 @@ class LiveRiskManager:
         self._initial_equity = initial_equity
         self._daily_start_equity = initial_equity
         self._realized_pnl_today = 0.0
-        self._last_reset_date: datetime | None = None
+        self._last_reset_date: date | None = None
         self._circuit_breaker_triggered = False
         self._open_positions = 0
 
