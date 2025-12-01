@@ -142,6 +142,14 @@ task live -- SPY QQQ AAPL
 
 # Specify broker and feed
 task live -- SPY --broker paper --feed polling
+
+# Replay mode (simulate live trading with historical data)
+task replay -- SPY
+task replay -- SPY --speed 10
+task replay -- SPY --speed 0 --from 2024-01-01 --to 2024-06-30
+
+# TUI mode (interactive terminal dashboard)
+task replay -- SPY --tui --dry-run
 ```
 
 **Options:**
@@ -151,6 +159,12 @@ task live -- SPY --broker paper --feed polling
 | `--dry-run` | Log signals without executing trades | - |
 | `--broker` | Broker to use | `paper` |
 | `--feed` | Data feed to use | `polling` |
+| `--replay` | Replay historical data as live | - |
+| `--speed` | Replay speed (bars/sec, 0=instant) | `1.0` |
+| `--from` | Replay start date (YYYY-MM-DD) | - |
+| `--to` | Replay end date (YYYY-MM-DD) | - |
+| `--period` | Historical period for replay | `2y` |
+| `--tui` | Interactive terminal UI dashboard | - |
 
 **Risk Controls (configured in `tradingbot.toml`):**
 

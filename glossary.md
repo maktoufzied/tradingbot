@@ -319,3 +319,25 @@ swing_lb=7: -3% return
 ### Position Limit
 
 **Definition:** Maximum number of concurrent open positions allowed. Prevents over-concentration risk.
+
+### Replay Mode
+
+**Definition:** A simulation mode that replays historical data as if it were live, allowing you to test the live trading engine with past market conditions.
+
+**Use cases:**
+- Validate live trading logic before deploying to real markets
+- Test how the bot handles specific market conditions
+- Debug and observe signal generation in real-time
+
+**Options:**
+| Flag | Description |
+|------|-------------|
+| `--speed N` | Bars per second (0 = instant playback) |
+| `--from DATE` | Start replay from specific date |
+| `--to DATE` | End replay at specific date |
+| `--period` | Historical period to replay (default: 2y) |
+
+**Example:**
+```bash
+task replay -- SPY --speed 10 --from 2024-01-01
+```

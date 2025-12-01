@@ -8,6 +8,7 @@ dependencies = [
     "plotext>=5.3.2",
     "polars>=1.35.2",
     "rich>=14.2.0",
+    "textual>=6.7.0",
     "yfinance>=0.2.66",
 ]
 
@@ -75,7 +76,7 @@ show_error_codes = true
 files = ["src/tradingbot"]
 
 [[tool.mypy.overrides]]
-module = ["yfinance", "yfinance.*", "plotext", "plotext.*", "pandas", "pandas.*"]
+module = ["yfinance", "yfinance.*", "plotext", "plotext.*", "pandas", "pandas.*", "textual", "textual.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

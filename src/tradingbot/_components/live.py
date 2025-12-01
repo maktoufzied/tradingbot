@@ -1,10 +1,13 @@
 """Live trading engine for real-time trading."""
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 from collections import deque
 from collections.abc import Mapping
-from typing import Final
+from datetime import date
+from typing import TYPE_CHECKING, Final
 
 import polars as pl
 from rich.console import Console
@@ -12,6 +15,8 @@ from rich.console import Console
 from ._brokers import get_registry as get_broker_registry
 from ._brokers.plugins.paper import PaperBroker
 from ._feeds import get_registry as get_feed_registry
+from ._feeds.plugins.replay import ReplayFeed
+from ._feeds.protocol import DataFeedProtocol
 from ._fetchers import DataFetcher
 from .config import get_bot_config, get_live_config
 from .live_risk import LiveRiskManager
@@ -19,6 +24,9 @@ from .models import Bar, Direction, Order, Position, Signal, SwingPoint
 from .risk import RiskManager
 from .signals import SignalGenerator
 from .swing import find_swing_points
+
+if TYPE_CHECKING:
+    from .tui import TradingTUI
 
 console = Console()
 
@@ -34,17 +42,20 @@ class LiveTradingEngine:
         symbols: list[str],
         broker: str | None = None,
         feed: str | None = None,
+        feed_instance: DataFeedProtocol | None = None,
         dry_run: bool = False,
+        tui: TradingTUI | None = None,
     ) -> None:
         cfg = get_bot_config()
         live_cfg = get_live_config()
 
         self.symbols = symbols
         self.dry_run = dry_run
+        self._tui = tui
 
-        # Get broker and feed from registries
+        # Get broker and feed from registries (or use provided feed instance)
         self._broker = get_broker_registry().get(broker or live_cfg.broker)
-        self._feed = get_feed_registry().get(feed or live_cfg.feed)
+        self._feed = feed_instance or get_feed_registry().get(feed or live_cfg.feed)
 
         # Trading components (reuse backtest logic)
         self._sig_gen = SignalGenerator(cfg.swing_lb)
@@ -62,20 +73,24 @@ class LiveTradingEngine:
         """Start live trading."""
         live_cfg = get_live_config()
 
-        console.print()
-        console.rule("[bold green]LIVE TRADING ENGINE[/bold green]")
-        console.print(f"Symbols: [cyan]{', '.join(self.symbols)}[/cyan]")
-        console.print(f"Broker: [cyan]{self._broker.name}[/cyan]")
-        console.print(f"Feed: [cyan]{self._feed.name}[/cyan]")
-        console.print(f"Dry run: [yellow]{self.dry_run}[/yellow]")
-        console.print()
-        console.print("[bold]Risk Controls:[/bold]")
-        console.print(f"  Max daily loss: [cyan]{live_cfg.risk.max_daily_loss_pct:.1%}[/cyan]")
-        console.print(f"  Circuit breaker: [cyan]{live_cfg.risk.circuit_breaker_loss_pct:.1%}[/cyan]")
-        console.print(f"  Max positions: [cyan]{live_cfg.risk.max_open_positions}[/cyan]")
-        console.print(f"  Max position size: [cyan]{live_cfg.risk.max_position_size_pct:.1%}[/cyan]")
-        console.print(f"  Trading hours only: [cyan]{live_cfg.risk.trading_hours_only}[/cyan]")
-        console.print()
+        if not self._tui:
+            console.print()
+            console.rule("[bold green]LIVE TRADING ENGINE[/bold green]")
+            console.print(f"Symbols: [cyan]{', '.join(self.symbols)}[/cyan]")
+            console.print(f"Broker: [cyan]{self._broker.name}[/cyan]")
+            console.print(f"Feed: [cyan]{self._feed.name}[/cyan]")
+            console.print(f"Dry run: [yellow]{self.dry_run}[/yellow]")
+            console.print()
+            console.print("[bold]Risk Controls:[/bold]")
+            console.print(f"  Max daily loss: [cyan]{live_cfg.risk.max_daily_loss_pct:.1%}[/cyan]")
+            console.print(f"  Circuit breaker: [cyan]{live_cfg.risk.circuit_breaker_loss_pct:.1%}[/cyan]")
+            console.print(f"  Max positions: [cyan]{live_cfg.risk.max_open_positions}[/cyan]")
+            console.print(f"  Max position size: [cyan]{live_cfg.risk.max_position_size_pct:.1%}[/cyan]")
+            console.print(f"  Trading hours only: [cyan]{live_cfg.risk.trading_hours_only}[/cyan]")
+            console.print()
+        else:
+            self._tui.log_message(f"Starting: {', '.join(self.symbols)}", "bold")
+            self._tui.log_message(f"Broker: {self._broker.name}, Feed: {self._feed.name}")
 
         # Reset daily tracking
         account = self._broker.get_account()
@@ -89,18 +104,54 @@ class LiveTradingEngine:
 
         # Start feed
         self._running = True
-        console.print("[green]Starting live feed...[/green]")
+        if not self._tui:
+            console.print("[green]Starting live feed...[/green]")
+        else:
+            self._tui.log_message("Live feed started", "green")
         await self._feed.start()
 
     async def stop(self) -> None:
         """Stop live trading gracefully."""
         self._running = False
         await self._feed.stop()
-        console.print("[yellow]Live trading stopped[/yellow]")
+        self._print_session_summary()
+
+    def _print_session_summary(self) -> None:
+        """Print session performance summary."""
+        console.print()
+        console.rule("[bold]SESSION SUMMARY[/bold]")
+
+        risk = self._live_risk
+        trades = risk.session_trades
+
+        if trades == 0:
+            console.print("[dim]No trades executed during this session[/dim]")
+            return
+
+        pnl = risk.session_pnl
+        pnl_color = "green" if pnl >= 0 else "red"
+
+        console.print()
+        console.print("[bold]Performance[/bold]")
+        console.print(f"  Total Trades:    {trades}")
+        console.print(f"  Winners:         {risk.session_winners}")
+        console.print(f"  Losers:          {risk.session_losers}")
+        console.print(f"  Win Rate:        {risk.session_win_rate:.1%}")
+        console.print()
+        console.print(f"  Total P&L:       [{pnl_color}]${pnl:+,.2f}[/{pnl_color}]")
+        console.print(f"  Total Return:    [{pnl_color}]{risk.session_return_pct:+.2%}[/{pnl_color}]")
+        console.print(f"  Profit Factor:   {risk.session_profit_factor:.2f}")
+        console.print()
+        console.print(f"  Starting Equity: ${risk._initial_equity:,.2f}")
+        console.print(f"  Final Equity:    [{pnl_color}]${risk.final_equity:,.2f}[/{pnl_color}]")
+        console.print()
 
     async def _load_history(self) -> None:
         """Load historical data for each symbol to bootstrap indicators."""
-        console.print("[dim]Loading historical data...[/dim]")
+        if not self._tui:
+            console.print("[dim]Loading historical data...[/dim]")
+        else:
+            self._tui.log_message("Loading historical data...", "dim")
 
         for symbol in self.symbols:
             try:
@@ -118,10 +169,16 @@ class LiveTradingEngine:
                     )
                     self._bars[symbol].append(bar)
 
-                console.print(f"  [green]✓[/green] {symbol}: {len(self._bars[symbol])} bars loaded")
+                if not self._tui:
+                    console.print(f"  [green]✓[/green] {symbol}: {len(self._bars[symbol])} bars loaded")
+                else:
+                    self._tui.log_message(f"✓ {symbol}: {len(self._bars[symbol])} bars loaded", "green")
 
             except Exception as e:
-                console.print(f"  [red]✗[/red] {symbol}: {e}")
+                if not self._tui:
+                    console.print(f"  [red]✗[/red] {symbol}: {e}")
+                else:
+                    self._tui.log_message(f"✗ {symbol}: {e}", "red")
 
     async def _on_bar(self, bar: Bar) -> None:
         """Process new bar - main trading logic."""
@@ -195,18 +252,39 @@ class LiveTradingEngine:
         self._live_risk.update_position_count(len(self._positions))
         can_trade, reason = self._live_risk.can_open_position(position_value, account.equity)
 
-        console.print()
-        console.print(
-            f"[bold cyan]{'🔼' if direction == 'LONG' else '🔽'} {direction} SIGNAL: {bar.symbol}[/bold cyan]"
-        )
-        console.print(f"  Entry: ${price:.2f}  Stop: ${stop:.2f}  TP: ${tp:.2f}  Size: {size:.2f}")
+        if self._tui:
+            blocked = not can_trade and not self.dry_run
+            self._tui.log_signal(direction, bar.symbol, price, stop, tp, size, blocked, reason)
+        else:
+            console.print()
+            console.print(
+                f"[bold cyan]{'🔼' if direction == 'LONG' else '🔽'} {direction} SIGNAL: {bar.symbol}[/bold cyan]"
+            )
+            console.print(f"  Entry: ${price:.2f}  Stop: ${stop:.2f}  TP: ${tp:.2f}  Size: {size:.2f}")
 
         if not can_trade:
-            console.print(f"  [red]✗ BLOCKED: {reason}[/red]")
-            return
+            if not self.dry_run:
+                if not self._tui:
+                    console.print(f"  [red]✗ BLOCKED: {reason}[/red]")
+                return
+            if not self._tui:
+                console.print(f"  [yellow]⚠ Would be blocked: {reason}[/yellow]")
 
         if self.dry_run:
-            console.print("  [yellow](DRY RUN - no order submitted)[/yellow]")
+            if not self._tui:
+                console.print("  [yellow](DRY RUN - simulating trade)[/yellow]")
+            # Simulate position for dry run
+            self._positions[bar.symbol] = Position(
+                entry_price=price,
+                entry_index=idx,
+                entry_time=bar.datetime,
+                direction=direction,
+                size=size,
+                stop_loss=stop,
+                take_profit=tp,
+                initial_stop_loss=stop,
+            )
+            self._live_risk.update_position_count(len(self._positions))
             return
 
         # Submit order
@@ -262,22 +340,34 @@ class LiveTradingEngine:
         """Close an existing position."""
         exit_price = position.stop_loss if reason == "STOP_LOSS" else position.take_profit
 
-        console.print()
-        emoji = "🛑" if reason == "STOP_LOSS" else "✅"
-        console.print(f"[bold]{emoji} EXIT {bar.symbol}: {reason}[/bold]")
-        console.print(f"  Entry: ${position.entry_price:.2f}  Exit: ${exit_price:.2f}")
+        if not self._tui:
+            console.print()
+            emoji = "🛑" if reason == "STOP_LOSS" else "✅"
+            console.print(f"[bold]{emoji} EXIT {bar.symbol}: {reason}[/bold]")
+            console.print(f"  Entry: ${position.entry_price:.2f}  Exit: ${exit_price:.2f}")
 
         if self.dry_run:
             pnl = (exit_price - position.entry_price) * position.size
             if position.direction == "SHORT":
                 pnl = -pnl
             self._live_risk.record_trade_pnl(pnl)
-            color = "green" if pnl > 0 else "red"
-            console.print(f"  P&L: [{color}]${pnl:+,.2f}[/{color}]")
-            console.print(
-                f"  Daily P&L: [{color}]${self._live_risk.daily_pnl:+,.2f}[/{color}] ({self._live_risk.daily_pnl_pct:+.2%})"
-            )
-            console.print("  [yellow](DRY RUN - no order submitted)[/yellow]")
+
+            if self._tui:
+                self._tui.log_trade_close(position.direction, bar.symbol, position.entry_price, exit_price, pnl, reason)
+                self._tui.update_session_stats(
+                    pnl=self._live_risk.session_pnl,
+                    trades=self._live_risk.session_trades,
+                    winners=self._live_risk.session_winners,
+                    losers=self._live_risk.session_losers,
+                )
+            else:
+                color = "green" if pnl > 0 else "red"
+                console.print(f"  P&L: [{color}]${pnl:+,.2f}[/{color}]")
+                console.print(
+                    f"  Daily P&L: [{color}]${self._live_risk.daily_pnl:+,.2f}[/{color}] ({self._live_risk.daily_pnl_pct:+.2%})"
+                )
+                console.print("  [yellow](DRY RUN - no order submitted)[/yellow]")
+
             del self._positions[bar.symbol]
             self._live_risk.update_position_count(len(self._positions))
             return
@@ -299,60 +389,100 @@ class LiveTradingEngine:
             if position.direction == "SHORT":
                 pnl = -pnl
             self._live_risk.record_trade_pnl(pnl)
-            color = "green" if pnl > 0 else "red"
-            console.print(f"  [green]✓ Closed at ${actual_exit:.2f}[/green]")
-            console.print(f"  P&L: [{color}]${pnl:+,.2f}[/{color}]")
-            console.print(
-                f"  Daily P&L: [{color}]${self._live_risk.daily_pnl:+,.2f}[/{color}] ({self._live_risk.daily_pnl_pct:+.2%})"
-            )
+
+            if self._tui:
+                self._tui.log_trade_close(
+                    position.direction, bar.symbol, position.entry_price, actual_exit, pnl, reason
+                )
+                self._tui.update_session_stats(
+                    pnl=self._live_risk.session_pnl,
+                    trades=self._live_risk.session_trades,
+                    winners=self._live_risk.session_winners,
+                    losers=self._live_risk.session_losers,
+                )
+            else:
+                color = "green" if pnl > 0 else "red"
+                console.print(f"  [green]✓ Closed at ${actual_exit:.2f}[/green]")
+                console.print(f"  P&L: [{color}]${pnl:+,.2f}[/{color}]")
+                console.print(
+                    f"  Daily P&L: [{color}]${self._live_risk.daily_pnl:+,.2f}[/{color}] ({self._live_risk.daily_pnl_pct:+.2%})"
+                )
+
             del self._positions[bar.symbol]
             self._live_risk.update_position_count(len(self._positions))
 
             # Check if circuit breaker triggered
             if self._live_risk.check_circuit_breaker():
-                console.print("[bold red]⚠ CIRCUIT BREAKER TRIGGERED - Trading paused for today[/bold red]")
+                if self._tui:
+                    self._tui.log_message("⚠ CIRCUIT BREAKER TRIGGERED - Trading paused", "bold red")
+                else:
+                    console.print("[bold red]⚠ CIRCUIT BREAKER TRIGGERED - Trading paused for today[/bold red]")
         else:
-            console.print(f"  [red]✗ Close order {result.status}: {result.message}[/red]")
+            if self._tui:
+                self._tui.log_message(f"✗ Close order {result.status}: {result.message}", "red")
+            else:
+                console.print(f"  [red]✗ Close order {result.status}: {result.message}[/red]")
 
     def _log_bar(self, bar: Bar, signal: Signal, details: Mapping[str, object]) -> None:
         """Log incoming bar information."""
         trend = details.get("trend", "N/A")
         position = self._positions.get(bar.symbol)
-        pos_str = f"[{position.direction}]" if position else ""
+        trend_str = str(trend)
 
-        signal_color = {"BUY": "green", "SELL": "red", "HOLD": "dim"}.get(signal.value, "white")
+        if self._tui:
+            self._tui.log_bar(bar, signal, trend_str, position)
+            self._tui.update_session_stats(
+                pnl=self._live_risk.session_pnl,
+                trades=self._live_risk.session_trades,
+                winners=self._live_risk.session_winners,
+                losers=self._live_risk.session_losers,
+            )
+        else:
+            pos_str = f"[{position.direction}]" if position else ""
+            signal_color = {"BUY": "green", "SELL": "red", "HOLD": "dim"}.get(signal.value, "white")
 
-        console.print(
-            f"[dim]{bar.datetime.strftime('%Y-%m-%d %H:%M')}[/dim] "
-            f"{bar.symbol} ${bar.close:.2f} "
-            f"[{signal_color}]{signal.value}[/{signal_color}] "
-            f"[dim]{trend}[/dim] {pos_str}"
-        )
+            console.print(
+                f"[dim]{bar.datetime.strftime('%Y-%m-%d %H:%M')}[/dim] "
+                f"{bar.symbol} ${bar.close:.2f} "
+                f"[{signal_color}]{signal.value}[/{signal_color}] "
+                f"[dim]{trend}[/dim] {pos_str}"
+            )
 
 
 async def run_live(
     symbols: list[str],
     broker: str | None = None,
     feed: str | None = None,
+    feed_instance: DataFeedProtocol | None = None,
     dry_run: bool = False,
+    tui: TradingTUI | None = None,
 ) -> None:
     """Run live trading engine."""
     engine = LiveTradingEngine(
         symbols=symbols,
         broker=broker,
         feed=feed,
+        feed_instance=feed_instance,
         dry_run=dry_run,
+        tui=tui,
     )
 
     try:
         await engine.start()
-        # Keep running until interrupted
-        while True:
-            await asyncio.sleep(1)
+        # Keep running until interrupted or replay finishes
+        while engine._feed.is_connected:
+            await asyncio.sleep(0.1)
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass  # Handled in finally
     finally:
         await engine.stop()
+
+
+def _parse_date(date_str: str) -> date:
+    """Parse date string in YYYY-MM-DD format."""
+    from datetime import datetime
+
+    return datetime.strptime(date_str, "%Y-%m-%d").date()
 
 
 def main() -> None:
@@ -367,6 +497,12 @@ Examples:
   tradingbot-live SPY
   tradingbot-live SPY QQQ --dry-run
   tradingbot-live AAPL --broker paper --feed polling
+
+Replay mode (simulate live trading with historical data):
+  tradingbot-live SPY --replay
+  tradingbot-live SPY --replay --speed 10
+  tradingbot-live SPY --replay --speed 0
+  tradingbot-live SPY --replay --from 2024-01-01 --to 2024-06-30
         """,
     )
 
@@ -379,14 +515,108 @@ Examples:
         help="Log signals without executing trades",
     )
 
+    # Replay mode options
+    parser.add_argument(
+        "--replay",
+        action="store_true",
+        help="Replay historical data as if it were live",
+    )
+    parser.add_argument(
+        "--speed",
+        type=float,
+        default=1.0,
+        help="Replay speed: bars per second (0 = instant, default: 1.0)",
+    )
+    parser.add_argument(
+        "--from",
+        dest="from_date",
+        type=_parse_date,
+        default=None,
+        help="Replay start date (YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "--to",
+        dest="to_date",
+        type=_parse_date,
+        default=None,
+        help="Replay end date (YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "--period",
+        default="2y",
+        help="Historical period for replay (default: 2y)",
+    )
+    parser.add_argument(
+        "--tui",
+        action="store_true",
+        help="Run with terminal UI (interactive dashboard)",
+    )
     args = parser.parse_args()
 
-    with contextlib.suppress(KeyboardInterrupt):
-        asyncio.run(
-            run_live(
-                symbols=args.symbols,
-                broker=args.broker,
-                feed=args.feed,
-                dry_run=args.dry_run,
-            )
+    # Support both space and comma-separated symbols: "BE MSFT" or "BE,MSFT"
+    symbols: list[str] = []
+    for sym in args.symbols:
+        symbols.extend(s.strip().upper() for s in sym.split(",") if s.strip())
+
+    # Create replay feed if requested
+    feed_instance: DataFeedProtocol | None = None
+    if args.replay:
+        feed_instance = ReplayFeed(
+            speed=args.speed,
+            start_date=args.from_date,
+            end_date=args.to_date,
+            period=args.period,
         )
+
+    if args.tui:
+        _run_with_tui(
+            symbols=symbols,
+            broker=args.broker,
+            feed=args.feed,
+            feed_instance=feed_instance,
+            dry_run=args.dry_run,
+        )
+    else:
+        with contextlib.suppress(KeyboardInterrupt):
+            asyncio.run(
+                run_live(
+                    symbols=symbols,
+                    broker=args.broker,
+                    feed=args.feed,
+                    feed_instance=feed_instance,
+                    dry_run=args.dry_run,
+                )
+            )
+
+
+def _run_with_tui(
+    symbols: list[str],
+    broker: str | None,
+    feed: str | None,
+    feed_instance: DataFeedProtocol | None,
+    dry_run: bool,
+) -> None:
+    """Run live trading with TUI."""
+    from .tui import TradingTUI
+
+    class TradingApp(TradingTUI):
+        """TUI app with trading engine worker."""
+
+        def on_mount(self) -> None:
+            """Start trading engine when app mounts."""
+            super().on_mount()
+            self.run_worker(self._run_engine, exclusive=True)
+
+        async def _run_engine(self) -> None:
+            """Run the trading engine."""
+            await run_live(
+                symbols=symbols,
+                broker=broker,
+                feed=feed,
+                feed_instance=feed_instance,
+                dry_run=dry_run,
+                tui=self,
+            )
+
+    app = TradingApp()
+    app.run()

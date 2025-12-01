@@ -22,6 +22,14 @@ class LiveRiskManager:
         self._circuit_breaker_triggered = False
         self._open_positions = 0
 
+        # Session-level tracking (for replay/live summary)
+        self._session_pnl = 0.0
+        self._session_trades = 0
+        self._session_winners = 0
+        self._session_losers = 0
+        self._session_gross_profit = 0.0
+        self._session_gross_loss = 0.0
+
     def reset_daily(self, current_equity: float) -> None:
         """Reset daily tracking (call at market open)."""
         today = datetime.now().date()
@@ -34,6 +42,16 @@ class LiveRiskManager:
     def record_trade_pnl(self, pnl: float) -> None:
         """Record P&L from a closed trade."""
         self._realized_pnl_today += pnl
+
+        # Session-level tracking
+        self._session_pnl += pnl
+        self._session_trades += 1
+        if pnl > 0:
+            self._session_winners += 1
+            self._session_gross_profit += pnl
+        else:
+            self._session_losers += 1
+            self._session_gross_loss += abs(pnl)
 
         # Check circuit breaker
         loss_pct = -self._realized_pnl_today / self._daily_start_equity
@@ -94,3 +112,49 @@ class LiveRiskManager:
         if self._daily_start_equity == 0:
             return 0.0
         return self._realized_pnl_today / self._daily_start_equity
+
+    @property
+    def session_pnl(self) -> float:
+        """Get total P&L for the session."""
+        return self._session_pnl
+
+    @property
+    def session_trades(self) -> int:
+        """Get total number of trades in the session."""
+        return self._session_trades
+
+    @property
+    def session_winners(self) -> int:
+        """Get number of winning trades in the session."""
+        return self._session_winners
+
+    @property
+    def session_losers(self) -> int:
+        """Get number of losing trades in the session."""
+        return self._session_losers
+
+    @property
+    def session_win_rate(self) -> float:
+        """Get win rate for the session."""
+        if self._session_trades == 0:
+            return 0.0
+        return self._session_winners / self._session_trades
+
+    @property
+    def session_profit_factor(self) -> float:
+        """Get profit factor for the session."""
+        if self._session_gross_loss == 0:
+            return 999.0 if self._session_gross_profit > 0 else 0.0
+        return self._session_gross_profit / self._session_gross_loss
+
+    @property
+    def session_return_pct(self) -> float:
+        """Get session return as percentage of initial equity."""
+        if self._initial_equity == 0:
+            return 0.0
+        return self._session_pnl / self._initial_equity
+
+    @property
+    def final_equity(self) -> float:
+        """Get final equity after session P&L."""
+        return self._initial_equity + self._session_pnl

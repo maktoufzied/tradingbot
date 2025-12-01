@@ -32,18 +32,20 @@ task check                      # Run all checks (lint, typecheck, test)
 task backtest -- SPY            # Run backtest
 task optimize -- SPY            # Run parameter optimization
 task live -- SPY                # Run live trading
+task replay -- SPY              # Replay historical data as live
 ```
 
 Alternative using `uv` directly:
 
 ```bash
-uv sync                         # Install dependencies
-uv run pytest                   # Run tests
-uv run ruff check src tests     # Run linter
-uv run mypy                     # Run type checker
-uv run tradingbot SPY           # Run backtest
-uv run tradingbot-optimize SPY  # Run parameter optimization
-uv run tradingbot-live SPY      # Run live trading
+uv sync                              # Install dependencies
+uv run pytest                        # Run tests
+uv run ruff check src tests          # Run linter
+uv run mypy                          # Run type checker
+uv run tradingbot SPY                # Run backtest
+uv run tradingbot-optimize SPY       # Run parameter optimization
+uv run tradingbot-live SPY           # Run live trading
+uv run tradingbot-live SPY --replay  # Replay historical data as live
 ```
 
 ## Code Style
