@@ -14,3 +14,7 @@ dist/
 
 # Generated output
 *_backtest.png
+
+# Secrets
+.env
+.env.*

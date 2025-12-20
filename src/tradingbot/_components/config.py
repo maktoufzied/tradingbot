@@ -30,6 +30,15 @@ class LiveRiskConfig:
 
 
 @dataclass(frozen=True)
+class AlpacaConfig:
+    """Alpaca API configuration."""
+
+    api_key: str | None = None
+    secret_key: str | None = None
+    paper: bool = True
+
+
+@dataclass(frozen=True)
 class LiveConfig:
     """Live trading configuration."""
 
@@ -37,6 +46,7 @@ class LiveConfig:
     feed: str = "polling"
     symbols: list[str] | None = None
     risk: LiveRiskConfig = LiveRiskConfig()
+    alpaca: AlpacaConfig = AlpacaConfig()
 
 
 def _load_toml() -> dict[str, Any]:
@@ -81,6 +91,7 @@ def get_live_config() -> LiveConfig:
     data = _load_toml()
     live_data = data.get("tradingbot", {}).get("live", {})
     risk_data = live_data.get("risk", {})
+    alpaca_data = live_data.get("alpaca", {})
 
     risk_config = LiveRiskConfig(
         max_daily_loss_pct=risk_data.get("max_daily_loss_pct", 0.05),
@@ -90,9 +101,16 @@ def get_live_config() -> LiveConfig:
         circuit_breaker_loss_pct=risk_data.get("circuit_breaker_loss_pct", 0.03),
     )
 
+    alpaca_config = AlpacaConfig(
+        api_key=alpaca_data.get("api_key"),
+        secret_key=alpaca_data.get("secret_key"),
+        paper=alpaca_data.get("paper", True),
+    )
+
     return LiveConfig(
         broker=live_data.get("broker", "paper"),
         feed=live_data.get("feed", "polling"),
         symbols=live_data.get("symbols"),
         risk=risk_config,
+        alpaca=alpaca_config,
     )

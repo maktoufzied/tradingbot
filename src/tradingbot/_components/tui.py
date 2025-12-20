@@ -387,6 +387,7 @@ class TradingTUI(App[None]):  # type: ignore[misc]
         size: float,
         blocked: bool = False,
         reason: str = "",
+        was_capped: bool = False,
     ) -> None:
         """Log a trading signal."""
         if not self._signal_log:
@@ -402,8 +403,9 @@ class TradingTUI(App[None]):  # type: ignore[misc]
                 f"[dim]{time_str}[/dim] [{color}]{arrow} {action} {symbol}[/{color}] [red]✗ {reason}[/red]"
             )
         else:
+            capped_note = " [yellow](capped)[/yellow]" if was_capped else ""
             self._signal_log.write(
-                f"[dim]{time_str}[/dim] [{color}]{arrow} {action} {size:.1f} {symbol} @ ${entry:.2f}[/{color}]"
+                f"[dim]{time_str}[/dim] [{color}]{arrow} {action} {size:.1f} {symbol} @ ${entry:.2f}[/{color}]{capped_note}"
             )
             self._signal_log.write(f"  [dim]Stop: ${stop:.2f}  TP: ${tp:.2f}[/dim]")
 

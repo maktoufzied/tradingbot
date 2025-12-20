@@ -62,7 +62,7 @@ class LiveRiskManager:
         """Update the current number of open positions."""
         self._open_positions = count
 
-    def can_open_position(self, position_value: float, current_equity: float) -> tuple[bool, str]:
+    def can_open_position(self) -> tuple[bool, str]:
         """Check if a new position can be opened.
 
         Returns:
@@ -76,11 +76,6 @@ class LiveRiskManager:
         if self._open_positions >= self._config.max_open_positions:
             return False, f"Max open positions ({self._config.max_open_positions}) reached"
 
-        # Check position size
-        position_pct = position_value / current_equity
-        if position_pct > self._config.max_position_size_pct:
-            return False, f"Position size ({position_pct:.1%}) exceeds limit ({self._config.max_position_size_pct:.1%})"
-
         # Check daily loss limit
         unrealized_loss_pct = -self._realized_pnl_today / self._daily_start_equity
         if unrealized_loss_pct >= self._config.max_daily_loss_pct:
@@ -91,6 +86,23 @@ class LiveRiskManager:
             return False, "Outside trading hours"
 
         return True, ""
+
+    def cap_position_size(self, size: float, price: float, current_equity: float) -> tuple[float, bool]:
+        """Cap position size to max allowed percentage of equity.
+
+        Returns:
+            Tuple of (adjusted_size, was_capped)
+        """
+        position_value = size * price
+        position_pct = position_value / current_equity
+        max_pct = self._config.max_position_size_pct
+
+        if position_pct > max_pct:
+            max_value = current_equity * max_pct
+            capped_size = max_value / price
+            return capped_size, True
+
+        return size, False
 
     def is_trading_hours(self) -> bool:
         """Check if current time is within trading hours (US Eastern)."""

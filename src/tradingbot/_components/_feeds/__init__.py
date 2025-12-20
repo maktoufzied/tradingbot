@@ -43,9 +43,13 @@ def _load_plugins(registry: FeedRegistry, default_feed: str) -> None:
                 and attr is not DataFeedProtocol
                 and hasattr(attr, "name")
             ):
-                instance: DataFeedProtocol = attr()
-                is_default: bool = instance.name == default_feed
-                registry.register(instance, default=is_default)
+                try:
+                    instance: DataFeedProtocol = attr()
+                    is_default: bool = instance.name == default_feed
+                    registry.register(instance, default=is_default)
+                except (ValueError, OSError):
+                    # Skip plugins that fail to initialize (e.g., missing credentials)
+                    pass
 
 
 def _bootstrap() -> None:

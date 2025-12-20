@@ -25,3 +25,10 @@ circuit_breaker_loss_pct = 0.03  # Pause after 3% loss
 max_open_positions = 5           # Max concurrent positions
 max_position_size_pct = 0.10     # Max 10% of equity per position
 trading_hours_only = true        # Only trade 9:30 AM - 4:00 PM ET
+
+[tradingbot.live.alpaca]
+# API keys should be set via environment variables:
+#   export ALPACA_API_KEY="your-api-key"
+#   export ALPACA_SECRET_KEY="your-secret-key"
+# Or create a .env file (gitignored)
+paper = true  # Use paper trading (default: true)

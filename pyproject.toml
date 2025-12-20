@@ -5,6 +5,7 @@ description = "Market structure trading bot with backtesting using Yahoo Finance
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "alpaca-py>=0.30.0",
     "plotext>=5.3.2",
     "polars>=1.35.2",
     "rich>=14.2.0",
@@ -76,7 +77,7 @@ show_error_codes = true
 files = ["src/tradingbot"]
 
 [[tool.mypy.overrides]]
-module = ["yfinance", "yfinance.*", "plotext", "plotext.*", "pandas", "pandas.*", "textual", "textual.*"]
+module = ["yfinance", "yfinance.*", "plotext", "plotext.*", "pandas", "pandas.*", "textual", "textual.*", "alpaca", "alpaca.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

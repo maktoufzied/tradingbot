@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Final
 import polars as pl
 from rich.console import Console
 
+from . import sounds
 from ._brokers import get_registry as get_broker_registry
 from ._brokers.plugins.paper import PaperBroker
 from ._feeds import get_registry as get_feed_registry
@@ -66,6 +67,7 @@ class LiveTradingEngine:
 
         # State tracking
         self._positions: dict[str, Position] = {}
+        self._pending_orders: set[str] = set()  # Symbols with orders in flight
         self._bars: dict[str, deque[Bar]] = {sym: deque(maxlen=MAX_BARS_HISTORY) for sym in symbols}
         self._running = False
 
@@ -98,6 +100,9 @@ class LiveTradingEngine:
 
         # Load historical data to bootstrap
         await self._load_history()
+
+        # Sync existing positions from broker
+        await self._sync_broker_positions()
 
         # Subscribe to feed
         await self._feed.subscribe(self.symbols, self._on_bar)
@@ -180,6 +185,54 @@ class LiveTradingEngine:
                 else:
                     self._tui.log_message(f"✗ {symbol}: {e}", "red")
 
+    async def _sync_broker_positions(self) -> None:
+        """Sync existing positions from broker on startup.
+
+        This handles the case where the bot restarts while positions are open.
+        Stop/TP levels are recalculated from current market structure since
+        the original values aren't persisted.
+        """
+        broker_positions = self._broker.get_positions()
+
+        for bp in broker_positions:
+            if bp.symbol not in self.symbols:
+                continue  # Only track symbols we're monitoring
+
+            # Calculate stop/TP from current market structure
+            if bp.symbol in self._bars and len(self._bars[bp.symbol]) >= MIN_BARS_REQUIRED:
+                df = self._bars_to_df(bp.symbol)
+                idx = len(df) - 1
+                swings = find_swing_points(df, self._sig_gen.swing_lookback)
+                stop = self._risk_mgr.calc_stop(bp.direction, bp.avg_entry_price, df, idx, swings)
+                tp = self._risk_mgr.calc_tp(bp.direction, bp.avg_entry_price, stop)
+            else:
+                # Fallback: use entry price with default risk parameters
+                stop = bp.avg_entry_price * (0.98 if bp.direction == "LONG" else 1.02)
+                tp = bp.avg_entry_price * (1.04 if bp.direction == "LONG" else 0.96)
+
+            from datetime import datetime
+
+            self._positions[bp.symbol] = Position(
+                entry_price=bp.avg_entry_price,
+                entry_index=0,
+                entry_time=datetime.now(),  # Approximate - actual entry time unknown
+                direction=bp.direction,
+                size=bp.size,
+                stop_loss=stop,
+                take_profit=tp,
+                initial_stop_loss=stop,
+            )
+
+            msg = f"⚠ Synced existing position: {bp.symbol} {bp.direction} {bp.size:.1f} @ ${bp.avg_entry_price:.2f}"
+            if self._tui:
+                self._tui.log_message(msg, "yellow")
+            else:
+                console.print(f"[yellow]{msg}[/yellow]")
+                console.print(f"  [dim]Stop: ${stop:.2f}  TP: ${tp:.2f} (recalculated)[/dim]")
+
+        if broker_positions:
+            self._live_risk.update_position_count(len(self._positions))
+
     async def _on_bar(self, bar: Bar) -> None:
         """Process new bar - main trading logic."""
         if not self._running:
@@ -215,10 +268,12 @@ class LiveTradingEngine:
         # Generate entry signals
         signal, details = self._sig_gen.generate(df, len(df) - 1, position)
 
-        self._log_bar(bar, signal, details)
-
-        if position is None and signal in (Signal.BUY, Signal.SELL):
+        # Only open if no position AND no pending order for this symbol
+        if position is None and bar.symbol not in self._pending_orders and signal in (Signal.BUY, Signal.SELL):
             await self._open_position(bar, signal, df)
+
+        # Log bar AFTER potential position change so stats show current state
+        self._log_bar(bar, signal, details)
 
     def _bars_to_df(self, symbol: str) -> pl.DataFrame:
         """Convert bar deque to DataFrame."""
@@ -245,22 +300,26 @@ class LiveTradingEngine:
         stop = self._risk_mgr.calc_stop(direction, price, df, idx, swings)
         tp = self._risk_mgr.calc_tp(direction, price, stop)
         size = self._risk_mgr.calc_size(price, stop)
-        position_value = price * size
 
         # Check live risk rules
         account = self._broker.get_account()
         self._live_risk.update_position_count(len(self._positions))
-        can_trade, reason = self._live_risk.can_open_position(position_value, account.equity)
+        can_trade, reason = self._live_risk.can_open_position()
+
+        # Cap position size if needed
+        size, was_capped = self._live_risk.cap_position_size(size, price, account.equity)
 
         if self._tui:
             blocked = not can_trade and not self.dry_run
-            self._tui.log_signal(direction, bar.symbol, price, stop, tp, size, blocked, reason)
+            self._tui.log_signal(direction, bar.symbol, price, stop, tp, size, blocked, reason, was_capped)
         else:
             console.print()
             console.print(
                 f"[bold cyan]{'🔼' if direction == 'LONG' else '🔽'} {direction} SIGNAL: {bar.symbol}[/bold cyan]"
             )
             console.print(f"  Entry: ${price:.2f}  Stop: ${stop:.2f}  TP: ${tp:.2f}  Size: {size:.2f}")
+            if was_capped:
+                console.print("  [yellow]⚠ Size capped to max position limit[/yellow]")
 
         if not can_trade:
             if not self.dry_run:
@@ -295,23 +354,31 @@ class LiveTradingEngine:
             order_type="MARKET",
         )
 
-        result = self._broker.submit_order(order)
+        # Mark order as pending to prevent duplicate signals
+        self._pending_orders.add(bar.symbol)
 
-        if result.status == "FILLED":
-            self._positions[bar.symbol] = Position(
-                entry_price=result.filled_price or price,
-                entry_index=idx,
-                entry_time=bar.datetime,
-                direction=direction,
-                size=result.filled_size,
-                stop_loss=stop,
-                take_profit=tp,
-                initial_stop_loss=stop,
-            )
-            self._live_risk.update_position_count(len(self._positions))
-            console.print(f"  [green]✓ Order filled at ${result.filled_price:.2f}[/green]")
-        else:
-            console.print(f"  [red]✗ Order {result.status}: {result.message}[/red]")
+        try:
+            result = self._broker.submit_order(order)
+
+            if result.status == "FILLED":
+                self._positions[bar.symbol] = Position(
+                    entry_price=result.filled_price or price,
+                    entry_index=idx,
+                    entry_time=bar.datetime,
+                    direction=direction,
+                    size=result.filled_size,
+                    stop_loss=stop,
+                    take_profit=tp,
+                    initial_stop_loss=stop,
+                )
+                self._live_risk.update_position_count(len(self._positions))
+                console.print(f"  [green]✓ Order filled at ${result.filled_price:.2f}[/green]")
+                sounds.play(sounds.BUY if direction == "LONG" else sounds.SELL)
+            else:
+                console.print(f"  [red]✗ Order {result.status}: {result.message}[/red]")
+        finally:
+            # Always clear pending status
+            self._pending_orders.discard(bar.symbol)
 
     async def _check_exit(self, bar: Bar, position: Position) -> None:
         """Check if position should be exited."""
@@ -368,6 +435,7 @@ class LiveTradingEngine:
                 )
                 console.print("  [yellow](DRY RUN - no order submitted)[/yellow]")
 
+            sounds.play(sounds.PROFIT if pnl > 0 else sounds.LOSS)
             del self._positions[bar.symbol]
             self._live_risk.update_position_count(len(self._positions))
             return
@@ -408,6 +476,7 @@ class LiveTradingEngine:
                     f"  Daily P&L: [{color}]${self._live_risk.daily_pnl:+,.2f}[/{color}] ({self._live_risk.daily_pnl_pct:+.2%})"
                 )
 
+            sounds.play(sounds.PROFIT if pnl > 0 else sounds.LOSS)
             del self._positions[bar.symbol]
             self._live_risk.update_position_count(len(self._positions))
 
@@ -543,8 +612,13 @@ Replay mode (simulate live trading with historical data):
     )
     parser.add_argument(
         "--period",
-        default="2y",
-        help="Historical period for replay (default: 2y)",
+        default="1d",
+        help="Historical period for replay (default: 1d)",
+    )
+    parser.add_argument(
+        "--interval",
+        default="15m",
+        help="Bar interval for replay (default: 15m)",
     )
     parser.add_argument(
         "--tui",
@@ -566,6 +640,7 @@ Replay mode (simulate live trading with historical data):
             start_date=args.from_date,
             end_date=args.to_date,
             period=args.period,
+            interval=args.interval,
         )
 
     if args.tui:

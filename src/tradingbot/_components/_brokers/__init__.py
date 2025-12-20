@@ -43,9 +43,13 @@ def _load_plugins(registry: BrokerRegistry, default_broker: str) -> None:
                 and attr is not BrokerProtocol
                 and hasattr(attr, "name")
             ):
-                instance: BrokerProtocol = attr()
-                is_default: bool = instance.name == default_broker
-                registry.register(instance, default=is_default)
+                try:
+                    instance: BrokerProtocol = attr()
+                    is_default: bool = instance.name == default_broker
+                    registry.register(instance, default=is_default)
+                except (ValueError, OSError):
+                    # Skip plugins that fail to initialize (e.g., missing credentials)
+                    pass
 
 
 def _bootstrap() -> None:

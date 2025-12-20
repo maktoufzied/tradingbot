@@ -179,6 +179,14 @@ class CachedFetcher:
         interval: str = "1d",
     ) -> pl.DataFrame:
         """Fetch data with smart caching."""
+        # For short intraday periods, bypass cache and fetch directly using period
+        # Yahoo Finance handles period="1d" specially for intraday data
+        intraday_intervals = {"1m", "5m", "15m", "30m", "1h"}
+        short_periods = {"1d", "5d"}
+        if interval in intraday_intervals and period in short_periods and not start_date:
+            print(f"[FETCH] {symbol}: Requesting {period} of {interval} bars...")
+            return self._fetcher.fetch(symbol, period=period, interval=interval)
+
         # Determine date range needed
         if start_date and end_date:
             req_start = datetime.strptime(start_date, "%Y-%m-%d")
@@ -222,15 +230,26 @@ class CachedFetcher:
             # Fetch missing ranges
             new_data: list[pl.DataFrame] = []
             for range_start, range_end in missing_ranges:
-                print(f"[FETCH] {symbol}: Requesting {range_start.date()} to {range_end.date()}...")
-                df = self._fetcher.fetch(
-                    symbol,
-                    start_date=range_start.strftime("%Y-%m-%d"),
-                    end_date=range_end.strftime("%Y-%m-%d"),
-                    interval=interval,
-                )
-                if not df.is_empty():
-                    new_data.append(df)
+                days_needed = (range_end - range_start).days + 1
+                # For small gaps, use period instead of date range (more reliable)
+                if days_needed <= 7:
+                    print(f"[FETCH] {symbol}: Requesting last {days_needed}d of {interval} bars...")
+                    try:
+                        df = self._fetcher.fetch(symbol, period=f"{days_needed}d", interval=interval)
+                        if not df.is_empty():
+                            new_data.append(df)
+                    except ValueError:
+                        pass  # No data available, continue
+                else:
+                    print(f"[FETCH] {symbol}: Requesting {range_start.date()} to {range_end.date()}...")
+                    df = self._fetcher.fetch(
+                        symbol,
+                        start_date=range_start.strftime("%Y-%m-%d"),
+                        end_date=range_end.strftime("%Y-%m-%d"),
+                        interval=interval,
+                    )
+                    if not df.is_empty():
+                        new_data.append(df)
 
             # Record that we fetched
             _set_last_fetch_time(symbol, interval)

@@ -51,22 +51,27 @@ uv run tradingbot-live SPY --replay  # Replay historical data as live
 ## Code Style
 
 - Use modern Python syntax (3.14+)
-- Type hints: `list[X]`, `dict[K, V]`, `X | None` (not `List`, `Dict`, `Optional`)
-- Omit type annotations when the type is obvious from context:
-    - Literals: `x = 5` not `x: int = 5`
-    - Arithmetic with typed operands: `total = a + b` not `total: int = a + b`
-    - Constructor calls: `items = []` not `items: list = []`
-    - Function calls with clear return types: `name = user.get_name()` not `name: str = user.get_name()`
-    Do annotate when:
-    - Type is ambiguous: `data: dict[str, Any] = {}`
-    - Return type narrowing: `result: User | None = cache.get(id)`
-    - Empty collections with specific types: `users: list[User] = []`
-    - Dataclasses for data structures, Enums for constants
+- Prefer dataclasses for data structures, Enums for constants
+- Avoid unnecessary comments. Comments should say why and not what
 - Small, self-contained modules in `_components/` (one concern per file)
 - Only expose public API in `__init__.py`
-- Avoid unecessary comments. Comments should say why and not what
-- Annotate module-level constants with `Final[T]` (e.g., `FOO: Final[int] = 1`)
-- When designing functions or APIs, apply contravariance to function inputs by accepting reasonably general types (e.g., Iterable[str]) rather than overly specific ones, and apply covariance to outputs by returning the most specific structured types possible (e.g., dict[str, float] rather than dict). Avoid using Any unless absolutely necessary, as it weakens type safety and clarity
+- Use `asyncio.gather` or `TaskGroup` for independent async calls
+
+**Type hints:**
+- Always annotate function parameters and return types
+- Use `list[X]`, `dict[K, V]`, `X | None` (not `List`, `Dict`, `Optional`)
+- Annotate module-level constants with `Final` (e.g., `FOO: Final = 1`)
+- Function inputs: accept general types (`Iterable[int]` or `Sequence[int]` over `list[int]`). Outputs: return specific types (`dict[str, float]` over `Mapping`). Avoid `Any`
+- Prefer read-only types when not mutating (`Sequence` over `list`, `Mapping` over `dict`). Note: `str` is a `Sequence[str]`, use `list[str]` when strings must be excluded
+- Omit type annotations when obvious:
+    - Literals: `x = 5` not `x: int = 5`
+    - Arithmetic: `total = a + b` not `total: int = a + b`
+    - Constructor calls: `user = User()` not `user: User = User()`
+    - Function calls with clear return types: `name = user.get_name()` not `name: str = user.get_name()`
+- Do annotate when:
+    - Type is ambiguous: `prices: dict[str, float] = {}`
+    - Narrowing `Any` returns: `data: dict[str, int] = json.loads(resp)`
+    - Empty collections with specific types: `users: list[User] = []`
 
 ## Documentation
 
