@@ -627,9 +627,9 @@ def optimize(
     parallel: bool = True,
 ) -> Optimizer:
     """Convenience function to run optimization."""
-    from ._fetchers import DataFetcher
+    from .feeds import DataFeed
 
-    df: pl.DataFrame = DataFetcher.fetch(symbol, period=period, interval=interval)
+    df: pl.DataFrame = DataFeed.history(symbol, period=period, interval=interval)
 
     optimizer = Optimizer(df, symbol, capital, params)
     optimizer.optimize(parallel=parallel)

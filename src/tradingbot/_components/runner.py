@@ -4,9 +4,10 @@ import polars as pl
 from rich.console import Console
 from rich.table import Table
 
-from ._fetchers import DataFetcher
+from tradingbot.config import get_bot_config
+
 from .bot import MarketStructureBot, Stats
-from .config import get_bot_config
+from .feeds import DataFeed
 
 
 class BacktestParams(TypedDict, total=False):
@@ -39,7 +40,7 @@ def run_single_backtest(
     console.print()
     console.rule(f"[bold yellow]BACKTEST: {symbol}[/bold yellow]", style="cyan")
 
-    df: pl.DataFrame = DataFetcher.fetch(symbol, period=period, interval=interval)
+    df: pl.DataFrame = DataFeed.history(symbol, period=period, interval=interval)
 
     bot: MarketStructureBot = MarketStructureBot(capital=capital, risk_pct=risk, rr_ratio=rr, swing_lb=swing_lb)
     results: pl.DataFrame = bot.backtest(df, symbol)

@@ -3,8 +3,8 @@
 import uuid
 from dataclasses import dataclass
 
-from ...models import AccountInfo, BrokerPosition, Direction, Order, OrderResult
-from ..protocol import BrokerProtocol
+from tradingbot.interfaces import BrokerProtocol
+from tradingbot.types import AccountInfo, BrokerPosition, Direction, Order, OrderResult
 
 
 @dataclass

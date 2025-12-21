@@ -9,12 +9,12 @@ from textual.containers import Container
 from textual.reactive import reactive
 from textual.widgets import Footer, Header, Label, RichLog, Static
 
-from .models import Bar, Direction, Position, Signal
+from tradingbot.types import Bar, Direction, Position, Signal
 
 MAX_PRICE_HISTORY: Final[int] = 60
 
 
-class PriceChart(Static):  # type: ignore[misc]
+class PriceChart(Static):
     """Braille-based price chart widget for smooth line rendering."""
 
     prices: reactive[list[float]] = reactive(list, init=False)
@@ -154,7 +154,7 @@ class PriceChart(Static):  # type: ignore[misc]
         return "\n".join(lines)
 
 
-class StatsPanel(Static):  # type: ignore[misc]
+class StatsPanel(Static):
     """Statistics panel showing trading metrics."""
 
     def __init__(self, id: str | None = None) -> None:
@@ -271,7 +271,7 @@ class StatsPanel(Static):  # type: ignore[misc]
         return "\n".join(lines)
 
 
-class TradingTUI(App[None]):  # type: ignore[misc]
+class TradingTUI(App[None]):
     """Trading bot TUI application."""
 
     CSS = """
@@ -360,7 +360,7 @@ class TradingTUI(App[None]):  # type: ignore[misc]
 
     def action_toggle_dark(self) -> None:
         """Toggle dark mode."""
-        self.theme = "textual-dark" if self.theme == "textual-light" else "textual-light"  # type: ignore[has-type]
+        self.theme = "textual-dark" if self.theme == "textual-light" else "textual-light"
 
     def log_bar(self, bar: Bar, signal: Signal, trend: str, position: Position | None = None) -> None:
         """Log a new bar update."""

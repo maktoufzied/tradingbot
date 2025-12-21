@@ -4,7 +4,7 @@ from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
-    from .config import LiveRiskConfig
+    from tradingbot.config import LiveRiskConfig
 
 MARKET_OPEN: Final[time] = time(9, 30)
 MARKET_CLOSE: Final[time] = time(16, 0)

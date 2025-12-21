@@ -8,9 +8,9 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.trading.requests import MarketOrderRequest
 
-from ...config import get_live_config
-from ...models import AccountInfo, BrokerPosition, Direction, Order, OrderResult, OrderStatus
-from ..protocol import BrokerProtocol
+from tradingbot.config import get_live_config
+from tradingbot.interfaces import BrokerProtocol
+from tradingbot.types import AccountInfo, BrokerPosition, Direction, Order, OrderResult, OrderStatus
 
 ALPACA_API_KEY_ENV: Final = "ALPACA_API_KEY"
 ALPACA_SECRET_KEY_ENV: Final = "ALPACA_SECRET_KEY"
@@ -21,13 +21,21 @@ class AlpacaBroker(BrokerProtocol):
     """Alpaca broker for paper and live trading."""
 
     def __init__(self) -> None:
+        self._client: TradingClient | None = None
+        self._paper: bool = False
+
+    def _get_client(self) -> TradingClient:
+        """Get or create the Alpaca trading client (lazy initialization)."""
+        if self._client is not None:
+            return self._client
+
         config = get_live_config().alpaca
 
         # Environment variables take priority over config file
         api_key = os.environ.get(ALPACA_API_KEY_ENV) or config.api_key
         secret_key = os.environ.get(ALPACA_SECRET_KEY_ENV) or config.secret_key
         paper_env = os.environ.get(ALPACA_PAPER_ENV)
-        paper = paper_env.lower() == "true" if paper_env else config.paper
+        self._paper = paper_env.lower() == "true" if paper_env else config.paper
 
         if not api_key or not secret_key:
             raise ValueError(
@@ -36,8 +44,8 @@ class AlpacaBroker(BrokerProtocol):
                 f"or configure in tradingbot.toml under [tradingbot.live.alpaca]."
             )
 
-        self._client = TradingClient(api_key, secret_key, paper=paper)
-        self._paper = paper
+        self._client = TradingClient(api_key, secret_key, paper=self._paper)
+        return self._client
 
     @property
     def name(self) -> str:
@@ -56,7 +64,7 @@ class AlpacaBroker(BrokerProtocol):
                 client_order_id=order.client_id,
             )
 
-            alpaca_order: Any = self._client.submit_order(order_data=order_request)
+            alpaca_order: Any = self._get_client().submit_order(order_data=order_request)
 
             filled_price: float | None = None
             if alpaca_order.filled_avg_price is not None:
@@ -82,7 +90,7 @@ class AlpacaBroker(BrokerProtocol):
     def cancel_order(self, order_id: str) -> bool:
         """Cancel a pending order."""
         try:
-            self._client.cancel_order_by_id(order_id)
+            self._get_client().cancel_order_by_id(order_id)
             return True
         except APIError:
             return False
@@ -90,7 +98,7 @@ class AlpacaBroker(BrokerProtocol):
     def get_position(self, symbol: str) -> BrokerPosition | None:
         """Get current position for a symbol."""
         try:
-            pos = self._client.get_open_position(symbol)
+            pos = self._get_client().get_open_position(symbol)
             return self._map_position(pos)
         except APIError:
             return None
@@ -98,14 +106,14 @@ class AlpacaBroker(BrokerProtocol):
     def get_positions(self) -> list[BrokerPosition]:
         """Get all current positions."""
         try:
-            positions = self._client.get_all_positions()
+            positions = self._get_client().get_all_positions()
             return [self._map_position(p) for p in positions]
         except APIError:
             return []
 
     def get_account(self) -> AccountInfo:
         """Get account information."""
-        account: Any = self._client.get_account()
+        account: Any = self._get_client().get_account()
         return AccountInfo(
             equity=float(account.equity),
             buying_power=float(account.buying_power),

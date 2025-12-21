@@ -2,7 +2,7 @@ from typing import Final
 
 import polars as pl
 
-from ...models import Direction, SwingPoint
+from tradingbot.types import Direction, SwingPoint
 
 # Small buffer beyond swing point to avoid stop-hunting wicks
 SWING_BUFFER_PCT: Final[float] = 0.002  # 0.2%

@@ -1,7 +1,8 @@
 import polars as pl
 
-from ._strategies import StopStrategy
-from .models import Direction, SwingPoint
+from tradingbot.types import Direction, SwingPoint
+
+from .strategies import StopStrategy
 
 
 class RiskManager:

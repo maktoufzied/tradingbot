@@ -14,8 +14,8 @@ capital = 100000   # Starting capital
 
 [tradingbot.live]
 # Live trading configuration
-broker = "paper"   # Options: "paper" (more coming)
-feed = "polling"   # Options: "polling" (more coming)
+broker = "alpaca"  # Options: "paper", "alpaca"
+feed = "alpaca"    # Options: "yahoo", "alpaca"
 symbols = ["SPY"]  # Default symbols to trade
 
 [tradingbot.live.risk]

@@ -1,6 +1,6 @@
 import polars as pl
 
-from ...models import Direction, SwingPoint
+from tradingbot.types import Direction, SwingPoint
 
 
 class ATRStopStrategy:

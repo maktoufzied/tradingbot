@@ -5,7 +5,8 @@ from typing import Any, TypedDict
 import plotext as plt
 import polars as pl
 
-from .models import Direction, ExitReason, Position, Signal, SwingPoint, Trade
+from tradingbot.types import Direction, ExitReason, Position, Signal, SwingPoint, Trade
+
 from .risk import RiskManager
 from .signals import SignalGenerator
 from .swing import find_swing_points

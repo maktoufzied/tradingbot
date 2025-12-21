@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tradingbot._components._brokers.plugins.alpaca import AlpacaBroker
-from tradingbot._components.models import Order
+from tradingbot._components.brokers.plugins.alpaca import AlpacaBroker
+from tradingbot.types import Order
 
 
 @pytest.fixture
@@ -26,7 +26,7 @@ def mock_env():
 @pytest.fixture
 def mock_trading_client():
     """Create a mock TradingClient."""
-    with patch("tradingbot._components._brokers.plugins.alpaca.TradingClient") as mock:
+    with patch("tradingbot._components.brokers.plugins.alpaca.TradingClient") as mock:
         client = MagicMock()
         mock.return_value = client
         yield client
@@ -34,25 +34,28 @@ def mock_trading_client():
 
 class TestAlpacaBrokerInit:
     def test_raises_without_credentials(self):
-        """Missing credentials should raise ValueError."""
+        """Missing credentials should raise ValueError on first use."""
         with patch.dict(os.environ, {}, clear=True), pytest.raises(ValueError, match="credentials not found"):
-            AlpacaBroker()
+            broker = AlpacaBroker()
+            broker.get_account()  # Trigger lazy initialization
 
     def test_raises_without_api_key(self):
-        """Missing API key should raise ValueError."""
+        """Missing API key should raise ValueError on first use."""
         with (
             patch.dict(os.environ, {"ALPACA_SECRET_KEY": "secret"}, clear=True),
             pytest.raises(ValueError, match="credentials not found"),
         ):
-            AlpacaBroker()
+            broker = AlpacaBroker()
+            broker.get_account()  # Trigger lazy initialization
 
     def test_raises_without_secret_key(self):
-        """Missing secret key should raise ValueError."""
+        """Missing secret key should raise ValueError on first use."""
         with (
             patch.dict(os.environ, {"ALPACA_API_KEY": "key"}, clear=True),
             pytest.raises(ValueError, match="credentials not found"),
         ):
-            AlpacaBroker()
+            broker = AlpacaBroker()
+            broker.get_account()  # Trigger lazy initialization
 
     def test_initializes_with_credentials(self, mock_env, mock_trading_client):
         """Successful initialization with credentials."""

@@ -8,9 +8,10 @@ from typing import Final
 
 import polars as pl
 
-from ..._fetchers import DataFetcher
-from ...models import Bar
-from ..protocol import DataFeedProtocol
+from tradingbot.interfaces import DataFeedProtocol
+from tradingbot.types import Bar
+
+from .yahoo import YahooFeed
 
 DEFAULT_SPEED: Final[float] = 1.0  # 1 bar per second
 
@@ -65,9 +66,10 @@ class ReplayFeed(DataFeedProtocol):
         self._symbols = symbols
         self._callback = on_bar
 
-        # Pre-fetch all historical data
+        # Pre-fetch all historical data using YahooFeed
+        yahoo = YahooFeed()
         for symbol in symbols:
-            df = DataFetcher.fetch(symbol, period=self._period, interval=self._interval)
+            df = yahoo.history(symbol, period=self._period, interval=self._interval)
 
             # Filter by date range if specified
             if self._start_date:

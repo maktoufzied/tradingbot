@@ -4,13 +4,18 @@ import asyncio
 import contextlib
 import os
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import Any, Final
 
+import polars as pl
+from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.live import StockDataStream
+from alpaca.data.requests import StockBarsRequest
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
-from ...config import get_live_config
-from ...models import Bar
-from ..protocol import DataFeedProtocol
+from tradingbot.config import get_live_config
+from tradingbot.interfaces import DataFeedProtocol
+from tradingbot.types import Bar
 
 ALPACA_API_KEY_ENV: Final = "ALPACA_API_KEY"
 ALPACA_SECRET_KEY_ENV: Final = "ALPACA_SECRET_KEY"
@@ -22,6 +27,20 @@ class AlpacaFeed(DataFeedProtocol):
     """Real-time data feed from Alpaca WebSocket stream."""
 
     def __init__(self) -> None:
+        self._api_key: str | None = None
+        self._secret_key: str | None = None
+        self._stream: StockDataStream | None = None
+        self._symbols: list[str] = []
+        self._callback: Callable[[Bar], Awaitable[None] | None] | None = None
+        self._running = False
+        self._task: asyncio.Task[None] | None = None
+        self._reconnect_attempts = 0
+
+    def _ensure_credentials(self) -> tuple[str, str]:
+        """Get credentials, raising if not available (lazy initialization)."""
+        if self._api_key is not None and self._secret_key is not None:
+            return self._api_key, self._secret_key
+
         config = get_live_config().alpaca
 
         # Environment variables take priority over config file
@@ -37,12 +56,7 @@ class AlpacaFeed(DataFeedProtocol):
 
         self._api_key = api_key
         self._secret_key = secret_key
-        self._stream: StockDataStream | None = None
-        self._symbols: list[str] = []
-        self._callback: Callable[[Bar], Awaitable[None] | None] | None = None
-        self._running = False
-        self._task: asyncio.Task[None] | None = None
-        self._reconnect_attempts = 0
+        return api_key, secret_key
 
     @property
     def name(self) -> str:
@@ -89,12 +103,13 @@ class AlpacaFeed(DataFeedProtocol):
 
     async def _run_stream(self) -> None:
         """Run the WebSocket stream with reconnection logic."""
+        api_key, secret_key = self._ensure_credentials()
         while self._running:
             try:
-                self._stream = StockDataStream(self._api_key, self._secret_key)
+                self._stream = StockDataStream(api_key, secret_key)
 
-                # Subscribe to bars - use sync handler since stream runs in executor thread
-                self._stream.subscribe_bars(self._handle_bar_sync, *self._symbols)
+                # Subscribe to bars with async handler
+                self._stream.subscribe_bars(self._handle_bar_async, *self._symbols)
 
                 self._reconnect_attempts = 0
                 print(f"[ALPACA] Connected to WebSocket. Subscribed to: {', '.join(self._symbols)}")
@@ -166,3 +181,99 @@ class AlpacaFeed(DataFeedProtocol):
                 asyncio.run_coroutine_threadsafe(result, loop)
             else:
                 loop.run_until_complete(result)
+
+    def history(
+        self,
+        symbol: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        period: str = "2y",
+        interval: str = "1d",
+    ) -> pl.DataFrame:
+        """Fetch historical bar data from Alpaca."""
+        api_key, secret_key = self._ensure_credentials()
+        client = StockHistoricalDataClient(api_key, secret_key)
+
+        timeframe = self._parse_interval(interval)
+
+        # Build request
+        if start_date and end_date:
+            request = StockBarsRequest(
+                symbol_or_symbols=symbol,
+                timeframe=timeframe,
+                start=datetime.fromisoformat(start_date),
+                end=datetime.fromisoformat(end_date),
+            )
+        else:
+            # Convert period to start date
+            start = self._period_to_start(period)
+            request = StockBarsRequest(
+                symbol_or_symbols=symbol,
+                timeframe=timeframe,
+                start=start,
+            )
+
+        bars = client.get_stock_bars(request)
+
+        # Convert to DataFrame
+        data: list[dict[str, Any]] = []
+        for bar in bars[symbol]:
+            data.append(
+                {
+                    "datetime": bar.timestamp.replace(tzinfo=None) if bar.timestamp.tzinfo else bar.timestamp,
+                    "open": float(bar.open),
+                    "high": float(bar.high),
+                    "low": float(bar.low),
+                    "close": float(bar.close),
+                    "volume": int(bar.volume),
+                }
+            )
+
+        if not data:
+            raise ValueError(f"No data found for {symbol}")
+
+        return pl.DataFrame(data)
+
+    def _parse_interval(self, interval: str) -> TimeFrame:
+        """Convert interval string to Alpaca TimeFrame."""
+        unit_map: dict[str, TimeFrameUnit] = {
+            "m": TimeFrameUnit.Minute,
+            "h": TimeFrameUnit.Hour,
+            "d": TimeFrameUnit.Day,
+            "w": TimeFrameUnit.Week,
+            "M": TimeFrameUnit.Month,
+        }
+
+        # Parse interval like "1d", "5m", "1h"
+        amount = int(interval[:-1])
+        unit_char = interval[-1]
+
+        if unit_char in unit_map:
+            return TimeFrame(amount, unit_map[unit_char])
+        return TimeFrame(amount, TimeFrameUnit.Day)
+
+    def _period_to_start(self, period: str) -> datetime:
+        """Convert period string to start datetime.
+
+        Supports formats like: 2y, 1mo, 3mo, 5d, 1w
+        """
+        from datetime import timedelta
+
+        now = datetime.now()
+
+        # Handle "mo" suffix for months (e.g., "3mo")
+        if period.endswith("mo"):
+            amount = int(period[:-2])
+            return now - timedelta(days=amount * 30)
+
+        amount = int(period[:-1])
+        unit = period[-1]
+
+        if unit == "d":
+            return now - timedelta(days=amount)
+        elif unit == "w":
+            return now - timedelta(weeks=amount)
+        elif unit == "y":
+            return now - timedelta(days=amount * 365)
+        else:
+            return now - timedelta(days=730)  # Default 2 years

@@ -1,6 +1,7 @@
 import polars as pl
 
-from .models import Position, Signal, SwingPoint, Trend
+from tradingbot.types import Position, Signal, SwingPoint, Trend
+
 from .swing import analyze_structure, find_swing_points
 
 

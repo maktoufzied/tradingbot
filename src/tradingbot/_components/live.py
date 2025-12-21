@@ -12,16 +12,17 @@ from typing import TYPE_CHECKING, Final
 import polars as pl
 from rich.console import Console
 
+from tradingbot.config import get_bot_config, get_live_config
+from tradingbot.interfaces import DataFeedProtocol
+from tradingbot.types import Bar, Direction, Order, Position, Signal, SwingPoint
+
 from . import sounds
-from ._brokers import get_registry as get_broker_registry
-from ._brokers.plugins.paper import PaperBroker
-from ._feeds import get_registry as get_feed_registry
-from ._feeds.plugins.replay import ReplayFeed
-from ._feeds.protocol import DataFeedProtocol
-from ._fetchers import DataFetcher
-from .config import get_bot_config, get_live_config
+from .brokers import get_registry as get_broker_registry
+from .brokers.plugins.paper import PaperBroker
+from .feeds import DataFeed
+from .feeds import get_registry as get_feed_registry
+from .feeds.plugins.replay import ReplayFeed
 from .live_risk import LiveRiskManager
-from .models import Bar, Direction, Order, Position, Signal, SwingPoint
 from .risk import RiskManager
 from .signals import SignalGenerator
 from .swing import find_swing_points
@@ -160,7 +161,7 @@ class LiveTradingEngine:
 
         for symbol in self.symbols:
             try:
-                df: pl.DataFrame = DataFetcher.fetch(symbol, period="3mo", interval="1d")
+                df: pl.DataFrame = DataFeed.history(symbol, period="3mo", interval="1d")
 
                 for row in df.iter_rows(named=True):
                     bar = Bar(
@@ -565,7 +566,7 @@ def main() -> None:
 Examples:
   tradingbot-live SPY
   tradingbot-live SPY QQQ --dry-run
-  tradingbot-live AAPL --broker paper --feed polling
+  tradingbot-live AAPL --broker paper --feed yahoo
 
 Replay mode (simulate live trading with historical data):
   tradingbot-live SPY --replay
@@ -680,7 +681,7 @@ def _run_with_tui(
         def on_mount(self) -> None:
             """Start trading engine when app mounts."""
             super().on_mount()
-            self.run_worker(self._run_engine, exclusive=True)
+            self.run_worker(self._run_engine, exclusive=True)  # type: ignore[arg-type]
 
         async def _run_engine(self) -> None:
             """Run the trading engine."""

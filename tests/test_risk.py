@@ -73,15 +73,31 @@ class TestCalcSize:
 
 
 class TestCalcStop:
-    def test_long_stop_below_last_low(self, risk_manager, swing_points_for_stop, sample_df):
+    def test_long_stop_capped_at_max_distance(self, risk_manager, swing_points_for_stop, sample_df):
         stop = risk_manager.calc_stop("LONG", 105.0, sample_df, 15, swing_points_for_stop)
-        # Last low is 98.0, with 0.2% buffer = 98 * 0.998 = 97.804
+        # Swing stop would be 98.0 * 0.998 = 97.804, but that's >5% from entry
+        # Max stop distance is 5%, so: 105 * 0.95 = 99.75
+        assert stop == pytest.approx(99.75, rel=0.001)
+
+    def test_short_stop_capped_at_max_distance(self, risk_manager, swing_points_for_stop, sample_df):
+        stop = risk_manager.calc_stop("SHORT", 100.0, sample_df, 15, swing_points_for_stop)
+        # Swing stop would be 108.0 * 1.002 = 108.216, but that's >5% from entry
+        # Max stop distance is 5%, so: 100 * 1.05 = 105.0
+        assert stop == pytest.approx(105.0, rel=0.001)
+
+    def test_long_stop_uses_swing_when_within_cap(self, risk_manager, sample_df):
+        # Swing at 98.0 is within 5% of entry 100.0, so swing stop is used
+        swings = [SwingPoint(5, 98.0, False)]
+        stop = risk_manager.calc_stop("LONG", 100.0, sample_df, 15, swings)
+        # 98.0 * 0.998 = 97.804
         assert stop == pytest.approx(97.804, rel=0.001)
 
-    def test_short_stop_above_last_high(self, risk_manager, swing_points_for_stop, sample_df):
-        stop = risk_manager.calc_stop("SHORT", 100.0, sample_df, 15, swing_points_for_stop)
-        # Last high is 108.0, with 0.2% buffer = 108 * 1.002 = 108.216
-        assert stop == pytest.approx(108.216, rel=0.001)
+    def test_short_stop_uses_swing_when_within_cap(self, risk_manager, sample_df):
+        # Swing at 102.0 is within 5% of entry 100.0, so swing stop is used
+        swings = [SwingPoint(5, 102.0, True)]
+        stop = risk_manager.calc_stop("SHORT", 100.0, sample_df, 15, swings)
+        # 102.0 * 1.002 = 102.204
+        assert stop == pytest.approx(102.204, rel=0.001)
 
     def test_long_stop_fallback_no_swings(self, risk_manager, sample_df):
         stop = risk_manager.calc_stop("LONG", 100.0, sample_df, 15, [])

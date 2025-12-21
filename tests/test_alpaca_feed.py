@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tradingbot._components._feeds.plugins.alpaca import AlpacaFeed
-from tradingbot._components.models import Bar
+from tradingbot._components.feeds.plugins.alpaca import AlpacaFeed
+from tradingbot.types import Bar
 
 
 @pytest.fixture
@@ -26,25 +26,28 @@ def mock_env():
 
 class TestAlpacaFeedInit:
     def test_raises_without_credentials(self):
-        """Missing credentials should raise ValueError."""
+        """Missing credentials should raise ValueError on first use."""
         with patch.dict(os.environ, {}, clear=True), pytest.raises(ValueError, match="credentials not found"):
-            AlpacaFeed()
+            feed = AlpacaFeed()
+            feed._ensure_credentials()  # Trigger lazy initialization
 
     def test_raises_without_api_key(self):
-        """Missing API key should raise ValueError."""
+        """Missing API key should raise ValueError on first use."""
         with (
             patch.dict(os.environ, {"ALPACA_SECRET_KEY": "secret"}, clear=True),
             pytest.raises(ValueError, match="credentials not found"),
         ):
-            AlpacaFeed()
+            feed = AlpacaFeed()
+            feed._ensure_credentials()  # Trigger lazy initialization
 
     def test_raises_without_secret_key(self):
-        """Missing secret key should raise ValueError."""
+        """Missing secret key should raise ValueError on first use."""
         with (
             patch.dict(os.environ, {"ALPACA_API_KEY": "key"}, clear=True),
             pytest.raises(ValueError, match="credentials not found"),
         ):
-            AlpacaFeed()
+            feed = AlpacaFeed()
+            feed._ensure_credentials()  # Trigger lazy initialization
 
     def test_initializes_with_credentials(self, mock_env):
         """Successful initialization with credentials."""

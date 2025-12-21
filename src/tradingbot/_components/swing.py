@@ -2,7 +2,7 @@ from typing import Any
 
 import polars as pl
 
-from .models import SwingPoint, Trend
+from tradingbot.types import SwingPoint, Trend
 
 
 def find_swing_points(df: pl.DataFrame, lookback: int = 5) -> list[SwingPoint]:
