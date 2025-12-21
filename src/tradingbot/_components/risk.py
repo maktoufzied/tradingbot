@@ -2,11 +2,14 @@ import polars as pl
 
 from tradingbot.types import Direction, SwingPoint
 
-from .strategies import StopStrategy
-
 
 class RiskManager:
-    def __init__(self, capital: float, risk_pct: float = 0.01, rr_ratio: float = 2.0):
+    def __init__(
+        self,
+        capital: float,
+        risk_pct: float = 0.01,
+        rr_ratio: float = 2.0,
+    ):
         self.initial: float = capital
         self.capital: float = capital
         self.risk_pct: float = risk_pct
@@ -25,6 +28,8 @@ class RiskManager:
         idx: int,
         swings: list[SwingPoint],
     ) -> float:
+        from .strategies import StopStrategy
+
         return StopStrategy.calc_stop(direction, entry, df, idx, swings)
 
     def calc_tp(self, direction: Direction, entry: float, stop: float) -> float:

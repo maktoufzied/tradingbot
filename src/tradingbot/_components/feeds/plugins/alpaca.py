@@ -3,7 +3,7 @@
 import asyncio
 import contextlib
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from datetime import datetime
 from typing import Any, Final
 
@@ -66,12 +66,12 @@ class AlpacaFeed(DataFeedProtocol):
     def is_connected(self) -> bool:
         return self._running
 
-    async def subscribe(self, symbols: list[str], on_bar: Callable[[Bar], Awaitable[None] | None]) -> None:
+    async def subscribe(self, symbols: Collection[str], on_bar: Callable[[Bar], Awaitable[None] | None]) -> None:
         """Subscribe to real-time bars for the given symbols."""
-        self._symbols = symbols
+        self._symbols = list(symbols)
         self._callback = on_bar
 
-    async def unsubscribe(self, symbols: list[str]) -> None:
+    async def unsubscribe(self, symbols: Collection[str]) -> None:
         """Unsubscribe from the given symbols."""
         for sym in symbols:
             if sym in self._symbols:

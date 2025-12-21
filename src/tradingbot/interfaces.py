@@ -1,7 +1,7 @@
 """Protocol interfaces for all pluggable components."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from typing import Protocol, Self
 
 import polars as pl
@@ -56,7 +56,7 @@ class DataFeedProtocol(ABC):
     """Abstract protocol for data feeds. Implement this to add new data sources."""
 
     @abstractmethod
-    async def subscribe(self, symbols: list[str], on_bar: Callable[[Bar], Awaitable[None] | None]) -> None:
+    async def subscribe(self, symbols: Collection[str], on_bar: Callable[[Bar], Awaitable[None] | None]) -> None:
         """Subscribe to real-time bars for the given symbols.
 
         Args:
@@ -66,7 +66,7 @@ class DataFeedProtocol(ABC):
         ...
 
     @abstractmethod
-    async def unsubscribe(self, symbols: list[str]) -> None:
+    async def unsubscribe(self, symbols: Collection[str]) -> None:
         """Unsubscribe from the given symbols."""
         ...
 

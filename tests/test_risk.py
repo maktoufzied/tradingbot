@@ -73,6 +73,8 @@ class TestCalcSize:
 
 
 class TestCalcStop:
+    """Tests for stop calculation using the default swing stop strategy."""
+
     def test_long_stop_capped_at_max_distance(self, risk_manager, swing_points_for_stop, sample_df):
         stop = risk_manager.calc_stop("LONG", 105.0, sample_df, 15, swing_points_for_stop)
         # Swing stop would be 98.0 * 0.998 = 97.804, but that's >5% from entry

@@ -57,6 +57,11 @@ uv run tradingbot-live SPY --replay  # Replay historical data as live
 - Only expose public API in `__init__.py`
 - Use `asyncio.gather` or `TaskGroup` for independent async calls
 
+**Imports:**
+- Always place imports at the top of the file
+- Avoid imports inside functions unless required to break circular imports
+- When in-function imports are necessary, add a comment explaining the circular dependency
+
 **Type hints:**
 - Always annotate function parameters and return types
 - Use `list[X]`, `dict[K, V]`, `X | None` (not `List`, `Dict`, `Optional`)

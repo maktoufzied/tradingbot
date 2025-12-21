@@ -32,17 +32,23 @@ def run_single_backtest(
     swing_lb: int | None = None,
 ) -> tuple[MarketStructureBot, pl.DataFrame]:
     cfg = get_bot_config()
-    capital = capital if capital is not None else cfg.capital
-    risk = risk if risk is not None else cfg.risk_pct
-    rr = rr if rr is not None else cfg.rr_ratio
-    swing_lb = swing_lb if swing_lb is not None else cfg.swing_lb
+    capital_val = capital if capital is not None else cfg.capital
+    risk_pct = risk if risk is not None else cfg.risk_pct
+    rr_ratio = rr if rr is not None else cfg.rr_ratio
+    swing_lb_val = swing_lb if swing_lb is not None else cfg.swing_lb
 
     console.print()
     console.rule(f"[bold yellow]BACKTEST: {symbol}[/bold yellow]", style="cyan")
 
     df: pl.DataFrame = DataFeed.history(symbol, period=period, interval=interval)
 
-    bot: MarketStructureBot = MarketStructureBot(capital=capital, risk_pct=risk, rr_ratio=rr, swing_lb=swing_lb)
+    bot = MarketStructureBot(
+        capital=capital_val,
+        risk_pct=risk_pct,
+        rr_ratio=rr_ratio,
+        swing_lb=swing_lb_val,
+    )
+
     results: pl.DataFrame = bot.backtest(df, symbol)
 
     stats: Stats | dict[str, str] = bot.get_stats()

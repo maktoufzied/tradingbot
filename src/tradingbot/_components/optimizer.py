@@ -693,7 +693,6 @@ Examples:
             rr_ratio=[float(x) for x in args.rr.split(",")] if args.rr else default.rr_ratio,
         )
 
-    # Run optimization
     opt = optimize(
         symbol=args.symbol,
         period=args.period,
@@ -703,7 +702,6 @@ Examples:
         parallel=not args.sequential,
     )
 
-    # Optional outputs
     if args.heatmap:
         opt.plot_heatmap()
 

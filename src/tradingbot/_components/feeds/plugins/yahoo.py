@@ -1,5 +1,7 @@
 """Yahoo Finance historical data feed."""
 
+from collections.abc import Collection
+
 import pandas as pd
 import polars as pl
 import yfinance as yf
@@ -23,10 +25,10 @@ class YahooFeed(DataFeedProtocol):
     def is_connected(self) -> bool:
         return False
 
-    async def subscribe(self, symbols: list[str], on_bar: object) -> None:
+    async def subscribe(self, symbols: Collection[str], on_bar: object) -> None:
         raise NotImplementedError("YahooFeed does not support real-time streaming. Use AlpacaFeed or ReplayFeed.")
 
-    async def unsubscribe(self, symbols: list[str]) -> None:
+    async def unsubscribe(self, symbols: Collection[str]) -> None:
         pass
 
     async def start(self) -> None:

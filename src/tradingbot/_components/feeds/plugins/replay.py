@@ -2,7 +2,7 @@
 
 import asyncio
 import contextlib
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from datetime import date, datetime
 from typing import Final
 
@@ -61,14 +61,14 @@ class ReplayFeed(DataFeedProtocol):
     def is_connected(self) -> bool:
         return self._running
 
-    async def subscribe(self, symbols: list[str], on_bar: Callable[[Bar], Awaitable[None] | None]) -> None:
+    async def subscribe(self, symbols: Collection[str], on_bar: Callable[[Bar], Awaitable[None] | None]) -> None:
         """Subscribe to symbols and load historical data."""
-        self._symbols = symbols
+        self._symbols = list(symbols)
         self._callback = on_bar
 
         # Pre-fetch all historical data using YahooFeed
         yahoo = YahooFeed()
-        for symbol in symbols:
+        for symbol in self._symbols:
             df = yahoo.history(symbol, period=self._period, interval=self._interval)
 
             # Filter by date range if specified
@@ -79,7 +79,7 @@ class ReplayFeed(DataFeedProtocol):
 
             self._data[symbol] = df
 
-    async def unsubscribe(self, symbols: list[str]) -> None:
+    async def unsubscribe(self, symbols: Collection[str]) -> None:
         """Unsubscribe from symbols."""
         for sym in symbols:
             if sym in self._symbols:

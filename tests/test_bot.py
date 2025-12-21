@@ -155,15 +155,11 @@ class TestTrailingStop:
         )
 
         bot.backtest(df, symbol="TEST")
-        # Verify trades happened - we're testing the trailing stop logic works
-        # The actual outcome depends on market data
 
     def test_trailing_stop_position_has_initial_stop(self, trending_up_data):
         """Test that position tracks initial stop loss."""
         bot = MarketStructureBot(trailing_stop=True, swing_lb=3)
         bot.backtest(trending_up_data, symbol="TEST")
 
-        # If any trades were made, they should have had initial_stop_loss set
         for trade in bot.trades:
-            # Trades are created from positions that had initial_stop_loss
             assert trade is not None
