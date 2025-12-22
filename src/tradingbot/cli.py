@@ -2,7 +2,6 @@
 
 import asyncio
 import contextlib
-from datetime import date, datetime
 
 from rich.console import Console
 
@@ -14,7 +13,6 @@ from tradingbot import (
     LiveRiskManager,
     MessageEvent,
     MessageLevel,
-    ReplayFeed,
     RiskManager,
     SignalEvent,
     SignalGenerator,
@@ -164,11 +162,6 @@ async def run_live(
         await engine.stop()
 
 
-def _parse_date(date_str: str) -> date:
-    """Parse date string in YYYY-MM-DD format."""
-    return datetime.strptime(date_str, "%Y-%m-%d").date()
-
-
 def _run_with_tui(
     symbols: list[str],
     broker: BrokerProtocol,
@@ -265,23 +258,12 @@ def main() -> None:
 Examples:
   tradingbot-live SPY
   tradingbot-live SPY QQQ --dry-run
-
-Replay mode (simulate live trading with historical data):
-  tradingbot-live SPY --replay
-  tradingbot-live SPY --replay --speed 10
-  tradingbot-live SPY --replay --speed 0
-  tradingbot-live SPY --replay --from 2024-01-01 --to 2024-06-30
+  tradingbot-live SPY --tui
         """,
     )
 
     parser.add_argument("symbols", nargs="+", help="Symbols to trade (e.g., SPY AAPL)")
     parser.add_argument("--dry-run", action="store_true", help="Log signals without executing trades")
-    parser.add_argument("--replay", action="store_true", help="Replay historical data as if it were live")
-    parser.add_argument("--speed", type=float, default=1.0, help="Replay speed: bars per second (0 = instant)")
-    parser.add_argument("--from", dest="from_date", type=_parse_date, default=None, help="Replay start date")
-    parser.add_argument("--to", dest="to_date", type=_parse_date, default=None, help="Replay end date")
-    parser.add_argument("--period", default="1d", help="Historical period for replay (default: 1d)")
-    parser.add_argument("--interval", default="15m", help="Bar interval for replay (default: 15m)")
     parser.add_argument("--tui", action="store_true", help="Run with terminal UI")
     args = parser.parse_args()
 
@@ -297,17 +279,7 @@ Replay mode (simulate live trading with historical data):
     risk_manager = RiskManager(cfg.capital, cfg.risk_pct, cfg.rr_ratio)
     live_risk_manager = LiveRiskManager(engine_cfg.risk, cfg.capital)
 
-    feed: DataFeedProtocol
-    if args.replay:
-        feed = ReplayFeed(
-            speed=args.speed,
-            start_date=args.from_date,
-            end_date=args.to_date,
-            period=args.period,
-            interval=args.interval,
-        )
-    else:
-        feed = get_feed_registry().get(engine_cfg.feed)
+    feed = get_feed_registry().get(engine_cfg.feed)
 
     if args.tui:
         _run_with_tui(

@@ -85,6 +85,9 @@ uv run tradingbot <SYMBOLS> [OPTIONS]
 | `--risk` | Risk per trade (e.g., 0.01 for 1%) | config value |
 | `--rr` | Reward/risk ratio | config value |
 | `--swing-lb` | Swing lookback period | config value |
+| `--refresh` | Force re-fetch data from API | - |
+| `--verbose`, `-v` | Print each bar as it processes | - |
+| `--speed` | Simulate real-time (bars/sec, 0=instant) | `0` |
 
 **Examples:**
 
@@ -93,6 +96,9 @@ task backtest -- SPY
 task backtest -- AAPL TSLA GOOGL
 task backtest -- SPY --period 5y --interval 1d
 task backtest -- AAPL --capital 50000 --risk 0.02
+task backtest -- SPY --verbose                    # See each bar
+task backtest -- SPY --speed 10                   # Simulate 10 bars/sec
+task backtest -- SPY --verbose --speed 5          # Both
 ```
 
 ### `tradingbot-optimize`
@@ -140,13 +146,8 @@ task live -- SPY --dry-run
 # Paper trading with multiple symbols
 task live -- SPY QQQ AAPL
 
-# Replay mode (simulate live trading with historical data)
-task replay -- SPY
-task replay -- SPY --speed 10
-task replay -- SPY --speed 0 --from 2024-01-01 --to 2024-06-30
-
 # TUI mode (interactive terminal dashboard)
-task replay -- SPY --tui --dry-run
+task live -- SPY --tui
 ```
 
 **Options:**
@@ -154,12 +155,6 @@ task replay -- SPY --tui --dry-run
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--dry-run` | Log signals without executing trades | - |
-| `--replay` | Replay historical data as live | - |
-| `--speed` | Replay speed (bars/sec, 0=instant) | `1.0` |
-| `--from` | Replay start date (YYYY-MM-DD) | - |
-| `--to` | Replay end date (YYYY-MM-DD) | - |
-| `--period` | Historical period for replay | `1d` |
-| `--interval` | Bar interval for replay | `15m` |
 | `--tui` | Interactive terminal UI dashboard | - |
 
 **Risk Controls (configured in `tradingbot.toml`):**
@@ -171,6 +166,43 @@ task replay -- SPY --tui --dry-run
 | Max positions | Maximum concurrent positions | 5 |
 | Max position size | Maximum % of equity per position | 10% |
 | Trading hours | Only trade 9:30 AM - 4:00 PM ET | Yes |
+
+### `tradingbot-cache`
+
+Manage the local market data cache.
+
+```bash
+task cache -- <COMMAND> [OPTIONS]
+
+# Or using uv directly
+uv run tradingbot-cache <COMMAND> [OPTIONS]
+```
+
+**Commands:**
+
+| Command | Description |
+|---------|-------------|
+| `stats` | Show cache statistics (symbols, bar counts, date ranges) |
+| `fetch <SYMBOLS>` | Fetch and cache data for symbols |
+| `clear <SYMBOLS>` | Clear cached data for symbols |
+
+**Examples:**
+
+```bash
+# View cache statistics
+task cache -- stats
+
+# Pre-fetch data for symbols
+task cache -- fetch SPY QQQ AAPL
+task cache -- fetch SPY --period 5y
+
+# Force re-fetch (clear and fetch)
+task cache -- fetch SPY --refresh
+
+# Clear cached data
+task cache -- clear SPY
+task cache -- clear SPY --interval 1d
+```
 
 ## Configuration
 
@@ -210,6 +242,20 @@ trading_hours_only = true        # Only trade 9:30 AM - 4:00 PM ET
 api_key = "your-api-key"
 secret_key = "your-secret-key"
 paper = true                     # Use paper trading endpoint
+
+[tradingbot.cache]
+# Cache configuration
+enabled = true
+path = "~/.cache/tradingbot/tradingbot.duckdb"
+source = "yahoo"                 # Default data source for caching
+
+[tradingbot.cache.retention]
+# Retention policy (days, -1 = forever)
+1m = 7
+5m = 30
+15m = 90
+1h = 365
+1d = -1
 ```
 
 ### Stop-Loss Strategies

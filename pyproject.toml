@@ -6,17 +6,20 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "alpaca-py>=0.30.0",
+    "duckdb>=1.1.0",
     "plotext>=5.3.2",
     "polars>=1.35.2",
+    "pyarrow>=19.0.0",
     "rich>=14.2.0",
     "textual>=6.7.0",
     "yfinance>=0.2.66",
 ]
 
 [project.scripts]
-tradingbot = "tradingbot._components.runner:main"
-tradingbot-optimize = "tradingbot._components.optimizer:main"
+tradingbot = "tradingbot.backtest_cli:main"
+tradingbot-optimize = "tradingbot.optimize_cli:main"
 tradingbot-live = "tradingbot.cli:main"
+tradingbot-cache = "tradingbot.cache_cli:main"
 
 [build-system]
 requires = ["hatchling"]

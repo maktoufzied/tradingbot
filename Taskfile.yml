@@ -40,9 +40,9 @@ tasks:
     desc: Run live trading
     cmd: uv run tradingbot-live {{.CLI_ARGS}}
 
-  replay:
-    desc: Replay historical data as live trading
-    cmd: uv run tradingbot-live --replay {{.CLI_ARGS}}
+  cache:
+    desc: Cache management (stats, fetch, clear)
+    cmd: uv run tradingbot-cache {{.CLI_ARGS}}
 
   pre-commit:
     desc: Run pre-commit hooks

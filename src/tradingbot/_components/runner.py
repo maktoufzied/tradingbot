@@ -1,3 +1,5 @@
+import time
+from datetime import datetime
 from typing import TypedDict, Unpack
 
 import polars as pl
@@ -5,8 +7,9 @@ from rich.console import Console
 from rich.table import Table
 
 from tradingbot.config import get_bot_config
+from tradingbot.types import Position, Signal
 
-from .bot import MarketStructureBot, Stats
+from .bot import BacktestCallbacks, MarketStructureBot, Stats
 from .feeds import DataFeed
 
 
@@ -17,9 +20,48 @@ class BacktestParams(TypedDict, total=False):
     risk: float
     rr: float
     swing_lb: int
+    refresh: bool
+    verbose: bool
+    speed: float
 
 
 console = Console()
+
+
+def make_verbose_callbacks() -> BacktestCallbacks:
+    """Create callbacks for verbose backtest output."""
+    callbacks = BacktestCallbacks()
+
+    @callbacks.on_bar
+    def on_bar(
+        bar_time: datetime, symbol: str, price: float, signal: Signal, trend: str, position: Position | None
+    ) -> None:
+        pos_str = f"[{position.direction}]" if position else ""
+        signal_color = {"BUY": "green", "SELL": "red", "HOLD": "dim"}.get(signal.value, "white")
+        console.print(
+            f"[dim]{bar_time.strftime('%Y-%m-%d %H:%M')}[/dim] "
+            f"{symbol} ${price:.2f} "
+            f"[{signal_color}]{signal.value}[/{signal_color}] "
+            f"[dim]{trend}[/dim] {pos_str}"
+        )
+
+    @callbacks.on_signal
+    def on_signal(direction: str, symbol: str, entry: float, stop: float, tp: float, size: float) -> None:
+        console.print()
+        emoji = "🔼" if direction == "LONG" else "🔽"
+        console.print(f"[bold cyan]{emoji} {direction} SIGNAL: {symbol}[/bold cyan]")
+        console.print(f"  Entry: ${entry:.2f}  Stop: ${stop:.2f}  TP: ${tp:.2f}  Size: {size:.2f}")
+
+    @callbacks.on_trade_closed
+    def on_trade_closed(direction: str, symbol: str, entry: float, exit_price: float, pnl: float, reason: str) -> None:
+        console.print()
+        emoji = "🛑" if reason == "STOP_LOSS" else "✅"
+        console.print(f"[bold]{emoji} EXIT {symbol}: {reason}[/bold]")
+        console.print(f"  Entry: ${entry:.2f}  Exit: ${exit_price:.2f}")
+        color = "green" if pnl > 0 else "red"
+        console.print(f"  P&L: [{color}]${pnl:+,.2f}[/{color}]")
+
+    return callbacks
 
 
 def run_single_backtest(
@@ -30,6 +72,9 @@ def run_single_backtest(
     risk: float | None = None,
     rr: float | None = None,
     swing_lb: int | None = None,
+    refresh: bool = False,
+    verbose: bool = False,
+    speed: float = 0,
 ) -> tuple[MarketStructureBot, pl.DataFrame]:
     cfg = get_bot_config()
     capital_val = capital if capital is not None else cfg.capital
@@ -40,7 +85,13 @@ def run_single_backtest(
     console.print()
     console.rule(f"[bold yellow]BACKTEST: {symbol}[/bold yellow]", style="cyan")
 
-    df: pl.DataFrame = DataFeed.history(symbol, period=period, interval=interval)
+    df: pl.DataFrame = DataFeed.history(symbol, period=period, interval=interval, refresh=refresh)
+
+    if verbose or speed > 0:
+        console.print(f"[dim]Bars: {len(df)} | Period: {period} | Interval: {interval}[/dim]")
+        if speed > 0:
+            console.print(f"[dim]Speed: {speed} bars/sec[/dim]")
+        console.print()
 
     bot = MarketStructureBot(
         capital=capital_val,
@@ -49,7 +100,63 @@ def run_single_backtest(
         swing_lb=swing_lb_val,
     )
 
-    results: pl.DataFrame = bot.backtest(df, symbol)
+    callbacks = make_verbose_callbacks() if verbose else None
+
+    # Use time.sleep for speed control instead of asyncio
+    results: list[dict[str, object]] = []
+    bot.symbol = symbol
+    bot.callbacks = callbacks
+    bot.position = None
+    bot.trades = []
+    bot.equity = [bot.risk_mgr.capital]
+
+    for i in range(len(df)):
+        bar = df.row(i, named=True)
+        price = float(bar["close"])
+        bar_time: datetime = bar["datetime"]
+
+        if bot.position:
+            if bot.trailing_stop:
+                bot._trail_stop(bar)
+            exit_reason = bot._check_exit(bar)
+            if exit_reason:
+                bot._close(price, i, bar_time, exit_reason)
+
+        signal, details = bot.sig_gen.generate(df, i, bot.position)
+
+        if not bot.position and signal in [Signal.BUY, Signal.SELL]:
+            from .swing import find_swing_points
+
+            swings = find_swing_points(df.head(i + 1), bot.swing_lb)
+            bot._open(
+                "LONG" if signal == Signal.BUY else "SHORT",
+                price,
+                i,
+                bar_time,
+                df,
+                swings,
+            )
+
+        bot.equity.append(bot.risk_mgr.capital)
+        results.append(
+            {
+                "datetime": bar_time,
+                "close": price,
+                "signal": signal.value,
+                "trend": details.get("trend", "N/A"),
+                "position": bot.position.direction if bot.position else "",
+                "equity": bot.risk_mgr.capital,
+            }
+        )
+
+        if callbacks and callbacks._on_bar:
+            trend = str(details.get("trend", "N/A"))
+            callbacks._on_bar(bar_time, symbol, price, signal, trend, bot.position)
+
+        if speed > 0:
+            time.sleep(1.0 / speed)
+
+    results_df = pl.DataFrame(results)
 
     stats: Stats | dict[str, str] = bot.get_stats()
 
@@ -101,7 +208,7 @@ def run_single_backtest(
 
         console.print(trades_table)
 
-    return bot, results
+    return bot, results_df
 
 
 def run_multi_backtest(symbols: list[str], **kwargs: Unpack[BacktestParams]) -> list[Stats | dict[str, str]]:
@@ -131,51 +238,3 @@ def run_multi_backtest(symbols: list[str], **kwargs: Unpack[BacktestParams]) -> 
         console.print(comparison_table)
 
     return all_stats
-
-
-def main() -> None:
-    """CLI entry point for backtest."""
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Run trading bot backtest",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  tradingbot SPY
-  tradingbot AAPL TSLA GOOGL
-  tradingbot SPY --period 5y --interval 1d
-  tradingbot AAPL --capital 50000 --risk 0.02
-        """,
-    )
-
-    parser.add_argument("symbols", nargs="+", help="Stock symbol(s) to backtest (e.g., SPY, AAPL)")
-    parser.add_argument("--period", default="2y", help="Data period (default: 2y)")
-    parser.add_argument("--interval", default="1d", help="Data interval (default: 1d)")
-    parser.add_argument("--capital", type=float, help="Starting capital (uses config default)")
-    parser.add_argument("--risk", type=float, help="Risk per trade as decimal (e.g., 0.01 for 1%%)")
-    parser.add_argument("--rr", type=float, help="Reward/risk ratio (e.g., 2.0)")
-    parser.add_argument("--swing-lb", type=int, help="Swing lookback period")
-
-    args = parser.parse_args()
-
-    if len(args.symbols) == 1:
-        run_single_backtest(
-            args.symbols[0],
-            period=args.period,
-            interval=args.interval,
-            capital=args.capital,
-            risk=args.risk,
-            rr=args.rr,
-            swing_lb=args.swing_lb,
-        )
-    else:
-        run_multi_backtest(
-            args.symbols,
-            period=args.period,
-            interval=args.interval,
-            capital=args.capital,
-            risk=args.risk,
-            rr=args.rr,
-            swing_lb=args.swing_lb,
-        )

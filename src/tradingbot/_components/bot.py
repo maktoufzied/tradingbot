@@ -1,3 +1,5 @@
+import asyncio
+from collections.abc import Callable
 from datetime import datetime
 from statistics import mean
 from typing import Any, TypedDict
@@ -28,6 +30,33 @@ class Stats(TypedDict):
     avg_holding_period: str
 
 
+class BacktestCallbacks:
+    """Callbacks for real-time backtest output."""
+
+    def __init__(self) -> None:
+        self._on_bar: Callable[[datetime, str, float, Signal, str, Position | None], None] | None = None
+        self._on_signal: Callable[[str, str, float, float, float, float], None] | None = None
+        self._on_trade_closed: Callable[[str, str, float, float, float, str], None] | None = None
+
+    def on_bar(
+        self, func: Callable[[datetime, str, float, Signal, str, Position | None], None]
+    ) -> Callable[[datetime, str, float, Signal, str, Position | None], None]:
+        self._on_bar = func
+        return func
+
+    def on_signal(
+        self, func: Callable[[str, str, float, float, float, float], None]
+    ) -> Callable[[str, str, float, float, float, float], None]:
+        self._on_signal = func
+        return func
+
+    def on_trade_closed(
+        self, func: Callable[[str, str, float, float, float, str], None]
+    ) -> Callable[[str, str, float, float, float, str], None]:
+        self._on_trade_closed = func
+        return func
+
+
 class MarketStructureBot:
     def __init__(
         self,
@@ -45,9 +74,19 @@ class MarketStructureBot:
         self.trades: list[Trade] = []
         self.equity: list[float] = []
         self.symbol = ""
+        self.callbacks: BacktestCallbacks | None = None
+        self.speed: float = 0  # bars per second, 0 = instant
 
-    def backtest(self, df: pl.DataFrame, symbol: str = "UNKNOWN") -> pl.DataFrame:
+    def backtest(
+        self,
+        df: pl.DataFrame,
+        symbol: str = "UNKNOWN",
+        callbacks: BacktestCallbacks | None = None,
+        speed: float = 0,
+    ) -> pl.DataFrame:
         self.symbol = symbol
+        self.callbacks = callbacks
+        self.speed = speed
         self.position = None
         self.trades = []
         self.equity = [self.risk_mgr.capital]
@@ -92,6 +131,15 @@ class MarketStructureBot:
                     "equity": self.risk_mgr.capital,
                 }
             )
+
+            # Callback for verbose output
+            if self.callbacks and self.callbacks._on_bar:
+                trend = str(details.get("trend", "N/A"))
+                self.callbacks._on_bar(bar_time, symbol, price, signal, trend, self.position)
+
+            # Delay for simulated real-time
+            if self.speed > 0:
+                asyncio.get_event_loop().run_until_complete(asyncio.sleep(1.0 / self.speed))
 
         return pl.DataFrame(results)
 
@@ -141,6 +189,9 @@ class MarketStructureBot:
         size: float = self.risk_mgr.calc_size(price, stop)
         self.position = Position(price, idx, time, direction, size, stop, tp, stop)
 
+        if self.callbacks and self.callbacks._on_signal:
+            self.callbacks._on_signal(direction, self.symbol, price, stop, tp, size)
+
     def _close(self, price: float, idx: int, time: datetime, reason: ExitReason) -> None:
         assert self.position is not None
         p: Position = self.position
@@ -163,6 +214,10 @@ class MarketStructureBot:
             )
         )
         self.risk_mgr.capital += pnl
+
+        if self.callbacks and self.callbacks._on_trade_closed:
+            self.callbacks._on_trade_closed(p.direction, self.symbol, p.entry_price, price, pnl, reason)
+
         self.position = None
 
     def get_stats(self) -> Stats | dict[str, str]:

@@ -16,7 +16,6 @@ from ._components.engine import (
 )
 from ._components.feeds import DataFeed
 from ._components.feeds import get_registry as get_feed_registry
-from ._components.feeds.plugins.replay import ReplayFeed
 from ._components.live_risk import LiveRiskManager
 from ._components.optimizer import Optimizer, ParameterRanges, optimize
 from ._components.risk import RiskManager
@@ -38,7 +37,6 @@ __all__ = [
     "Optimizer",
     "ParameterRanges",
     "Position",
-    "ReplayFeed",
     "RiskManager",
     "Signal",
     "SignalEvent",

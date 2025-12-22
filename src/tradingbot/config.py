@@ -48,6 +48,42 @@ class AlpacaConfig:
 
 
 @dataclass(frozen=True)
+class CacheRetentionConfig:
+    """Cache retention policy (days per interval, -1 = forever)."""
+
+    m1: int = 7
+    m5: int = 30
+    m15: int = 90
+    h1: int = 365
+    d1: int = -1
+
+    def as_dict(self) -> dict[str, int]:
+        """Return as interval -> days mapping."""
+        return {
+            "1m": self.m1,
+            "5m": self.m5,
+            "15m": self.m15,
+            "1h": self.h1,
+            "1d": self.d1,
+        }
+
+
+@dataclass(frozen=True)
+class CacheConfig:
+    """Cache configuration."""
+
+    enabled: bool = True
+    path: str = "~/.cache/tradingbot/tradingbot.duckdb"
+    source: str = "yahoo"
+    retention: CacheRetentionConfig = field(default_factory=CacheRetentionConfig)
+
+    @property
+    def db_path(self) -> Path:
+        """Resolve path with ~ expansion."""
+        return Path(self.path).expanduser()
+
+
+@dataclass(frozen=True)
 class EngineConfig:
     """Engine configuration."""
 
@@ -66,6 +102,7 @@ class Config:
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     bot: BotConfig = field(default_factory=BotConfig)
     engine: EngineConfig = field(default_factory=EngineConfig)
+    cache: CacheConfig = field(default_factory=CacheConfig)
 
 
 def _parse_config(data: dict[str, Any]) -> Config:
@@ -111,11 +148,31 @@ def _parse_config(data: dict[str, Any]) -> Config:
         alpaca=alpaca,
     )
 
+    # Parse cache config
+    cache_data = root.get("cache", {})
+    retention_data = cache_data.get("retention", {})
+
+    cache_retention = CacheRetentionConfig(
+        m1=retention_data.get("1m", 7),
+        m5=retention_data.get("5m", 30),
+        m15=retention_data.get("15m", 90),
+        h1=retention_data.get("1h", 365),
+        d1=retention_data.get("1d", -1),
+    )
+
+    cache = CacheConfig(
+        enabled=cache_data.get("enabled", True),
+        path=cache_data.get("path", "~/.cache/tradingbot/tradingbot.duckdb"),
+        source=cache_data.get("source", "yahoo"),
+        retention=cache_retention,
+    )
+
     return Config(
         fetcher=root.get("fetcher", "yahoo"),
         strategy=strategy,
         bot=bot,
         engine=engine,
+        cache=cache,
     )
 
 
@@ -145,6 +202,11 @@ def get_bot_config() -> BotConfig:
 def get_engine_config() -> EngineConfig:
     """Get engine configuration."""
     return get_config().engine
+
+
+def get_cache_config() -> CacheConfig:
+    """Get cache configuration."""
+    return get_config().cache
 
 
 def get_config_value(*keys: str, default: str) -> str:
