@@ -1,0 +1,382 @@
+"""Core trading engine."""
+
+from collections import deque
+from collections.abc import Collection
+from datetime import datetime
+from typing import Final
+
+import polars as pl
+
+from tradingbot.interfaces import BrokerProtocol, DataFeedProtocol
+from tradingbot.types import Bar, Direction, Order, Position, Signal, SwingPoint
+
+from .. import sounds
+from ..brokers.plugins.paper import PaperBroker
+from ..feeds import DataFeed
+from ..live_risk import LiveRiskManager
+from ..risk import RiskManager
+from ..signals import SignalGenerator
+from ..swing import find_swing_points
+from .callbacks import EngineCallbacks
+from .events import (
+    BarEvent,
+    EngineStartedEvent,
+    EngineStoppedEvent,
+    MessageEvent,
+    MessageLevel,
+    SignalEvent,
+    StatsUpdatedEvent,
+    TradeClosedEvent,
+)
+
+MIN_BARS_REQUIRED: Final[int] = 50
+MAX_BARS_HISTORY: Final[int] = 500
+
+
+class TradingEngine:
+    """Event-driven engine for real-time trading."""
+
+    def __init__(
+        self,
+        symbols: Collection[str],
+        broker: BrokerProtocol,
+        feed: DataFeedProtocol,
+        signal_generator: SignalGenerator,
+        risk_manager: RiskManager,
+        live_risk_manager: LiveRiskManager,
+        dry_run: bool = False,
+        callbacks: EngineCallbacks | None = None,
+    ) -> None:
+        self._symbols = list(set(symbols))
+        self._dry_run = dry_run
+        self._broker = broker
+        self._feed = feed
+        self._sig_gen = signal_generator
+        self._risk_mgr = risk_manager
+        self._live_risk = live_risk_manager
+        self._cb = callbacks or EngineCallbacks()
+
+        # State tracking
+        self._positions: dict[str, Position] = {}
+        self._pending_orders: set[str] = set()
+        self._bars: dict[str, deque[Bar]] = {sym: deque(maxlen=MAX_BARS_HISTORY) for sym in self._symbols}
+        self._running = False
+
+    @property
+    def symbols(self) -> list[str]:
+        return self._symbols
+
+    @property
+    def dry_run(self) -> bool:
+        return self._dry_run
+
+    async def _emit_message(self, message: str, level: MessageLevel = MessageLevel.INFO) -> None:
+        await self._cb.emit_message(MessageEvent(message, level))
+
+    async def _emit_stats(self) -> None:
+        await self._cb.emit_stats_updated(
+            StatsUpdatedEvent(
+                pnl=self._live_risk.session_pnl,
+                trades=self._live_risk.session_trades,
+                winners=self._live_risk.session_winners,
+                losers=self._live_risk.session_losers,
+            )
+        )
+
+    async def start(self) -> None:
+        """Start live trading."""
+        await self._cb.emit_started(
+            EngineStartedEvent(
+                symbols=self._symbols,
+                broker_name=self._broker.name,
+                feed_name=self._feed.name,
+                dry_run=self._dry_run,
+            )
+        )
+
+        # Reset daily tracking
+        account = self._broker.get_account()
+        self._live_risk.reset_daily(account.equity)
+
+        # Load historical data to bootstrap
+        await self._load_history()
+
+        # Sync existing positions from broker
+        await self._sync_broker_positions()
+
+        # Subscribe to feed
+        await self._feed.subscribe(self._symbols, self._on_bar)
+
+        # Start feed
+        self._running = True
+        await self._emit_message("Live feed started", MessageLevel.SUCCESS)
+        await self._feed.start()
+
+    async def stop(self) -> None:
+        """Stop live trading gracefully."""
+        self._running = False
+        await self._feed.stop()
+        await self._cb.emit_stopped(EngineStoppedEvent(risk_manager=self._live_risk))
+
+    async def _load_history(self) -> None:
+        """Load historical data for each symbol to bootstrap indicators."""
+        await self._emit_message("Loading historical data...", MessageLevel.DEBUG)
+
+        for symbol in self._symbols:
+            try:
+                df: pl.DataFrame = DataFeed.history(symbol, period="3mo", interval="1d")
+
+                for row in df.iter_rows(named=True):
+                    bar = Bar(
+                        symbol=symbol,
+                        datetime=row["datetime"],
+                        open=float(row["open"]),
+                        high=float(row["high"]),
+                        low=float(row["low"]),
+                        close=float(row["close"]),
+                        volume=int(row["volume"]),
+                    )
+                    self._bars[symbol].append(bar)
+
+                await self._emit_message(f"✓ {symbol}: {len(self._bars[symbol])} bars loaded", MessageLevel.SUCCESS)
+            except Exception as e:
+                await self._emit_message(f"✗ {symbol}: {e}", MessageLevel.ERROR)
+
+    async def _sync_broker_positions(self) -> None:
+        """Sync existing positions from broker on startup."""
+        broker_positions = self._broker.get_positions()
+
+        for bp in broker_positions:
+            if bp.symbol not in self._symbols:
+                continue
+
+            # Calculate stop/TP from current market structure
+            if bp.symbol in self._bars and len(self._bars[bp.symbol]) >= MIN_BARS_REQUIRED:
+                df = self._bars_to_df(bp.symbol)
+                idx = len(df) - 1
+                swings = find_swing_points(df, self._sig_gen.swing_lookback)
+                stop = self._risk_mgr.calc_stop(bp.direction, bp.avg_entry_price, df, idx, swings)
+                tp = self._risk_mgr.calc_tp(bp.direction, bp.avg_entry_price, stop)
+            else:
+                stop = bp.avg_entry_price * (0.98 if bp.direction == "LONG" else 1.02)
+                tp = bp.avg_entry_price * (1.04 if bp.direction == "LONG" else 0.96)
+
+            self._positions[bp.symbol] = Position(
+                entry_price=bp.avg_entry_price,
+                entry_index=0,
+                entry_time=datetime.now(),
+                direction=bp.direction,
+                size=bp.size,
+                stop_loss=stop,
+                take_profit=tp,
+                initial_stop_loss=stop,
+            )
+
+            await self._emit_message(
+                f"⚠ Synced: {bp.symbol} {bp.direction} {bp.size:.1f} @ ${bp.avg_entry_price:.2f}",
+                MessageLevel.WARNING,
+            )
+
+        if broker_positions:
+            self._live_risk.update_position_count(len(self._positions))
+
+    async def _on_bar(self, bar: Bar) -> None:
+        """Process new bar - main trading logic."""
+        if not self._running:
+            return
+
+        self._bars[bar.symbol].append(bar)
+
+        if isinstance(self._broker, PaperBroker):
+            self._broker.set_price(bar.symbol, bar.close)
+
+        account = self._broker.get_account()
+        self._live_risk.reset_daily(account.equity)
+
+        if self._live_risk.check_circuit_breaker():
+            return
+
+        if len(self._bars[bar.symbol]) < MIN_BARS_REQUIRED:
+            return
+
+        df = self._bars_to_df(bar.symbol)
+
+        position = self._positions.get(bar.symbol)
+        if position:
+            await self._check_exit(bar, position)
+
+        signal, details = self._sig_gen.generate(df, len(df) - 1, position)
+
+        if position is None and bar.symbol not in self._pending_orders and signal in (Signal.BUY, Signal.SELL):
+            await self._open_position(bar, signal, df)
+
+        # Emit bar event
+        trend = str(details.get("trend", "N/A"))
+        current_pos = self._positions.get(bar.symbol)
+        await self._cb.emit_bar(BarEvent(bar=bar, signal=signal, trend=trend, position=current_pos))
+        await self._emit_stats()
+
+    def _bars_to_df(self, symbol: str) -> pl.DataFrame:
+        """Convert bar deque to DataFrame."""
+        bars = list(self._bars[symbol])
+        return pl.DataFrame(
+            {
+                "datetime": [b.datetime for b in bars],
+                "open": [b.open for b in bars],
+                "high": [b.high for b in bars],
+                "low": [b.low for b in bars],
+                "close": [b.close for b in bars],
+                "volume": [b.volume for b in bars],
+            }
+        )
+
+    async def _open_position(self, bar: Bar, signal: Signal, df: pl.DataFrame) -> None:
+        """Open a new position."""
+        direction: Direction = "LONG" if signal == Signal.BUY else "SHORT"
+        price = bar.close
+        idx = len(df) - 1
+
+        swings: list[SwingPoint] = find_swing_points(df, self._sig_gen.swing_lookback)
+        stop = self._risk_mgr.calc_stop(direction, price, df, idx, swings)
+        tp = self._risk_mgr.calc_tp(direction, price, stop)
+        size = self._risk_mgr.calc_size(price, stop)
+
+        account = self._broker.get_account()
+        self._live_risk.update_position_count(len(self._positions))
+        can_trade, reason = self._live_risk.can_open_position()
+        size, was_capped = self._live_risk.cap_position_size(size, price, account.equity)
+
+        blocked = not can_trade and not self._dry_run
+        await self._cb.emit_signal(
+            SignalEvent(
+                direction=direction,
+                symbol=bar.symbol,
+                entry=price,
+                stop=stop,
+                tp=tp,
+                size=size,
+                blocked=blocked,
+                reason=reason,
+                was_capped=was_capped,
+            )
+        )
+
+        if not can_trade and not self._dry_run:
+            return
+
+        if self._dry_run:
+            self._positions[bar.symbol] = Position(
+                entry_price=price,
+                entry_index=idx,
+                entry_time=bar.datetime,
+                direction=direction,
+                size=size,
+                stop_loss=stop,
+                take_profit=tp,
+                initial_stop_loss=stop,
+            )
+            self._live_risk.update_position_count(len(self._positions))
+            return
+
+        order = Order(symbol=bar.symbol, direction=direction, size=size, order_type="MARKET")
+        self._pending_orders.add(bar.symbol)
+
+        try:
+            result = self._broker.submit_order(order)
+
+            if result.status == "FILLED":
+                self._positions[bar.symbol] = Position(
+                    entry_price=result.filled_price or price,
+                    entry_index=idx,
+                    entry_time=bar.datetime,
+                    direction=direction,
+                    size=result.filled_size,
+                    stop_loss=stop,
+                    take_profit=tp,
+                    initial_stop_loss=stop,
+                )
+                self._live_risk.update_position_count(len(self._positions))
+                await self._emit_message(f"✓ Order filled at ${result.filled_price:.2f}", MessageLevel.SUCCESS)
+                sounds.play(sounds.BUY if direction == "LONG" else sounds.SELL)
+            else:
+                await self._emit_message(f"✗ Order {result.status}: {result.message}", MessageLevel.ERROR)
+        finally:
+            self._pending_orders.discard(bar.symbol)
+
+    async def _check_exit(self, bar: Bar, position: Position) -> None:
+        """Check if position should be exited."""
+        should_exit = False
+        exit_reason = ""
+
+        if position.direction == "LONG":
+            if bar.low <= position.stop_loss:
+                should_exit, exit_reason = True, "STOP_LOSS"
+            elif bar.high >= position.take_profit:
+                should_exit, exit_reason = True, "TAKE_PROFIT"
+        else:
+            if bar.high >= position.stop_loss:
+                should_exit, exit_reason = True, "STOP_LOSS"
+            elif bar.low <= position.take_profit:
+                should_exit, exit_reason = True, "TAKE_PROFIT"
+
+        if should_exit:
+            await self._close_position(bar, position, exit_reason)
+
+    async def _close_position(self, bar: Bar, position: Position, reason: str) -> None:
+        """Close an existing position."""
+        exit_price = position.stop_loss if reason == "STOP_LOSS" else position.take_profit
+
+        if self._dry_run:
+            pnl = (exit_price - position.entry_price) * position.size
+            if position.direction == "SHORT":
+                pnl = -pnl
+            self._live_risk.record_trade_pnl(pnl)
+
+            await self._cb.emit_trade_closed(
+                TradeClosedEvent(
+                    direction=position.direction,
+                    symbol=bar.symbol,
+                    entry=position.entry_price,
+                    exit_price=exit_price,
+                    pnl=pnl,
+                    reason=reason,
+                )
+            )
+            await self._emit_stats()
+
+            sounds.play(sounds.PROFIT if pnl > 0 else sounds.LOSS)
+            del self._positions[bar.symbol]
+            self._live_risk.update_position_count(len(self._positions))
+            return
+
+        close_direction: Direction = "SHORT" if position.direction == "LONG" else "LONG"
+        order = Order(symbol=bar.symbol, direction=close_direction, size=position.size, order_type="MARKET")
+        result = self._broker.submit_order(order)
+
+        if result.status == "FILLED":
+            actual_exit = result.filled_price or exit_price
+            pnl = (actual_exit - position.entry_price) * position.size
+            if position.direction == "SHORT":
+                pnl = -pnl
+            self._live_risk.record_trade_pnl(pnl)
+
+            await self._cb.emit_trade_closed(
+                TradeClosedEvent(
+                    direction=position.direction,
+                    symbol=bar.symbol,
+                    entry=position.entry_price,
+                    exit_price=actual_exit,
+                    pnl=pnl,
+                    reason=reason,
+                )
+            )
+            await self._emit_stats()
+
+            sounds.play(sounds.PROFIT if pnl > 0 else sounds.LOSS)
+            del self._positions[bar.symbol]
+            self._live_risk.update_position_count(len(self._positions))
+
+            if self._live_risk.check_circuit_breaker():
+                await self._emit_message("⚠ CIRCUIT BREAKER TRIGGERED - Trading paused", MessageLevel.ERROR)
+        else:
+            await self._emit_message(f"✗ Close order {result.status}: {result.message}", MessageLevel.ERROR)

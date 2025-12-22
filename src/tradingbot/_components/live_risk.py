@@ -4,7 +4,7 @@ from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
-    from tradingbot.config import LiveRiskConfig
+    from tradingbot.config import EngineRiskConfig
 
 MARKET_OPEN: Final[time] = time(9, 30)
 MARKET_CLOSE: Final[time] = time(16, 0)
@@ -13,7 +13,7 @@ MARKET_CLOSE: Final[time] = time(16, 0)
 class LiveRiskManager:
     """Risk management for live trading with safety controls."""
 
-    def __init__(self, config: LiveRiskConfig, initial_equity: float) -> None:
+    def __init__(self, config: EngineRiskConfig, initial_equity: float) -> None:
         self._config = config
         self._initial_equity = initial_equity
         self._daily_start_equity = initial_equity

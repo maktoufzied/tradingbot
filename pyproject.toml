@@ -16,7 +16,7 @@ dependencies = [
 [project.scripts]
 tradingbot = "tradingbot._components.runner:main"
 tradingbot-optimize = "tradingbot._components.optimizer:main"
-tradingbot-live = "tradingbot._components.live:main"
+tradingbot-live = "tradingbot.cli:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -13,7 +13,7 @@ from alpaca.data.live import StockDataStream
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
-from tradingbot.config import get_live_config
+from tradingbot.config import get_engine_config
 from tradingbot.interfaces import DataFeedProtocol
 from tradingbot.types import Bar
 
@@ -41,7 +41,7 @@ class AlpacaFeed(DataFeedProtocol):
         if self._api_key is not None and self._secret_key is not None:
             return self._api_key, self._secret_key
 
-        config = get_live_config().alpaca
+        config = get_engine_config().alpaca
 
         # Environment variables take priority over config file
         api_key = os.environ.get(ALPACA_API_KEY_ENV) or config.api_key
@@ -51,7 +51,7 @@ class AlpacaFeed(DataFeedProtocol):
             raise ValueError(
                 f"Alpaca API credentials not found. "
                 f"Set {ALPACA_API_KEY_ENV} and {ALPACA_SECRET_KEY_ENV} environment variables, "
-                f"or configure in tradingbot.toml under [tradingbot.live.alpaca]."
+                f"or configure in tradingbot.toml under [tradingbot.engine.alpaca]."
             )
 
         self._api_key = api_key

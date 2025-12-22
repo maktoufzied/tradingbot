@@ -1,0 +1,76 @@
+"""Event types for the trading engine."""
+
+from dataclasses import dataclass
+from enum import Enum
+
+from tradingbot.types import Bar, Direction, Position, Signal
+
+from ..live_risk import LiveRiskManager
+
+
+class MessageLevel(Enum):
+    """Semantic message levels for engine events."""
+
+    INFO = "info"
+    SUCCESS = "success"
+    WARNING = "warning"
+    ERROR = "error"
+    DEBUG = "debug"
+
+
+@dataclass
+class EngineStartedEvent:
+    symbols: list[str]
+    broker_name: str
+    feed_name: str
+    dry_run: bool
+
+
+@dataclass
+class EngineStoppedEvent:
+    risk_manager: LiveRiskManager
+
+
+@dataclass
+class MessageEvent:
+    message: str
+    level: MessageLevel = MessageLevel.INFO
+
+
+@dataclass
+class BarEvent:
+    bar: Bar
+    signal: Signal
+    trend: str
+    position: Position | None
+
+
+@dataclass
+class SignalEvent:
+    direction: Direction
+    symbol: str
+    entry: float
+    stop: float
+    tp: float
+    size: float
+    blocked: bool
+    reason: str
+    was_capped: bool
+
+
+@dataclass
+class TradeClosedEvent:
+    direction: Direction
+    symbol: str
+    entry: float
+    exit_price: float
+    pnl: float
+    reason: str
+
+
+@dataclass
+class StatsUpdatedEvent:
+    pnl: float
+    trades: int
+    winners: int
+    losers: int

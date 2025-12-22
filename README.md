@@ -140,9 +140,6 @@ task live -- SPY --dry-run
 # Paper trading with multiple symbols
 task live -- SPY QQQ AAPL
 
-# Specify broker and feed
-task live -- SPY --broker paper --feed polling
-
 # Replay mode (simulate live trading with historical data)
 task replay -- SPY
 task replay -- SPY --speed 10
@@ -157,13 +154,12 @@ task replay -- SPY --tui --dry-run
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--dry-run` | Log signals without executing trades | - |
-| `--broker` | Broker to use | `paper` |
-| `--feed` | Data feed to use | `polling` |
 | `--replay` | Replay historical data as live | - |
 | `--speed` | Replay speed (bars/sec, 0=instant) | `1.0` |
 | `--from` | Replay start date (YYYY-MM-DD) | - |
 | `--to` | Replay end date (YYYY-MM-DD) | - |
-| `--period` | Historical period for replay | `2y` |
+| `--period` | Historical period for replay | `1d` |
+| `--interval` | Bar interval for replay | `15m` |
 | `--tui` | Interactive terminal UI dashboard | - |
 
 **Risk Controls (configured in `tradingbot.toml`):**
@@ -195,19 +191,25 @@ risk_pct = 0.01    # Risk per trade (1% = 0.01)
 rr_ratio = 2.0     # Reward/risk ratio
 capital = 100000   # Starting capital
 
-[tradingbot.live]
-# Live trading configuration
-broker = "paper"   # Options: "paper"
-feed = "polling"   # Options: "polling"
+[tradingbot.engine]
+# Engine configuration
+broker = "paper"   # Options: "paper", "alpaca"
+feed = "yahoo"     # Options: "yahoo", "alpaca"
 symbols = ["SPY"]  # Default symbols to trade
 
-[tradingbot.live.risk]
-# Risk controls for live trading
+[tradingbot.engine.risk]
+# Risk controls
 max_daily_loss_pct = 0.05        # Stop trading after 5% daily loss
 circuit_breaker_loss_pct = 0.03  # Pause after 3% loss
 max_open_positions = 5           # Max concurrent positions
 max_position_size_pct = 0.10     # Max 10% of equity per position
 trading_hours_only = true        # Only trade 9:30 AM - 4:00 PM ET
+
+[tradingbot.engine.alpaca]
+# Alpaca API credentials (for live/paper trading with Alpaca)
+api_key = "your-api-key"
+secret_key = "your-secret-key"
+paper = true                     # Use paper trading endpoint
 ```
 
 ### Stop-Loss Strategies
@@ -406,15 +408,44 @@ bot = MarketStructureBot(
 
 ```python
 import asyncio
-from tradingbot._components.live import run_live
+from tradingbot import (
+    TradingEngine,
+    SignalGenerator,
+    RiskManager,
+    LiveRiskManager,
+    get_broker_registry,
+    get_feed_registry,
+)
+from tradingbot.config import get_bot_config, get_engine_config
 
-# Run live trading (async)
-asyncio.run(run_live(
-    symbols=["SPY", "QQQ"],
-    broker="paper",
-    feed="polling",
-    dry_run=True,  # Set to False for actual paper trading
-))
+async def run_trading():
+    cfg = get_bot_config()
+    engine_cfg = get_engine_config()
+
+    # Get broker and feed from registry
+    broker = get_broker_registry().get(engine_cfg.broker)
+    feed = get_feed_registry().get(engine_cfg.feed)
+
+    # Create components
+    signal_generator = SignalGenerator(cfg.swing_lb)
+    risk_manager = RiskManager(cfg.capital, cfg.risk_pct, cfg.rr_ratio)
+    live_risk_manager = LiveRiskManager(engine_cfg.risk, cfg.capital)
+
+    # Create and run engine
+    engine = TradingEngine(
+        symbols=["SPY", "QQQ"],
+        broker=broker,
+        feed=feed,
+        signal_generator=signal_generator,
+        risk_manager=risk_manager,
+        live_risk_manager=live_risk_manager,
+        dry_run=True,  # Set to False for actual paper trading
+    )
+
+    await engine.start()
+    # Engine runs until stopped
+
+asyncio.run(run_trading())
 ```
 
 ## Adding Custom Strategies

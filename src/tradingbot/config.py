@@ -28,8 +28,8 @@ class BotConfig:
 
 
 @dataclass(frozen=True)
-class LiveRiskConfig:
-    """Live trading risk controls configuration."""
+class EngineRiskConfig:
+    """Engine risk controls configuration."""
 
     max_daily_loss_pct: float = 0.05
     max_position_size_pct: float = 0.10
@@ -48,13 +48,13 @@ class AlpacaConfig:
 
 
 @dataclass(frozen=True)
-class LiveConfig:
-    """Live trading configuration."""
+class EngineConfig:
+    """Engine configuration."""
 
     broker: str = "paper"
     feed: str = "yahoo"
     symbols: list[str] = field(default_factory=list)
-    risk: LiveRiskConfig = field(default_factory=LiveRiskConfig)
+    risk: EngineRiskConfig = field(default_factory=EngineRiskConfig)
     alpaca: AlpacaConfig = field(default_factory=AlpacaConfig)
 
 
@@ -65,7 +65,7 @@ class Config:
     fetcher: str = "yahoo"
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     bot: BotConfig = field(default_factory=BotConfig)
-    live: LiveConfig = field(default_factory=LiveConfig)
+    engine: EngineConfig = field(default_factory=EngineConfig)
 
 
 def _parse_config(data: dict[str, Any]) -> Config:
@@ -85,11 +85,11 @@ def _parse_config(data: dict[str, Any]) -> Config:
         capital=bot_data.get("capital", 100000),
     )
 
-    live_data = root.get("live", {})
-    risk_data = live_data.get("risk", {})
-    alpaca_data = live_data.get("alpaca", {})
+    engine_data = root.get("engine", {})
+    risk_data = engine_data.get("risk", {})
+    alpaca_data = engine_data.get("alpaca", {})
 
-    live_risk = LiveRiskConfig(
+    engine_risk = EngineRiskConfig(
         max_daily_loss_pct=risk_data.get("max_daily_loss_pct", 0.05),
         max_position_size_pct=risk_data.get("max_position_size_pct", 0.10),
         max_open_positions=risk_data.get("max_open_positions", 5),
@@ -103,11 +103,11 @@ def _parse_config(data: dict[str, Any]) -> Config:
         paper=alpaca_data.get("paper", True),
     )
 
-    live = LiveConfig(
-        broker=live_data.get("broker", "paper"),
-        feed=live_data.get("feed", "yahoo"),
-        symbols=live_data.get("symbols", []),
-        risk=live_risk,
+    engine = EngineConfig(
+        broker=engine_data.get("broker", "paper"),
+        feed=engine_data.get("feed", "yahoo"),
+        symbols=engine_data.get("symbols", []),
+        risk=engine_risk,
         alpaca=alpaca,
     )
 
@@ -115,7 +115,7 @@ def _parse_config(data: dict[str, Any]) -> Config:
         fetcher=root.get("fetcher", "yahoo"),
         strategy=strategy,
         bot=bot,
-        live=live,
+        engine=engine,
     )
 
 
@@ -142,9 +142,9 @@ def get_bot_config() -> BotConfig:
     return get_config().bot
 
 
-def get_live_config() -> LiveConfig:
-    """Get live trading configuration."""
-    return get_config().live
+def get_engine_config() -> EngineConfig:
+    """Get engine configuration."""
+    return get_config().engine
 
 
 def get_config_value(*keys: str, default: str) -> str:

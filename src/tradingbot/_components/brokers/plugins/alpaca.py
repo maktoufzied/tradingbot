@@ -8,7 +8,7 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.trading.requests import MarketOrderRequest
 
-from tradingbot.config import get_live_config
+from tradingbot.config import get_engine_config
 from tradingbot.interfaces import BrokerProtocol
 from tradingbot.types import AccountInfo, BrokerPosition, Direction, Order, OrderResult, OrderStatus
 
@@ -29,7 +29,7 @@ class AlpacaBroker(BrokerProtocol):
         if self._client is not None:
             return self._client
 
-        config = get_live_config().alpaca
+        config = get_engine_config().alpaca
 
         # Environment variables take priority over config file
         api_key = os.environ.get(ALPACA_API_KEY_ENV) or config.api_key
@@ -41,7 +41,7 @@ class AlpacaBroker(BrokerProtocol):
             raise ValueError(
                 f"Alpaca API credentials not found. "
                 f"Set {ALPACA_API_KEY_ENV} and {ALPACA_SECRET_KEY_ENV} environment variables, "
-                f"or configure in tradingbot.toml under [tradingbot.live.alpaca]."
+                f"or configure in tradingbot.toml under [tradingbot.engine.alpaca]."
             )
 
         self._client = TradingClient(api_key, secret_key, paper=self._paper)
