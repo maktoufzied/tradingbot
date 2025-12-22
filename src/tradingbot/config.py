@@ -15,6 +15,7 @@ class StrategyConfig:
     """Strategy configuration."""
 
     stop: str = "swing"
+    tp: str = "rr"
 
 
 @dataclass(frozen=True)
@@ -112,6 +113,7 @@ def _parse_config(data: dict[str, Any]) -> Config:
     strategy_data = root.get("strategy", {})
     strategy = StrategyConfig(
         stop=strategy_data.get("stop", "swing"),
+        tp=strategy_data.get("tp", "rr"),
     )
 
     bot_data = root.get("bot", {})

@@ -9,8 +9,9 @@ import polars as pl
 
 from tradingbot.types import Direction, ExitReason, Position, Signal, SwingPoint, Trade
 
-from .risk import RiskManager
+from .risk import PositionSizer
 from .signals import SignalGenerator
+from .strategies import ExitStrategy
 from .swing import find_swing_points
 
 
@@ -67,7 +68,8 @@ class MarketStructureBot:
         trailing_stop: bool = False,
     ):
         self.sig_gen = SignalGenerator(swing_lb)
-        self.risk_mgr = RiskManager(capital, risk_pct, rr_ratio)
+        self.pos_sizer = PositionSizer(capital, risk_pct)
+        self.rr_ratio = rr_ratio
         self.swing_lb = swing_lb
         self.trailing_stop = trailing_stop
         self.position: Position | None = None
@@ -89,7 +91,7 @@ class MarketStructureBot:
         self.speed = speed
         self.position = None
         self.trades = []
-        self.equity = [self.risk_mgr.capital]
+        self.equity = [self.pos_sizer.capital]
 
         results: list[dict[str, Any]] = []
 
@@ -120,7 +122,7 @@ class MarketStructureBot:
                     swings,
                 )
 
-            self.equity.append(self.risk_mgr.capital)
+            self.equity.append(self.pos_sizer.capital)
             results.append(
                 {
                     "datetime": bar_time,
@@ -128,7 +130,7 @@ class MarketStructureBot:
                     "signal": signal.value,
                     "trend": details.get("trend", "N/A"),
                     "position": self.position.direction if self.position else "",
-                    "equity": self.risk_mgr.capital,
+                    "equity": self.pos_sizer.capital,
                 }
             )
 
@@ -184,9 +186,8 @@ class MarketStructureBot:
         df: pl.DataFrame,
         swings: list[SwingPoint],
     ) -> None:
-        stop: float = self.risk_mgr.calc_stop(direction, price, df, idx, swings)
-        tp: float = self.risk_mgr.calc_tp(direction, price, stop)
-        size: float = self.risk_mgr.calc_size(price, stop)
+        stop, tp = ExitStrategy.calc(direction, price, self.rr_ratio, df.head(idx + 1), swings)
+        size = self.pos_sizer.calc_size(price, stop)
         self.position = Position(price, idx, time, direction, size, stop, tp, stop)
 
         if self.callbacks and self.callbacks._on_signal:
@@ -208,12 +209,12 @@ class MarketStructureBot:
                 p.direction,
                 p.size,
                 pnl,
-                pnl / self.risk_mgr.capital,
+                pnl / self.pos_sizer.capital,
                 reason,
                 idx - p.entry_index,
             )
         )
-        self.risk_mgr.capital += pnl
+        self.pos_sizer.capital += pnl
 
         if self.callbacks and self.callbacks._on_trade_closed:
             self.callbacks._on_trade_closed(p.direction, self.symbol, p.entry_price, price, pnl, reason)
@@ -241,12 +242,12 @@ class MarketStructureBot:
             "losers": len(losses),
             "win_rate": f"{100 * len(wins) / len(self.trades):.1f}%",
             "total_pnl": f"${sum(pnls):,.2f}",
-            "total_return": f"{100 * (self.risk_mgr.capital - self.risk_mgr.initial) / self.risk_mgr.initial:.2f}%",
+            "total_return": f"{100 * (self.pos_sizer.capital - self.pos_sizer.initial) / self.pos_sizer.initial:.2f}%",
             "profit_factor": f"{abs(sum(wins) / sum(losses)):.2f}" if losses else "inf",
             "avg_win": f"${mean(wins):,.2f}" if wins else "$0",
             "avg_loss": f"${mean(losses):,.2f}" if losses else "$0",
             "max_drawdown": f"{100 * max_dd_val:.2f}%",
-            "final_capital": f"${self.risk_mgr.capital:,.2f}",
+            "final_capital": f"${self.pos_sizer.capital:,.2f}",
             "avg_holding_period": f"{mean([t.holding_period for t in self.trades]):.1f} bars",
         }
 

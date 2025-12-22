@@ -108,7 +108,7 @@ def run_single_backtest(
     bot.callbacks = callbacks
     bot.position = None
     bot.trades = []
-    bot.equity = [bot.risk_mgr.capital]
+    bot.equity = [bot.pos_sizer.capital]
 
     for i in range(len(df)):
         bar = df.row(i, named=True)
@@ -137,7 +137,7 @@ def run_single_backtest(
                 swings,
             )
 
-        bot.equity.append(bot.risk_mgr.capital)
+        bot.equity.append(bot.pos_sizer.capital)
         results.append(
             {
                 "datetime": bar_time,
@@ -145,7 +145,7 @@ def run_single_backtest(
                 "signal": signal.value,
                 "trend": details.get("trend", "N/A"),
                 "position": bot.position.direction if bot.position else "",
-                "equity": bot.risk_mgr.capital,
+                "equity": bot.pos_sizer.capital,
             }
         )
 

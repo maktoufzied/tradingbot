@@ -115,33 +115,33 @@ class DataFeedProtocol(ABC):
         raise NotImplementedError(f"{self.name} feed does not support historical data")
 
 
-class StopStrategyProtocol(Protocol):
-    """Protocol for stop loss calculation strategies."""
+class ExitStrategyProtocol(Protocol):
+    """Protocol for exit (stop-loss and take-profit) calculation strategies."""
 
     @property
     def name(self) -> str:
         """Unique identifier for this strategy."""
         ...
 
-    def calc_stop(
+    def calc(
         self,
         direction: Direction,
         entry: float,
-        df: pl.DataFrame,
-        idx: int,
+        rr_ratio: float,
+        bars: pl.DataFrame,
         swings: list[SwingPoint],
-    ) -> float:
-        """Calculate stop loss price.
+    ) -> tuple[float, float]:
+        """Calculate stop loss and take-profit prices.
 
         Args:
             direction: Trade direction ("LONG" or "SHORT")
             entry: Entry price
-            df: Price DataFrame up to current bar
-            idx: Current bar index
+            rr_ratio: Risk/reward ratio (e.g., 2.0 for 2:1)
+            bars: OHLCV price data (last row is current bar)
             swings: List of swing points
 
         Returns:
-            Stop loss price
+            Tuple of (stop_loss, take_profit) prices
         """
         ...
 

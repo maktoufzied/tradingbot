@@ -63,7 +63,7 @@ def flat_data() -> pl.DataFrame:
 
 class TestMarketStructureBot:
     def test_initialization(self, bot):
-        assert bot.risk_mgr.capital == 100000
+        assert bot.pos_sizer.capital == 100000
         assert bot.swing_lb == 3
         assert bot.position is None
         assert bot.trades == []

@@ -4,7 +4,7 @@ from tradingbot.types import Direction, SwingPoint
 
 
 class ATRStopStrategy:
-    """Stop loss based on Average True Range (ATR)."""
+    """Stop/TP based on Average True Range (ATR)."""
 
     def __init__(self, period: int = 14, multiplier: float = 2.0) -> None:
         self.period = period
@@ -14,36 +14,37 @@ class ATRStopStrategy:
     def name(self) -> str:
         return "atr"
 
-    def calc_stop(
+    def calc(
         self,
         direction: Direction,
         entry: float,
-        df: pl.DataFrame,
-        idx: int,
+        rr_ratio: float,
+        bars: pl.DataFrame,
         swings: list[SwingPoint],
-    ) -> float:
-        atr = self._calc_atr(df, idx)
+    ) -> tuple[float, float]:
+        atr = self._calc_atr(bars)
         stop_distance = atr * self.multiplier
+        tp_distance = stop_distance * rr_ratio
 
         if direction == "LONG":
-            return entry - stop_distance
+            return entry - stop_distance, entry + tp_distance
         else:
-            return entry + stop_distance
+            return entry + stop_distance, entry - tp_distance
 
-    def _calc_atr(self, df: pl.DataFrame, idx: int) -> float:
-        """Calculate Average True Range."""
-        if idx < self.period:
+    def _calc_atr(self, bars: pl.DataFrame) -> float:
+        """Calculate Average True Range using the last `period` bars."""
+        n = len(bars)
+        if n < self.period:
             # Not enough data, use simple range
-            subset = df.head(idx + 1)
-            mean_val = (subset["high"] - subset["low"]).mean()
+            mean_val = (bars["high"] - bars["low"]).mean()
             return float(mean_val) if isinstance(mean_val, (int, float)) else 0.0
 
-        # Get data for ATR calculation (slice: offset, length)
-        start = idx - self.period + 1
-        subset = df.slice(start, self.period)
+        # Get data for ATR calculation (last `period` bars)
+        subset = bars.tail(self.period)
         high = subset["high"]
         low = subset["low"]
-        prev_close = df.slice(start - 1, self.period)["close"]
+        # Previous close needs period+1 bars, get it from the tail
+        prev_close = bars.tail(self.period + 1).head(self.period)["close"]
 
         # True Range = max(high-low, |high-prev_close|, |low-prev_close|)
         tr1 = high - low

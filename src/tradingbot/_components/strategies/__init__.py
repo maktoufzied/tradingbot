@@ -3,15 +3,15 @@ import pkgutil
 from pathlib import Path
 
 from tradingbot.config import get_config_value
-from tradingbot.interfaces import StopStrategyProtocol
+from tradingbot.interfaces import ExitStrategyProtocol
 
-from .registry import StopStrategy, StrategyRegistry, get_registry
+from .registry import ExitStrategy, StrategyRegistry, get_registry
 
-__all__ = ["StopStrategy", "get_registry"]
+__all__ = ["ExitStrategy", "get_registry"]
 
 
 def _load_plugins(registry: StrategyRegistry, default_strategy: str) -> None:
-    """Auto-discover and register all strategy plugins."""
+    """Auto-discover and register all exit strategy plugins."""
     plugins_path = Path(__file__).parent / "plugins"
 
     for module_info in pkgutil.iter_modules([str(plugins_path)]):
@@ -25,10 +25,10 @@ def _load_plugins(registry: StrategyRegistry, default_strategy: str) -> None:
             if (
                 isinstance(attr, type)
                 and hasattr(attr, "name")
-                and hasattr(attr, "calc_stop")
+                and hasattr(attr, "calc")
                 and attr.__module__ == module.__name__
             ):
-                instance: StopStrategyProtocol = attr()
+                instance: ExitStrategyProtocol = attr()
                 is_default = instance.name == default_strategy
                 registry.register(instance, default=is_default)
 

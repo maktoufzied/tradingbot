@@ -2,8 +2,9 @@
 fetcher = "yahoo"
 
 [tradingbot.strategy]
-# Options: "swing", "atr"
+# Options: "swing", "atr", "rr"
 stop = "swing"
+tp = "rr"
 
 [tradingbot.bot]
 # Bot parameters - tune these via optimizer

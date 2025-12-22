@@ -13,7 +13,7 @@ from tradingbot import (
     LiveRiskManager,
     MessageEvent,
     MessageLevel,
-    RiskManager,
+    PositionSizer,
     SignalEvent,
     SignalGenerator,
     StatsUpdatedEvent,
@@ -135,8 +135,9 @@ async def run_live(
     broker: BrokerProtocol,
     feed: DataFeedProtocol,
     signal_generator: SignalGenerator,
-    risk_manager: RiskManager,
+    position_sizer: PositionSizer,
     live_risk_manager: LiveRiskManager,
+    rr_ratio: float = 2.0,
     dry_run: bool = False,
     callbacks: EngineCallbacks | None = None,
 ) -> None:
@@ -146,8 +147,9 @@ async def run_live(
         broker=broker,
         feed=feed,
         signal_generator=signal_generator,
-        risk_manager=risk_manager,
+        position_sizer=position_sizer,
         live_risk_manager=live_risk_manager,
+        rr_ratio=rr_ratio,
         dry_run=dry_run,
         callbacks=callbacks,
     )
@@ -167,8 +169,9 @@ def _run_with_tui(
     broker: BrokerProtocol,
     feed: DataFeedProtocol,
     signal_generator: SignalGenerator,
-    risk_manager: RiskManager,
+    position_sizer: PositionSizer,
     live_risk_manager: LiveRiskManager,
+    rr_ratio: float,
     dry_run: bool,
 ) -> None:
     """Run live trading with TUI."""
@@ -237,8 +240,9 @@ def _run_with_tui(
                 broker=broker,
                 feed=feed,
                 signal_generator=signal_generator,
-                risk_manager=risk_manager,
+                position_sizer=position_sizer,
                 live_risk_manager=live_risk_manager,
+                rr_ratio=rr_ratio,
                 dry_run=dry_run,
                 callbacks=make_tui_callbacks(self),
             )
@@ -276,7 +280,7 @@ Examples:
 
     broker = get_broker_registry().get(engine_cfg.broker)
     signal_generator = SignalGenerator(cfg.swing_lb)
-    risk_manager = RiskManager(cfg.capital, cfg.risk_pct, cfg.rr_ratio)
+    position_sizer = PositionSizer(cfg.capital, cfg.risk_pct)
     live_risk_manager = LiveRiskManager(engine_cfg.risk, cfg.capital)
 
     feed = get_feed_registry().get(engine_cfg.feed)
@@ -287,8 +291,9 @@ Examples:
             broker=broker,
             feed=feed,
             signal_generator=signal_generator,
-            risk_manager=risk_manager,
+            position_sizer=position_sizer,
             live_risk_manager=live_risk_manager,
+            rr_ratio=cfg.rr_ratio,
             dry_run=args.dry_run,
         )
     else:
@@ -299,8 +304,9 @@ Examples:
                     broker=broker,
                     feed=feed,
                     signal_generator=signal_generator,
-                    risk_manager=risk_manager,
+                    position_sizer=position_sizer,
                     live_risk_manager=live_risk_manager,
+                    rr_ratio=cfg.rr_ratio,
                     dry_run=args.dry_run,
                     callbacks=make_cli_callbacks(),
                 )

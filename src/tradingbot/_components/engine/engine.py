@@ -14,8 +14,9 @@ from .. import sounds
 from ..brokers.plugins.paper import PaperBroker
 from ..feeds import DataFeed
 from ..live_risk import LiveRiskManager
-from ..risk import RiskManager
+from ..risk import PositionSizer
 from ..signals import SignalGenerator
+from ..strategies import ExitStrategy
 from ..swing import find_swing_points
 from .callbacks import EngineCallbacks
 from .events import (
@@ -42,8 +43,9 @@ class TradingEngine:
         broker: BrokerProtocol,
         feed: DataFeedProtocol,
         signal_generator: SignalGenerator,
-        risk_manager: RiskManager,
+        position_sizer: PositionSizer,
         live_risk_manager: LiveRiskManager,
+        rr_ratio: float = 2.0,
         dry_run: bool = False,
         callbacks: EngineCallbacks | None = None,
     ) -> None:
@@ -52,8 +54,9 @@ class TradingEngine:
         self._broker = broker
         self._feed = feed
         self._sig_gen = signal_generator
-        self._risk_mgr = risk_manager
+        self._pos_sizer = position_sizer
         self._live_risk = live_risk_manager
+        self._rr_ratio = rr_ratio
         self._cb = callbacks or EngineCallbacks()
 
         # State tracking
@@ -153,10 +156,8 @@ class TradingEngine:
             # Calculate stop/TP from current market structure
             if bp.symbol in self._bars and len(self._bars[bp.symbol]) >= MIN_BARS_REQUIRED:
                 df = self._bars_to_df(bp.symbol)
-                idx = len(df) - 1
                 swings = find_swing_points(df, self._sig_gen.swing_lookback)
-                stop = self._risk_mgr.calc_stop(bp.direction, bp.avg_entry_price, df, idx, swings)
-                tp = self._risk_mgr.calc_tp(bp.direction, bp.avg_entry_price, stop)
+                stop, tp = ExitStrategy.calc(bp.direction, bp.avg_entry_price, self._rr_ratio, df, swings)
             else:
                 stop = bp.avg_entry_price * (0.98 if bp.direction == "LONG" else 1.02)
                 tp = bp.avg_entry_price * (1.04 if bp.direction == "LONG" else 0.96)
@@ -237,9 +238,8 @@ class TradingEngine:
         idx = len(df) - 1
 
         swings: list[SwingPoint] = find_swing_points(df, self._sig_gen.swing_lookback)
-        stop = self._risk_mgr.calc_stop(direction, price, df, idx, swings)
-        tp = self._risk_mgr.calc_tp(direction, price, stop)
-        size = self._risk_mgr.calc_size(price, stop)
+        stop, tp = ExitStrategy.calc(direction, price, self._rr_ratio, df, swings)
+        size = self._pos_sizer.calc_size(price, stop)
 
         account = self._broker.get_account()
         self._live_risk.update_position_count(len(self._positions))
