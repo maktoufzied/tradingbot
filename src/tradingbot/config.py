@@ -26,6 +26,7 @@ class BotConfig:
     risk_pct: float = 0.01
     rr_ratio: float = 2.0
     capital: float = 100000
+    allow_short: bool = False
 
 
 @dataclass(frozen=True)
@@ -90,7 +91,7 @@ class EngineConfig:
 
     broker: str = "paper"
     feed: str = "yahoo"
-    symbols: list[str] = field(default_factory=list)
+    bar_interval: str = "5m"  # 1m, 5m, or 15m - used for cache, bootstrap, and live feed
     risk: EngineRiskConfig = field(default_factory=EngineRiskConfig)
     alpaca: AlpacaConfig = field(default_factory=AlpacaConfig)
 
@@ -99,7 +100,6 @@ class EngineConfig:
 class Config:
     """Root configuration."""
 
-    fetcher: str = "yahoo"
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     bot: BotConfig = field(default_factory=BotConfig)
     engine: EngineConfig = field(default_factory=EngineConfig)
@@ -122,6 +122,7 @@ def _parse_config(data: dict[str, Any]) -> Config:
         risk_pct=bot_data.get("risk_pct", 0.01),
         rr_ratio=bot_data.get("rr_ratio", 2.0),
         capital=bot_data.get("capital", 100000),
+        allow_short=bot_data.get("allow_short", False),
     )
 
     engine_data = root.get("engine", {})
@@ -145,7 +146,7 @@ def _parse_config(data: dict[str, Any]) -> Config:
     engine = EngineConfig(
         broker=engine_data.get("broker", "paper"),
         feed=engine_data.get("feed", "yahoo"),
-        symbols=engine_data.get("symbols", []),
+        bar_interval=engine_data.get("bar_interval", "5m"),
         risk=engine_risk,
         alpaca=alpaca,
     )
@@ -170,7 +171,6 @@ def _parse_config(data: dict[str, Any]) -> Config:
     )
 
     return Config(
-        fetcher=root.get("fetcher", "yahoo"),
         strategy=strategy,
         bot=bot,
         engine=engine,

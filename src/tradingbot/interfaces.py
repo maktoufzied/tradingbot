@@ -31,6 +31,11 @@ class BrokerProtocol(ABC):
         ...
 
     @abstractmethod
+    def get_order(self, order_id: str) -> OrderResult | None:
+        """Get current status of an order. Returns None if order not found."""
+        ...
+
+    @abstractmethod
     def get_position(self, symbol: str) -> BrokerPosition | None:
         """Get current position for a symbol, or None if no position."""
         ...
@@ -92,13 +97,25 @@ class DataFeedProtocol(ABC):
         """Whether the feed is currently connected."""
         ...
 
+    def set_raw_bar_callback(self, callback: Callable[[str, float, int, int], None] | None) -> None:
+        """Set callback for raw bar progress updates during aggregation.
+
+        Args:
+            callback: Function called with (symbol, price, collected, target)
+                      or None to clear the callback.
+
+        Feeds that don't support aggregation should raise NotImplementedError.
+        """
+        raise NotImplementedError(f"{self.name} feed does not support raw bar callbacks")
+
     def history(
         self,
         symbol: str,
         start_date: str | None = None,
         end_date: str | None = None,
-        period: str = "2y",
+        period: str = "1y",
         interval: str = "1d",
+        debug: bool = False,
     ) -> pl.DataFrame:
         """Fetch historical OHLCV data for a symbol.
 
@@ -108,6 +125,7 @@ class DataFeedProtocol(ABC):
             end_date: End date (YYYY-MM-DD format)
             period: Period to fetch if no dates given (e.g., "2y", "1mo")
             interval: Bar interval (e.g., "1d", "1h", "5m")
+            debug: Print debug info during fetch
 
         Returns:
             DataFrame with columns: datetime, open, high, low, close, volume

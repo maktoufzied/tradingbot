@@ -7,8 +7,9 @@ from typing import Final
 
 import polars as pl
 
+from tradingbot.config import get_engine_config
 from tradingbot.interfaces import BrokerProtocol, DataFeedProtocol
-from tradingbot.types import Bar, Direction, Order, Position, Signal, SwingPoint
+from tradingbot.types import Bar, Direction, Order, PendingOrder, Position, Signal, SwingPoint
 
 from .. import sounds
 from ..brokers.plugins.paper import PaperBroker
@@ -47,10 +48,12 @@ class TradingEngine:
         live_risk_manager: LiveRiskManager,
         rr_ratio: float = 2.0,
         dry_run: bool = False,
+        allow_short: bool = False,
         callbacks: EngineCallbacks | None = None,
     ) -> None:
         self._symbols = list(set(symbols))
         self._dry_run = dry_run
+        self._allow_short = allow_short
         self._broker = broker
         self._feed = feed
         self._sig_gen = signal_generator
@@ -61,7 +64,8 @@ class TradingEngine:
 
         # State tracking
         self._positions: dict[str, Position] = {}
-        self._pending_orders: set[str] = set()
+        self._pending_orders: dict[str, PendingOrder] = {}  # symbol -> pending entry order
+        self._pending_closes: set[str] = set()  # symbols with pending close orders
         self._bars: dict[str, deque[Bar]] = {sym: deque(maxlen=MAX_BARS_HISTORY) for sym in self._symbols}
         self._running = False
 
@@ -109,6 +113,7 @@ class TradingEngine:
 
         # Subscribe to feed
         await self._feed.subscribe(self._symbols, self._on_bar)
+        await self._emit_message(f"Subscribed to: {', '.join(self._symbols)}", MessageLevel.DEBUG)
 
         # Start feed
         self._running = True
@@ -122,12 +127,18 @@ class TradingEngine:
         await self._cb.emit_stopped(EngineStoppedEvent(risk_manager=self._live_risk))
 
     async def _load_history(self) -> None:
-        """Load historical data for each symbol to bootstrap indicators."""
-        await self._emit_message("Loading historical data...", MessageLevel.DEBUG)
+        """Load historical intraday data for each symbol to bootstrap indicators.
+
+        Uses configured interval bars from the past 5 days to establish intraday swing points.
+        This ensures stop/TP levels are based on recent intraday price action,
+        not old daily swings from months ago.
+        """
+        interval = get_engine_config().bar_interval
+        await self._emit_message(f"Loading historical data ({interval} bars)...", MessageLevel.DEBUG)
 
         for symbol in self._symbols:
             try:
-                df: pl.DataFrame = DataFeed.history(symbol, period="3mo", interval="1d")
+                df: pl.DataFrame = DataFeed.history(symbol, period="5d", interval=interval)
 
                 for row in df.iter_rows(named=True):
                     bar = Bar(
@@ -186,6 +197,14 @@ class TradingEngine:
         if not self._running:
             return
 
+        # Validate symbol - only process bars for symbols we're configured to trade
+        if bar.symbol not in self._bars:
+            await self._emit_message(
+                f"⚠ Ignoring bar for unexpected symbol: {bar.symbol} (subscribed: {self._symbols})",
+                MessageLevel.WARNING,
+            )
+            return
+
         self._bars[bar.symbol].append(bar)
 
         if isinstance(self._broker, PaperBroker):
@@ -202,13 +221,24 @@ class TradingEngine:
 
         df = self._bars_to_df(bar.symbol)
 
+        # Check pending orders for this symbol
+        if bar.symbol in self._pending_orders:
+            await self._check_pending_order(bar.symbol)
+
         position = self._positions.get(bar.symbol)
         if position:
             await self._check_exit(bar, position)
 
         signal, details = self._sig_gen.generate(df, len(df) - 1, position)
 
-        if position is None and bar.symbol not in self._pending_orders and signal in (Signal.BUY, Signal.SELL):
+        # Check if we should open a new position
+        can_open = (
+            position is None
+            and bar.symbol not in self._pending_orders
+            and signal in (Signal.BUY, Signal.SELL)
+            and (signal != Signal.SELL or self._allow_short)  # Skip SELL if shorting disabled
+        )
+        if can_open:
             await self._open_position(bar, signal, df)
 
         # Emit bar event
@@ -279,32 +309,72 @@ class TradingEngine:
             return
 
         order = Order(symbol=bar.symbol, direction=direction, size=size, order_type="MARKET")
-        self._pending_orders.add(bar.symbol)
+        result = self._broker.submit_order(order)
 
-        try:
-            result = self._broker.submit_order(order)
+        if result.status == "FILLED":
+            self._positions[bar.symbol] = Position(
+                entry_price=result.filled_price or price,
+                entry_index=idx,
+                entry_time=bar.datetime,
+                direction=direction,
+                size=result.filled_size,
+                stop_loss=stop,
+                take_profit=tp,
+                initial_stop_loss=stop,
+            )
+            self._live_risk.update_position_count(len(self._positions))
+            await self._emit_message(f"✓ Order filled at ${result.filled_price:.2f}", MessageLevel.SUCCESS)
+            sounds.play(sounds.BUY if direction == "LONG" else sounds.SELL)
+        elif result.status == "PENDING":
+            self._pending_orders[bar.symbol] = PendingOrder(
+                order_id=result.order_id,
+                symbol=bar.symbol,
+                direction=direction,
+                expected_price=price,
+                stop_loss=stop,
+                take_profit=tp,
+                entry_index=idx,
+                entry_time=bar.datetime,
+            )
+            await self._emit_message(f"⏳ Order pending (ID: {result.order_id})", MessageLevel.WARNING)
+        else:
+            await self._emit_message(f"✗ Order {result.status}: {result.message}", MessageLevel.ERROR)
 
-            if result.status == "FILLED":
-                self._positions[bar.symbol] = Position(
-                    entry_price=result.filled_price or price,
-                    entry_index=idx,
-                    entry_time=bar.datetime,
-                    direction=direction,
-                    size=result.filled_size,
-                    stop_loss=stop,
-                    take_profit=tp,
-                    initial_stop_loss=stop,
-                )
-                self._live_risk.update_position_count(len(self._positions))
-                await self._emit_message(f"✓ Order filled at ${result.filled_price:.2f}", MessageLevel.SUCCESS)
-                sounds.play(sounds.BUY if direction == "LONG" else sounds.SELL)
-            else:
-                await self._emit_message(f"✗ Order {result.status}: {result.message}", MessageLevel.ERROR)
-        finally:
-            self._pending_orders.discard(bar.symbol)
+    async def _check_pending_order(self, symbol: str) -> None:
+        """Poll broker for pending order status and create position if filled."""
+        pending = self._pending_orders.get(symbol)
+        if pending is None:
+            return
+
+        result = self._broker.get_order(pending.order_id)
+        if result is None:
+            return
+
+        if result.status == "FILLED":
+            del self._pending_orders[symbol]
+            self._positions[symbol] = Position(
+                entry_price=result.filled_price or pending.expected_price,
+                entry_index=pending.entry_index,
+                entry_time=pending.entry_time,
+                direction=pending.direction,
+                size=result.filled_size,
+                stop_loss=pending.stop_loss,
+                take_profit=pending.take_profit,
+                initial_stop_loss=pending.stop_loss,
+            )
+            self._live_risk.update_position_count(len(self._positions))
+            await self._emit_message(f"✓ Order filled at ${result.filled_price:.2f}", MessageLevel.SUCCESS)
+            sounds.play(sounds.BUY if pending.direction == "LONG" else sounds.SELL)
+        elif result.status in ("REJECTED", "CANCELLED"):
+            del self._pending_orders[symbol]
+            await self._emit_message(f"✗ Order {result.status}: {result.message}", MessageLevel.ERROR)
 
     async def _check_exit(self, bar: Bar, position: Position) -> None:
         """Check if position should be exited."""
+        # Skip if close order already pending for this symbol
+        if bar.symbol in self._pending_closes:
+            return
+
         should_exit = False
         exit_reason = ""
 
@@ -374,9 +444,13 @@ class TradingEngine:
 
             sounds.play(sounds.PROFIT if pnl > 0 else sounds.LOSS)
             del self._positions[bar.symbol]
+            self._pending_closes.discard(bar.symbol)
             self._live_risk.update_position_count(len(self._positions))
 
             if self._live_risk.check_circuit_breaker():
                 await self._emit_message("⚠ CIRCUIT BREAKER TRIGGERED - Trading paused", MessageLevel.ERROR)
+        elif result.status == "PENDING":
+            self._pending_closes.add(bar.symbol)
+            await self._emit_message(f"⏳ Close order pending (ID: {result.order_id})", MessageLevel.WARNING)
         else:
             await self._emit_message(f"✗ Close order {result.status}: {result.message}", MessageLevel.ERROR)

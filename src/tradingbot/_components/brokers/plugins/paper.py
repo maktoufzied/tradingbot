@@ -116,6 +116,10 @@ class PaperBroker(BrokerProtocol):
         """Paper broker executes immediately, so nothing to cancel."""
         return False
 
+    def get_order(self, order_id: str) -> OrderResult | None:
+        """Paper broker executes immediately, so orders are always filled or rejected."""
+        return None
+
     def get_position(self, symbol: str) -> BrokerPosition | None:
         """Get position for a symbol."""
         pos = self._positions.get(symbol)

@@ -91,7 +91,7 @@ class LiveRiskManager:
         """Cap position size to max allowed percentage of equity.
 
         Returns:
-            Tuple of (adjusted_size, was_capped)
+            Tuple of (adjusted_size, was_capped) - size is rounded to whole shares
         """
         position_value = size * price
         position_pct = position_value / current_equity
@@ -99,10 +99,10 @@ class LiveRiskManager:
 
         if position_pct > max_pct:
             max_value = current_equity * max_pct
-            capped_size = max_value / price
-            return capped_size, True
+            capped_size = int(max_value / price)  # Round down to whole shares
+            return float(capped_size), True
 
-        return size, False
+        return float(int(size)), False  # Round down to whole shares
 
     def is_trading_hours(self) -> bool:
         """Check if current time is within trading hours (US Eastern)."""

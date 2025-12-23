@@ -30,7 +30,7 @@ if __name__ == "__main__":
 
     # Example 2: Multiple symbols comparison (uncomment to run)
     # run_multi_backtest(
-    #     symbols=["AAPL", "MSFT", "GOOGL", "TSLA", "SPY"],
+    #     symbols=["AAPL", "MSFT", "GOOGL", "TSLA",
     #     period="1y",
     #     interval="1d"
     # )

@@ -1,5 +1,7 @@
 """Tests for data models."""
 
+from datetime import datetime
+
 from tradingbot import Position, Signal, SwingPoint, Trade, Trend
 
 
@@ -32,8 +34,9 @@ class TestSwingPoint:
         assert sp.timestamp is None
 
     def test_swing_point_with_timestamp(self):
-        sp = SwingPoint(index=10, price=100.5, is_high=False, timestamp="2024-01-01")
-        assert sp.timestamp == "2024-01-01"
+        ts = datetime(2024, 1, 1)
+        sp = SwingPoint(index=10, price=100.5, is_high=False, timestamp=ts)
+        assert sp.timestamp == ts
         assert sp.is_high is False
 
 
@@ -42,7 +45,7 @@ class TestPosition:
         pos = Position(
             entry_price=100.0,
             entry_index=5,
-            entry_time="2024-01-01",
+            entry_time=datetime(2024, 1, 1),
             direction="LONG",
             size=10.0,
             stop_loss=98.0,
@@ -61,8 +64,8 @@ class TestTrade:
             symbol="AAPL",
             entry_price=100.0,
             exit_price=105.0,
-            entry_time="2024-01-01",
-            exit_time="2024-01-05",
+            entry_time=datetime(2024, 1, 1),
+            exit_time=datetime(2024, 1, 5),
             entry_index=0,
             direction="LONG",
             size=10.0,
@@ -77,11 +80,11 @@ class TestTrade:
 
     def test_trade_short_position(self):
         trade = Trade(
-            symbol="SPY",
+            symbol="MSFT",
             entry_price=500.0,
             exit_price=490.0,
-            entry_time="2024-01-01",
-            exit_time="2024-01-02",
+            entry_time=datetime(2024, 1, 1),
+            exit_time=datetime(2024, 1, 2),
             entry_index=0,
             direction="SHORT",
             size=5.0,

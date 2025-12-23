@@ -13,14 +13,18 @@ from tradingbot.types import Bar
 
 @pytest.fixture
 def mock_env():
-    """Set up mock environment variables."""
-    with patch.dict(
-        os.environ,
-        {
-            "ALPACA_API_KEY": "test_key",
-            "ALPACA_SECRET_KEY": "test_secret",
-        },
+    """Set up mock environment variables and disable cache."""
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "ALPACA_API_KEY": "test_key",
+                "ALPACA_SECRET_KEY": "test_secret",
+            },
+        ),
+        patch("tradingbot._components.feeds.plugins.alpaca.get_cache_config") as mock_cache,
     ):
+        mock_cache.return_value.enabled = False
         yield
 
 
@@ -65,9 +69,9 @@ class TestAlpacaFeedSubscription:
         def callback(bar: Bar) -> None:
             received_bars.append(bar)
 
-        asyncio.run(feed.subscribe(["SPY", "QQQ"], callback))
+        asyncio.run(feed.subscribe(["MSFT", "QQQ"], callback))
 
-        assert feed._symbols == ["SPY", "QQQ"]
+        assert feed._symbols == ["MSFT", "QQQ"]
         assert feed._callback is callback
 
     def test_subscribe_single_symbol(self, mock_env):
@@ -89,12 +93,12 @@ class TestAlpacaFeedSubscription:
             pass
 
         async def run_test() -> None:
-            await feed.subscribe(["SPY", "QQQ", "AAPL"], callback)
+            await feed.subscribe(["MSFT", "QQQ", "AAPL"], callback)
             await feed.unsubscribe(["QQQ"])
 
         asyncio.run(run_test())
 
-        assert feed._symbols == ["SPY", "AAPL"]
+        assert feed._symbols == ["MSFT", "AAPL"]
 
     def test_unsubscribe_all(self, mock_env):
         """Unsubscribe from all symbols."""
@@ -104,8 +108,8 @@ class TestAlpacaFeedSubscription:
             pass
 
         async def run_test() -> None:
-            await feed.subscribe(["SPY", "QQQ"], callback)
-            await feed.unsubscribe(["SPY", "QQQ"])
+            await feed.subscribe(["MSFT", "QQQ"], callback)
+            await feed.unsubscribe(["MSFT", "QQQ"])
 
         asyncio.run(run_test())
 
@@ -121,11 +125,11 @@ class TestAlpacaFeedBarConversion:
         def capture_bar(bar: Bar) -> None:
             received_bars.append(bar)
 
-        asyncio.run(feed.subscribe(["SPY"], capture_bar))
+        asyncio.run(feed.subscribe(["MSFT"], capture_bar))
 
         # Create mock Alpaca bar
         mock_alpaca_bar = MagicMock()
-        mock_alpaca_bar.symbol = "SPY"
+        mock_alpaca_bar.symbol = "MSFT"
         mock_alpaca_bar.timestamp = datetime(2024, 1, 15, 10, 30, 0)
         mock_alpaca_bar.open = 450.00
         mock_alpaca_bar.high = 452.00
@@ -137,7 +141,7 @@ class TestAlpacaFeedBarConversion:
 
         assert len(received_bars) == 1
         bar = received_bars[0]
-        assert bar.symbol == "SPY"
+        assert bar.symbol == "MSFT"
         assert bar.open == 450.00
         assert bar.high == 452.00
         assert bar.low == 449.00
@@ -152,10 +156,10 @@ class TestAlpacaFeedBarConversion:
         def capture_bar(bar: Bar) -> None:
             received_bars.append(bar)
 
-        asyncio.run(feed.subscribe(["SPY"], capture_bar))
+        asyncio.run(feed.subscribe(["MSFT"], capture_bar))
 
         mock_alpaca_bar = MagicMock()
-        mock_alpaca_bar.symbol = "SPY"
+        mock_alpaca_bar.symbol = "MSFT"
         mock_alpaca_bar.timestamp = datetime(2024, 1, 15, 10, 30, 0, tzinfo=UTC)
         mock_alpaca_bar.open = 450.00
         mock_alpaca_bar.high = 452.00
@@ -175,7 +179,7 @@ class TestAlpacaFeedBarConversion:
         feed = AlpacaFeed()
 
         mock_alpaca_bar = MagicMock()
-        mock_alpaca_bar.symbol = "SPY"
+        mock_alpaca_bar.symbol = "MSFT"
         mock_alpaca_bar.timestamp = datetime(2024, 1, 15, 10, 30, 0)
         mock_alpaca_bar.open = 450.00
         mock_alpaca_bar.high = 452.00
@@ -210,3 +214,163 @@ class TestAlpacaFeedProperties:
         """is_connected is False by default."""
         feed = AlpacaFeed()
         assert feed.is_connected is False
+
+
+class TestAlpacaFeedBarAggregation:
+    """Tests for time-aligned bar aggregation."""
+
+    def _make_bar(self, symbol: str, minute: int, price: float) -> MagicMock:
+        """Create a mock Alpaca bar at a given minute."""
+        bar = MagicMock()
+        bar.symbol = symbol
+        bar.timestamp = datetime(2024, 1, 15, 9, minute, 0)
+        bar.open = price
+        bar.high = price + 0.5
+        bar.low = price - 0.5
+        bar.close = price
+        bar.volume = 1000
+        return bar
+
+    def test_aggregation_starting_at_boundary(self, mock_env):
+        """Starting at :30 should need 5 bars to complete at :34."""
+        with patch("tradingbot._components.feeds.plugins.alpaca.get_engine_config") as mock_cfg:
+            mock_cfg.return_value.bar_interval = "5m"
+
+            feed = AlpacaFeed()
+            aggregated_bars: list[Bar] = []
+            progress_updates: list[tuple[str, float, int, int]] = []
+
+            def on_bar(bar: Bar) -> None:
+                aggregated_bars.append(bar)
+
+            def on_raw(symbol: str, price: float, collected: int, target: int) -> None:
+                progress_updates.append((symbol, price, collected, target))
+
+            asyncio.run(feed.subscribe(["MSFT"], on_bar))
+            feed.set_raw_bar_callback(on_raw)
+
+            # Send bars for minutes 30, 31, 32, 33, 34
+            for minute in range(30, 35):
+                bar = self._make_bar("MSFT", minute, 450.0 + minute - 30)
+                result = feed._aggregate_bar(
+                    Bar(
+                        symbol=bar.symbol,
+                        datetime=bar.timestamp,
+                        open=float(bar.open),
+                        high=float(bar.high),
+                        low=float(bar.low),
+                        close=float(bar.close),
+                        volume=int(bar.volume),
+                    )
+                )
+                if result:
+                    aggregated_bars.append(result)
+
+            # Should have aggregated one 5m bar
+            assert len(aggregated_bars) == 1
+            assert aggregated_bars[0].datetime.minute == 30  # Aligned start
+
+            # Progress should show 1/5, 2/5, 3/5, 4/5, 5/5
+            assert progress_updates == [
+                ("MSFT", 450.0, 1, 5),
+                ("MSFT", 451.0, 2, 5),
+                ("MSFT", 452.0, 3, 5),
+                ("MSFT", 453.0, 4, 5),
+                ("MSFT", 454.0, 5, 5),
+            ]
+
+    def test_aggregation_starting_mid_interval(self, mock_env):
+        """Starting at :32 should need 3 bars to complete at :34."""
+        with patch("tradingbot._components.feeds.plugins.alpaca.get_engine_config") as mock_cfg:
+            mock_cfg.return_value.bar_interval = "5m"
+
+            feed = AlpacaFeed()
+            progress_updates: list[tuple[str, float, int, int]] = []
+
+            def on_raw(symbol: str, price: float, collected: int, target: int) -> None:
+                progress_updates.append((symbol, price, collected, target))
+
+            feed.set_raw_bar_callback(on_raw)
+
+            # Send bars for minutes 32, 33, 34 (starting mid-interval)
+            aggregated = None
+            for minute in range(32, 35):
+                bar = Bar(
+                    symbol="MSFT",
+                    datetime=datetime(2024, 1, 15, 9, minute, 0),
+                    open=450.0,
+                    high=451.0,
+                    low=449.0,
+                    close=450.0 + minute - 32,
+                    volume=1000,
+                )
+                result = feed._aggregate_bar(bar)
+                if result:
+                    aggregated = result
+
+            # Should have aggregated one bar at :34
+            assert aggregated is not None
+            assert aggregated.datetime.minute == 30  # Aligned to interval start
+
+            # Progress should show 1/3, 2/3, 3/3 (only need 3 bars)
+            assert progress_updates == [
+                ("MSFT", 450.0, 1, 3),
+                ("MSFT", 451.0, 2, 3),
+                ("MSFT", 452.0, 3, 3),
+            ]
+
+    def test_aggregation_single_bar_at_boundary(self, mock_env):
+        """Starting at :34 should only need 1 bar."""
+        with patch("tradingbot._components.feeds.plugins.alpaca.get_engine_config") as mock_cfg:
+            mock_cfg.return_value.bar_interval = "5m"
+
+            feed = AlpacaFeed()
+            progress_updates: list[tuple[str, float, int, int]] = []
+
+            def on_raw(symbol: str, price: float, collected: int, target: int) -> None:
+                progress_updates.append((symbol, price, collected, target))
+
+            feed.set_raw_bar_callback(on_raw)
+
+            bar = Bar(
+                symbol="MSFT",
+                datetime=datetime(2024, 1, 15, 9, 34, 0),
+                open=450.0,
+                high=451.0,
+                low=449.0,
+                close=450.5,
+                volume=1000,
+            )
+            result = feed._aggregate_bar(bar)
+
+            # Should emit immediately
+            assert result is not None
+            assert progress_updates == [("MSFT", 450.5, 1, 1)]
+
+    def test_aggregation_multiple_intervals(self, mock_env):
+        """Test aggregation across multiple 5m intervals."""
+        with patch("tradingbot._components.feeds.plugins.alpaca.get_engine_config") as mock_cfg:
+            mock_cfg.return_value.bar_interval = "5m"
+
+            feed = AlpacaFeed()
+            aggregated_bars: list[Bar] = []
+
+            # Send bars for minutes 30-39 (two complete intervals)
+            for minute in range(30, 40):
+                bar = Bar(
+                    symbol="MSFT",
+                    datetime=datetime(2024, 1, 15, 9, minute, 0),
+                    open=450.0,
+                    high=451.0,
+                    low=449.0,
+                    close=450.0,
+                    volume=1000,
+                )
+                result = feed._aggregate_bar(bar)
+                if result:
+                    aggregated_bars.append(result)
+
+            # Should have two 5m bars
+            assert len(aggregated_bars) == 2
+            assert aggregated_bars[0].datetime.minute == 30
+            assert aggregated_bars[1].datetime.minute == 35

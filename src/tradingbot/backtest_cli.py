@@ -12,16 +12,16 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  tradingbot SPY
+  tradingbot AAPL
   tradingbot AAPL TSLA GOOGL
-  tradingbot SPY --period 5y --interval 1d
+  tradingbot AAPL --period 5y --interval 1d
   tradingbot AAPL --capital 50000 --risk 0.02
-  tradingbot SPY --verbose
-  tradingbot SPY --speed 10
+  tradingbot AAPL --verbose
+  tradingbot AAPL --speed 10
         """,
     )
 
-    parser.add_argument("symbols", nargs="+", help="Stock symbol(s) to backtest (e.g., SPY, AAPL)")
+    parser.add_argument("symbols", nargs="+", help="Stock symbol(s) to backtest (e.g., MSFT, AAPL)")
     parser.add_argument("--period", default="2y", help="Data period (default: 2y)")
     parser.add_argument("--interval", default="1d", help="Data interval (default: 1d)")
     parser.add_argument("--capital", type=float, help="Starting capital (uses config default)")

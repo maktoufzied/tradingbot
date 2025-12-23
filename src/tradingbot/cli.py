@@ -139,6 +139,7 @@ async def run_live(
     live_risk_manager: LiveRiskManager,
     rr_ratio: float = 2.0,
     dry_run: bool = False,
+    allow_short: bool = False,
     callbacks: EngineCallbacks | None = None,
 ) -> None:
     """Run trading engine."""
@@ -151,6 +152,7 @@ async def run_live(
         live_risk_manager=live_risk_manager,
         rr_ratio=rr_ratio,
         dry_run=dry_run,
+        allow_short=allow_short,
         callbacks=callbacks,
     )
 
@@ -173,6 +175,7 @@ def _run_with_tui(
     live_risk_manager: LiveRiskManager,
     rr_ratio: float,
     dry_run: bool,
+    allow_short: bool,
 ) -> None:
     """Run live trading with TUI."""
 
@@ -228,6 +231,12 @@ def _run_with_tui(
     class TradingApp(TradingTUI):
         """TUI app with trading engine worker."""
 
+        def __init__(self) -> None:
+            super().__init__(broker=broker, symbols=symbols)
+            # Set raw bar callback early so backfill progress is visible
+            with contextlib.suppress(NotImplementedError):
+                feed.set_raw_bar_callback(self.update_aggregation)
+
         def on_mount(self) -> None:
             """Start trading engine when app mounts."""
             super().on_mount()
@@ -244,6 +253,7 @@ def _run_with_tui(
                 live_risk_manager=live_risk_manager,
                 rr_ratio=rr_ratio,
                 dry_run=dry_run,
+                allow_short=allow_short,
                 callbacks=make_tui_callbacks(self),
             )
 
@@ -260,13 +270,13 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  tradingbot-live SPY
-  tradingbot-live SPY QQQ --dry-run
-  tradingbot-live SPY --tui
+  tradingbot-live AAPL
+  tradingbot-live AAPL QQQ --dry-run
+  tradingbot-live AAPL --tui
         """,
     )
 
-    parser.add_argument("symbols", nargs="+", help="Symbols to trade (e.g., SPY AAPL)")
+    parser.add_argument("symbols", nargs="+", help="Symbols to trade (e.g., MSFT AAPL)")
     parser.add_argument("--dry-run", action="store_true", help="Log signals without executing trades")
     parser.add_argument("--tui", action="store_true", help="Run with terminal UI")
     args = parser.parse_args()
@@ -295,6 +305,7 @@ Examples:
             live_risk_manager=live_risk_manager,
             rr_ratio=cfg.rr_ratio,
             dry_run=args.dry_run,
+            allow_short=cfg.allow_short,
         )
     else:
         with contextlib.suppress(KeyboardInterrupt):
@@ -308,6 +319,7 @@ Examples:
                     live_risk_manager=live_risk_manager,
                     rr_ratio=cfg.rr_ratio,
                     dry_run=args.dry_run,
+                    allow_short=cfg.allow_short,
                     callbacks=make_cli_callbacks(),
                 )
             )

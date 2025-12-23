@@ -74,7 +74,7 @@ class TestAlpacaBrokerOrders:
         mock_trading_client.submit_order.return_value = mock_order
 
         broker = AlpacaBroker()
-        order = Order(symbol="SPY", direction="LONG", size=10, order_type="MARKET")
+        order = Order(symbol="MSFT", direction="LONG", size=10, order_type="MARKET")
         result = broker.submit_order(order)
 
         assert result.order_id == "order-123"
@@ -110,7 +110,7 @@ class TestAlpacaBrokerOrders:
         mock_trading_client.submit_order.return_value = mock_order
 
         broker = AlpacaBroker()
-        order = Order(symbol="SPY", direction="LONG", size=10, order_type="MARKET")
+        order = Order(symbol="MSFT", direction="LONG", size=10, order_type="MARKET")
         result = broker.submit_order(order)
 
         assert result.order_id == "order-789"
@@ -125,7 +125,7 @@ class TestAlpacaBrokerOrders:
         mock_trading_client.submit_order.side_effect = APIError("Insufficient funds")
 
         broker = AlpacaBroker()
-        order = Order(symbol="SPY", direction="LONG", size=10, order_type="MARKET")
+        order = Order(symbol="MSFT", direction="LONG", size=10, order_type="MARKET")
         result = broker.submit_order(order)
 
         assert result.status == "REJECTED"
@@ -154,7 +154,7 @@ class TestAlpacaBrokerPositions:
     def test_get_position_long(self, mock_env, mock_trading_client):
         """Get an existing long position."""
         mock_pos = MagicMock()
-        mock_pos.symbol = "SPY"
+        mock_pos.symbol = "MSFT"
         mock_pos.qty = 10
         mock_pos.avg_entry_price = 450.00
         mock_pos.market_value = 4600.00
@@ -162,10 +162,10 @@ class TestAlpacaBrokerPositions:
         mock_trading_client.get_open_position.return_value = mock_pos
 
         broker = AlpacaBroker()
-        position = broker.get_position("SPY")
+        position = broker.get_position("MSFT")
 
         assert position is not None
-        assert position.symbol == "SPY"
+        assert position.symbol == "MSFT"
         assert position.direction == "LONG"
         assert position.size == 10
         assert position.avg_entry_price == 450.00
@@ -197,13 +197,13 @@ class TestAlpacaBrokerPositions:
         mock_trading_client.get_open_position.side_effect = APIError("Position not found")
 
         broker = AlpacaBroker()
-        position = broker.get_position("SPY")
+        position = broker.get_position("MSFT")
         assert position is None
 
     def test_get_all_positions(self, mock_env, mock_trading_client):
         """Get all positions."""
         mock_pos1 = MagicMock()
-        mock_pos1.symbol = "SPY"
+        mock_pos1.symbol = "MSFT"
         mock_pos1.qty = 10
         mock_pos1.avg_entry_price = 450.00
         mock_pos1.market_value = 4600.00
@@ -222,7 +222,7 @@ class TestAlpacaBrokerPositions:
         positions = broker.get_positions()
 
         assert len(positions) == 2
-        assert positions[0].symbol == "SPY"
+        assert positions[0].symbol == "MSFT"
         assert positions[1].symbol == "QQQ"
 
     def test_get_all_positions_empty(self, mock_env, mock_trading_client):

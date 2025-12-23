@@ -44,6 +44,7 @@ class YahooFeed(DataFeedProtocol):
         end_date: str | None = None,
         period: str = "2y",
         interval: str = "1d",
+        debug: bool = False,
     ) -> pl.DataFrame:
         """Fetch historical bar data from Yahoo Finance."""
         ticker: yf.Ticker = yf.Ticker(symbol)
@@ -64,7 +65,7 @@ class YahooFeed(DataFeedProtocol):
         # Convert pandas index to datetime column for polars
         pdf = pdf.reset_index()
         pdf.columns = ["datetime", "open", "high", "low", "close", "volume"]
-        # Remove timezone info for consistency
-        pdf["datetime"] = pd.to_datetime(pdf["datetime"]).dt.tz_localize(None)
+        # Convert to UTC and remove timezone info for consistent storage
+        pdf["datetime"] = pd.to_datetime(pdf["datetime"]).dt.tz_convert("UTC").dt.tz_localize(None)
 
         return pl.from_pandas(pdf)

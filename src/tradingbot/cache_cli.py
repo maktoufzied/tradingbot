@@ -1,7 +1,7 @@
 """CLI for cache management."""
 
 import argparse
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TypedDict
 
 from rich.console import Console
@@ -44,6 +44,30 @@ def get_symbol_stats() -> dict[str, dict[str, IntervalStats]]:
         return stats
 
 
+def _utc_to_local(dt: datetime) -> datetime:
+    """Convert UTC datetime to local time for display."""
+    if dt.tzinfo is None:
+        # Assume naive datetime is UTC
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone().replace(tzinfo=None)
+
+
+def _format_datetime(dt: datetime | None, interval: str) -> str:
+    """Format datetime based on interval (show time for intraday).
+
+    Converts UTC stored time to local time for display.
+    """
+    if dt is None:
+        return "-"
+    # Convert UTC to local time for display
+    local_dt = _utc_to_local(dt)
+    # Intraday intervals: show date and time
+    if interval in ("1m", "5m", "15m", "30m", "1h"):
+        return local_dt.strftime("%Y-%m-%d %H:%M")
+    # Daily and above: show date only
+    return local_dt.strftime("%Y-%m-%d")
+
+
 def cmd_stats(args: argparse.Namespace) -> None:
     """Show cache statistics."""
     symbol_stats = get_symbol_stats()
@@ -67,8 +91,8 @@ def cmd_stats(args: argparse.Namespace) -> None:
                 symbol,
                 interval,
                 str(data["count"]),
-                earliest.strftime("%Y-%m-%d") if earliest else "-",
-                latest.strftime("%Y-%m-%d") if latest else "-",
+                _format_datetime(earliest, interval),
+                _format_datetime(latest, interval),
             )
 
     console.print(table)
@@ -96,7 +120,7 @@ def cmd_fetch(args: argparse.Namespace) -> None:
             if deleted > 0:
                 console.print(f"  [dim]Cleared {deleted} cached bars[/dim]")
 
-        df = feed.history(symbol, period=args.period, interval=args.interval, refresh=args.refresh)
+        df = feed.history(symbol, period=args.period, interval=args.interval, refresh=args.refresh, debug=args.debug)
 
         # Get updated stats for this symbol
         symbol_stats = get_symbol_stats()
@@ -106,8 +130,8 @@ def cmd_fetch(args: argparse.Namespace) -> None:
             latest = data["latest"]
             console.print(
                 f"  [green]✓[/green] {len(df)} bars "
-                f"({earliest.strftime('%Y-%m-%d') if earliest else '?'} → "
-                f"{latest.strftime('%Y-%m-%d') if latest else '?'})"
+                f"({_format_datetime(earliest, args.interval)} → "
+                f"{_format_datetime(latest, args.interval)})"
             )
         else:
             console.print(f"  [green]✓[/green] {len(df)} bars")
@@ -145,17 +169,18 @@ def main() -> None:
         help="Fetch and cache data",
         epilog="""
 Examples:
-  tradingbot-cache fetch SPY
-  tradingbot-cache fetch SPY QQQ AAPL
-  tradingbot-cache fetch SPY --period 5y
-  tradingbot-cache fetch SPY --refresh
+  tradingbot-cache fetch AAPL
+  tradingbot-cache fetch AAPL QQQ
+  tradingbot-cache fetch AAPL --period 5y
+  tradingbot-cache fetch AAPL --refresh
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     fetch_parser.add_argument("symbols", nargs="*", help="Symbols to fetch")
-    fetch_parser.add_argument("--period", default="2y", help="Data period (default: 2y)")
+    fetch_parser.add_argument("--period", default="1y", help="Data period (default: 1y)")
     fetch_parser.add_argument("--interval", default="1d", help="Data interval (default: 1d)")
     fetch_parser.add_argument("--refresh", action="store_true", help="Force re-fetch from API")
+    fetch_parser.add_argument("--debug", action="store_true", help="Show debug info from API")
     fetch_parser.set_defaults(func=cmd_fetch)
 
     # clear command

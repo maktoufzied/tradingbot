@@ -95,6 +95,26 @@ class AlpacaBroker(BrokerProtocol):
         except APIError:
             return False
 
+    def get_order(self, order_id: str) -> OrderResult | None:
+        """Get current status of an order."""
+        try:
+            alpaca_order: Any = self._get_client().get_order_by_id(order_id)
+
+            filled_price: float | None = None
+            if alpaca_order.filled_avg_price is not None:
+                filled_price = float(alpaca_order.filled_avg_price)
+
+            filled_size = float(alpaca_order.filled_qty) if alpaca_order.filled_qty else 0
+
+            return OrderResult(
+                order_id=str(alpaca_order.id),
+                status=self._map_order_status(str(alpaca_order.status.value)),
+                filled_price=filled_price,
+                filled_size=filled_size,
+            )
+        except APIError:
+            return None
+
     def get_position(self, symbol: str) -> BrokerPosition | None:
         """Get current position for a symbol."""
         try:

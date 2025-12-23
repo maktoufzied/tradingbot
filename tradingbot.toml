@@ -1,5 +1,4 @@
 [tradingbot]
-fetcher = "yahoo"
 
 [tradingbot.strategy]
 # Options: "swing", "atr", "rr"
@@ -8,16 +7,17 @@ tp = "rr"
 
 [tradingbot.bot]
 # Bot parameters - tune these via optimizer
-swing_lb = 5       # Swing lookback period (in bars)
-risk_pct = 0.02    # Risk per trade (1% = 0.01)
-rr_ratio = 2.0     # Reward/risk ratio
-capital = 100000   # Starting capital
+swing_lb = 5         # Swing lookback period (in bars)
+risk_pct = 0.01      #  Risk per trade (1% = 0.01)
+rr_ratio = 3.0       # Reward/risk ratio
+capital = 100000     # Starting capital
+allow_short = false  # Allow short selling
 
 [tradingbot.engine]
 # Live trading configuration
 broker = "alpaca"   # Options: "paper", "alpaca"
 feed = "alpaca"    # Options: "alpaca" (yahoo doesn't support streaming)
-symbols = ["SPY"]  # Default symbols to trade
+bar_interval = "5m"
 
 [tradingbot.engine.risk]
 # Risk controls for live trading
@@ -26,6 +26,9 @@ circuit_breaker_loss_pct = 0.03  # Pause after 3% loss
 max_open_positions = 5           # Max concurrent positions
 max_position_size_pct = 0.10     # Max 10% of equity per position
 trading_hours_only = true        # Only trade 9:30 AM - 4:00 PM ET
+
+[tradingbot.cache]
+source = "alpaca"  # Use Alpaca for cache fetching (supports longer 5m history)
 
 [tradingbot.engine.alpaca]
 # API keys should be set via environment variables:

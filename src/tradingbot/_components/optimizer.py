@@ -1,4 +1,5 @@
 import os
+import signal
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from itertools import product
@@ -144,18 +145,38 @@ class Optimizer:
 
                     with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
                         futures = {executor.submit(_run_backtest_worker, args): args for args in worker_args}
-                        for future in as_completed(futures):
-                            result = future.result()
-                            if result:
-                                self.results.append(result)
-                            progress.update(task, advance=1)
+
+                        # Handle Ctrl+C gracefully - use os._exit for immediate termination
+                        def handle_sigint(signum: int, frame: object) -> None:
+                            console.print("\n[yellow]Interrupted[/yellow]")
+                            executor.shutdown(wait=False, cancel_futures=True)
+                            os._exit(130)
+
+                        original_handler = signal.signal(signal.SIGINT, handle_sigint)
+                        try:
+                            for future in as_completed(futures):
+                                result = future.result()
+                                if result:
+                                    self.results.append(result)
+                                progress.update(task, advance=1)
+                        finally:
+                            signal.signal(signal.SIGINT, original_handler)
 
                 console.print(f"[green]Completed {len(self.results)} valid backtests[/green]")
             else:
                 with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                    for result in executor.map(_run_backtest_worker, worker_args):
-                        if result:
-                            self.results.append(result)
+                    # Handle Ctrl+C gracefully - use os._exit for immediate termination
+                    def handle_sigint_quiet(signum: int, frame: object) -> None:
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        os._exit(130)
+
+                    original_handler = signal.signal(signal.SIGINT, handle_sigint_quiet)
+                    try:
+                        for result in executor.map(_run_backtest_worker, worker_args):
+                            if result:
+                                self.results.append(result)
+                    finally:
+                        signal.signal(signal.SIGINT, original_handler)
         else:
             # Sequential execution
             if verbose:

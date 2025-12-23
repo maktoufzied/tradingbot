@@ -99,6 +99,20 @@ class OrderResult:
 
 
 @dataclass
+class PendingOrder:
+    """Tracks a pending order awaiting fill."""
+
+    order_id: str
+    symbol: str
+    direction: Direction
+    expected_price: float
+    stop_loss: float
+    take_profit: float
+    entry_index: int
+    entry_time: datetime
+
+
+@dataclass
 class BrokerPosition:
     """Current position held at broker."""
 
