@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any, Final
 
 import polars as pl
+from alpaca.data.enums import DataFeed
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.live import StockDataStream
 from alpaca.data.models.bars import BarSet
@@ -210,6 +211,7 @@ class AlpacaFeed(DataFeedProtocol):
                     timeframe=TimeFrame(1, TimeFrameUnit.Minute),
                     start=start_time,
                     end=end_time,
+                    feed=DataFeed.IEX,  # Use free IEX data (SIP requires paid subscription)
                 )
 
                 def fetch_bars(req: StockBarsRequest = request) -> Any:
@@ -427,7 +429,7 @@ class AlpacaFeed(DataFeedProtocol):
 
         timeframe = self._parse_interval(interval)
 
-        # Build request
+        # Build request (use IEX feed - SIP requires paid subscription)
         if start_date and end_date:
             start_dt = datetime.fromisoformat(start_date)
             end_dt = datetime.fromisoformat(end_date)
@@ -436,6 +438,7 @@ class AlpacaFeed(DataFeedProtocol):
                 timeframe=timeframe,
                 start=start_dt,
                 end=end_dt,
+                feed=DataFeed.IEX,
             )
         else:
             # Convert period to start date
@@ -445,6 +448,7 @@ class AlpacaFeed(DataFeedProtocol):
                 symbol_or_symbols=symbol,
                 timeframe=timeframe,
                 start=start_dt,
+                feed=DataFeed.IEX,
             )
 
         print(

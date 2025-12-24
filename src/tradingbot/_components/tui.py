@@ -3,15 +3,18 @@
 import asyncio
 import contextlib
 from collections import deque
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Final, Literal
 
+import polars as pl
 from textual.app import App, ComposeResult
 from textual.containers import Container
 from textual.reactive import reactive
-from textual.widgets import Footer, Header, Label, RichLog, Static
+from textual.screen import ModalScreen
+from textual.widgets import Footer, Header, Label, ProgressBar, RichLog, Static
 
-from tradingbot.interfaces import BrokerProtocol
+from tradingbot.interfaces import BrokerProtocol, DataFeedProtocol
 from tradingbot.types import Bar, BrokerPosition, Direction, Position, Signal
 
 MAX_PRICE_HISTORY: Final[int] = 60
@@ -508,6 +511,78 @@ class StatusBar(Static):
         return " │ ".join(parts)
 
 
+class LoadingScreen(ModalScreen[None]):
+    """Modal screen showing cache population progress."""
+
+    CSS = """
+    LoadingScreen {
+        align: center middle;
+    }
+
+    #loading-container {
+        width: 80;
+        height: auto;
+        border: thick $primary;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    #loading-title {
+        text-align: center;
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    #loading-progress {
+        margin: 1 0;
+    }
+
+    #loading-status {
+        height: auto;
+        max-height: 10;
+    }
+
+    .symbol-status {
+        margin-left: 2;
+    }
+    """
+
+    def __init__(self, symbols: list[str], on_ready: Callable[[], None] | None = None) -> None:
+        super().__init__()
+        self._symbols = symbols
+        self._status_labels: dict[str, Label] = {}
+        self._on_ready = on_ready
+
+    def compose(self) -> ComposeResult:
+        with Container(id="loading-container"):
+            yield Label("Populating Cache", id="loading-title")
+            yield ProgressBar(id="loading-progress", total=len(self._symbols), show_eta=False)
+            with Container(id="loading-status"):
+                for symbol in self._symbols:
+                    label = Label(f"  {symbol}: [dim]waiting...[/dim]", classes="symbol-status")
+                    self._status_labels[symbol] = label
+                    yield label
+
+    def on_mount(self) -> None:
+        """Called when screen is mounted - start the cache population."""
+        if self._on_ready:
+            self._on_ready()
+
+    def update_symbol(self, symbol: str, status: str, style: str = "") -> None:
+        """Update the status of a symbol."""
+        if symbol in self._status_labels:
+            styled = f"[{style}]{status}[/{style}]" if style else status
+            self._status_labels[symbol].update(f"  {symbol}: {styled}")
+
+    def advance_progress(self) -> None:
+        """Advance the progress bar by one step."""
+        try:
+            progress = self.query_one("#loading-progress", ProgressBar)
+            progress.advance(1)
+        except Exception:
+            pass  # Screen might be dismissed
+
+
 class TradingTUI(App[None]):
     """Trading bot TUI application."""
 
@@ -626,6 +701,7 @@ class TradingTUI(App[None]):
         self._status_bar: StatusBar | None = None
         self._start_equity = 0.0
         self._cache_loaded_symbols: set[str] = set()
+        self._loading_screen: LoadingScreen | None = None
 
         # Per-symbol data storage
         self._symbol_charts: dict[str, deque[tuple[datetime, float]]] = {}
@@ -692,10 +768,124 @@ class TradingTUI(App[None]):
             self.run_worker(self._account_refresh_loop, exclusive=False)  # type: ignore[arg-type]
             self._status_bar.broker_status = "Connected"
 
-        # Load cached bars for all symbols
+        # Show loading screen and populate cache
         if self._symbols:
-            for symbol in self._symbols:
-                self.set_timer(0.1, lambda s=symbol: self._load_cached_bars(s))
+
+            def start_cache_worker() -> None:
+                self.run_worker(self._populate_cache_with_progress, exclusive=False)  # type: ignore[arg-type]
+
+            self._loading_screen = LoadingScreen(self._symbols, on_ready=start_cache_worker)
+            self.push_screen(self._loading_screen)
+
+    async def _populate_cache_with_progress(self) -> None:
+        """Populate cache for all symbols with progress updates."""
+        import io
+        import sys
+
+        if not self._loading_screen:
+            return
+
+        loading_screen = self._loading_screen  # Local reference for type checker
+
+        from tradingbot import get_feed_registry
+        from tradingbot.config import get_engine_config
+
+        from .cache.db import get_date_range, insert_bars, query_bars
+
+        engine_cfg = get_engine_config()
+        interval = engine_cfg.bar_interval
+
+        # Get today's local midnight in UTC
+        local_midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        local_tz = datetime.now().astimezone().tzinfo
+        today_start_utc = local_midnight.replace(tzinfo=local_tz).astimezone(UTC).replace(tzinfo=None)
+        now_utc = datetime.now(UTC).replace(tzinfo=None)
+
+        feed = None
+        has_errors = False
+
+        for symbol in self._symbols:
+            try:
+                # Update modal status
+                loading_screen.update_symbol(symbol, "checking cache...", "dim")
+
+                # Check cache status
+                _, cached_end = await asyncio.to_thread(get_date_range, symbol, interval)
+
+                need_fetch = False
+                fetch_start = today_start_utc
+
+                if cached_end is None or cached_end < today_start_utc:
+                    need_fetch = True
+                elif (now_utc - cached_end).total_seconds() > 300:
+                    need_fetch = True
+                    fetch_start = cached_end
+
+                if need_fetch:
+                    loading_screen.update_symbol(symbol, f"fetching from {engine_cfg.feed}...", "yellow")
+
+                    # Lazy-load feed
+                    if feed is None:
+                        feed = get_feed_registry().get(engine_cfg.feed)
+                    current_feed = feed  # Capture for closure with correct type
+
+                    # Fetch in thread to not block UI (suppress print output)
+                    def fetch_with_suppressed_output(
+                        f: DataFeedProtocol = current_feed,
+                        sym: str = symbol,
+                        start: datetime = fetch_start,
+                    ) -> pl.DataFrame:
+                        old_stdout = sys.stdout
+                        sys.stdout = io.StringIO()
+                        try:
+                            return f.history(
+                                sym,
+                                start.isoformat(),
+                                now_utc.isoformat(),
+                                "1d",
+                                interval,
+                            )
+                        finally:
+                            sys.stdout = old_stdout
+
+                    df_new = await asyncio.to_thread(fetch_with_suppressed_output)
+
+                    if not df_new.is_empty():
+                        await asyncio.to_thread(insert_bars, df_new, symbol, interval, engine_cfg.feed)
+                        loading_screen.update_symbol(symbol, f"fetched {len(df_new)} bars", "green")
+                    else:
+                        loading_screen.update_symbol(symbol, "no new data", "dim")
+                else:
+                    loading_screen.update_symbol(symbol, "cache up to date", "green")
+
+                # Load bars into chart
+                df = await asyncio.to_thread(query_bars, symbol, interval, today_start_utc)
+                if not df.is_empty():
+                    for row in df.iter_rows(named=True):
+                        ts = row["datetime"]
+                        price = float(row["close"])
+                        self._symbol_charts[symbol].append((ts, price))
+
+                    # Update visible chart if this is the active symbol
+                    is_active = self._symbols and self._symbols[self._active_symbol_idx] == symbol
+                    if is_active and self._chart:
+                        for ts, price in self._symbol_charts[symbol]:
+                            self._chart.add_price(price, ts)
+
+                self._cache_loaded_symbols.add(symbol)
+
+            except Exception as e:
+                # Show more of the error message (80 chars)
+                err_msg = str(e)[:80] + "..." if len(str(e)) > 80 else str(e)
+                loading_screen.update_symbol(symbol, f"error: {err_msg}", "red")
+                has_errors = True
+
+            # Advance progress bar
+            loading_screen.advance_progress()
+
+        # Longer delay if there were errors so user can read them
+        await asyncio.sleep(3.0 if has_errors else 0.5)
+        self.pop_screen()
 
     async def _account_refresh_loop(self) -> None:
         """Periodically refresh account and positions from broker."""
@@ -806,63 +996,6 @@ class TradingTUI(App[None]):
 
         # Trigger refresh
         self._chart.prices = list(self._chart._data)
-
-    def _load_cached_bars(self, symbol: str) -> None:
-        """Load today's cached bars into the chart."""
-        if symbol in self._cache_loaded_symbols:
-            return
-        self._cache_loaded_symbols.add(symbol)
-
-        try:
-            from .cache.db import query_bars
-
-            # Get today's local midnight and convert to UTC for database query
-            local_midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            local_tz = datetime.now().astimezone().tzinfo
-            today_start_utc = local_midnight.replace(tzinfo=local_tz).astimezone(UTC).replace(tzinfo=None)
-
-            # Query bars at configured interval from today (database stores UTC)
-            from tradingbot.config import get_engine_config
-
-            interval = get_engine_config().bar_interval
-            df = query_bars(symbol, interval, start=today_start_utc)
-
-            if df.is_empty():
-                return
-
-            # Initialize symbol chart storage if needed
-            if symbol not in self._symbol_charts:
-                self._symbol_charts[symbol] = deque(maxlen=MAX_PRICE_HISTORY)
-
-            # Add bars to symbol's storage
-            count = 0
-            first_ts = None
-            last_ts = None
-            for row in df.iter_rows(named=True):
-                ts = row["datetime"]
-                price = float(row["close"])
-                if first_ts is None:
-                    first_ts = ts
-                last_ts = ts
-                self._symbol_charts[symbol].append((ts, price))
-                count += 1
-
-            # If this is the active symbol, also update the visible chart
-            is_active = self._symbols and self._symbols[self._active_symbol_idx] == symbol
-            if is_active and self._chart:
-                for ts, price in self._symbol_charts[symbol]:
-                    self._chart.add_price(price, ts)
-
-            # Log loaded bars count with time range
-            if self._signal_log and first_ts and last_ts:
-                first_local = _utc_to_local(first_ts).strftime("%H:%M")
-                last_local = _utc_to_local(last_ts).strftime("%H:%M")
-                self._signal_log.write(
-                    f"[dim]{symbol}: Loaded {count} cached bars ({first_local} → {last_local})[/dim]"
-                )
-
-        except Exception:
-            pass  # Silently ignore cache loading errors
 
     def set_feed_status(self, connected: bool) -> None:
         """Update feed connection status."""

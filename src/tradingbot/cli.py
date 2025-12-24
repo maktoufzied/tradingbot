@@ -265,6 +265,8 @@ def main() -> None:
     """CLI entry point for live trading."""
     import argparse
 
+    from tradingbot._components.presets import get_preset
+
     parser = argparse.ArgumentParser(
         description="Run live trading bot",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -273,10 +275,17 @@ Examples:
   tradingbot-live AAPL
   tradingbot-live AAPL QQQ --dry-run
   tradingbot-live AAPL --tui
+  tradingbot-live AAPL -p conservative --tui
         """,
     )
 
     parser.add_argument("symbols", nargs="+", help="Symbols to trade (e.g., MSFT AAPL)")
+    parser.add_argument("--preset", "-p", help="Use a preset (overrides strategy, risk, indicators)")
+    parser.add_argument(
+        "--strategy", "-s", help="Entry strategy: swing_break, vwap_reversion, orb, rsi_divergence, atr_breakout"
+    )
+    parser.add_argument("--risk", type=float, help="Risk per trade as decimal (e.g., 0.01 for 1%%)")
+    parser.add_argument("--rr", type=float, help="Reward/risk ratio (e.g., 2.0)")
     parser.add_argument("--dry-run", action="store_true", help="Log signals without executing trades")
     parser.add_argument("--tui", action="store_true", help="Run with terminal UI")
     args = parser.parse_args()
@@ -289,9 +298,19 @@ Examples:
     strategy_cfg = get_strategy_config()
     engine_cfg = get_engine_config()
 
+    # Load preset if specified
+    preset = None
+    if args.preset:
+        preset = get_preset(args.preset)
+
+    # Apply values: CLI args > preset > config defaults
+    risk_pct = args.risk if args.risk is not None else (preset.risk_pct if preset else strategy_cfg.risk_pct)
+    rr_ratio = args.rr if args.rr is not None else (preset.rr_ratio if preset else strategy_cfg.rr_ratio)
+    entry_strategy = args.strategy if args.strategy is not None else (preset.entry if preset else strategy_cfg.entry)
+
     broker = get_broker_registry().get(engine_cfg.broker)
-    signal_generator = SignalGenerator(strategy_cfg.swing_lb)
-    position_sizer = PositionSizer(bot_cfg.capital, strategy_cfg.risk_pct)
+    signal_generator = SignalGenerator(strategy_cfg.swing_lb, entry_strategy=entry_strategy)
+    position_sizer = PositionSizer(bot_cfg.capital, risk_pct)
     live_risk_manager = LiveRiskManager(engine_cfg.risk, bot_cfg.capital)
 
     feed = get_feed_registry().get(engine_cfg.feed)
@@ -304,7 +323,7 @@ Examples:
             signal_generator=signal_generator,
             position_sizer=position_sizer,
             live_risk_manager=live_risk_manager,
-            rr_ratio=strategy_cfg.rr_ratio,
+            rr_ratio=rr_ratio,
             dry_run=args.dry_run,
             allow_short=strategy_cfg.allow_short,
         )
@@ -318,7 +337,7 @@ Examples:
                     signal_generator=signal_generator,
                     position_sizer=position_sizer,
                     live_risk_manager=live_risk_manager,
-                    rr_ratio=strategy_cfg.rr_ratio,
+                    rr_ratio=rr_ratio,
                     dry_run=args.dry_run,
                     allow_short=strategy_cfg.allow_short,
                     callbacks=make_cli_callbacks(),

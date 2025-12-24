@@ -1,6 +1,7 @@
 """Alpaca broker implementation for paper and live trading."""
 
 import os
+from datetime import UTC, datetime
 from typing import Any, Final
 
 from alpaca.common.exceptions import APIError
@@ -142,12 +143,19 @@ class AlpacaBroker(BrokerProtocol):
 
     def get_clock(self) -> MarketClock | None:
         """Get market clock status."""
+
+        def _to_utc_naive(dt: datetime) -> datetime:
+            """Convert timezone-aware datetime to naive UTC."""
+            if dt.tzinfo:
+                return dt.astimezone(UTC).replace(tzinfo=None)
+            return dt
+
         try:
             clock: Any = self._get_client().get_clock()
             return MarketClock(
                 is_open=bool(clock.is_open),
-                next_open=clock.next_open.replace(tzinfo=None) if clock.next_open.tzinfo else clock.next_open,
-                next_close=clock.next_close.replace(tzinfo=None) if clock.next_close.tzinfo else clock.next_close,
+                next_open=_to_utc_naive(clock.next_open),
+                next_close=_to_utc_naive(clock.next_close),
             )
         except APIError:
             return None
