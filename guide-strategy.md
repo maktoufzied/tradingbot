@@ -41,7 +41,69 @@ LH₁
 
 ---
 
-## 2. Market Hypothesis
+## 2. Strategy Architecture
+
+The trading system uses a pluggable architecture with separate **entry** and **exit** strategies that can be combined freely.
+
+### Entry Strategies (Signal Generation)
+
+| Strategy | Description | Win Rate | Best For |
+|----------|-------------|----------|----------|
+| `swing_break` | Market structure breaks (HH/HL/LH/LL) | 45-55% | Trending markets |
+| `vwap_reversion` | Mean reversion to VWAP | 55-62% | Ranging/mean-reverting |
+| `orb` | Opening Range Breakout (first 30min) | 55-60% | High volatility opens |
+| `rsi_divergence` | RSI divergence detection | 52-58% | Trend exhaustion |
+| `atr_breakout` | ATR band breakouts | 50-55% | Volatile markets |
+
+### Exit Strategies (SL/TP Calculation)
+
+| Strategy | Stop Loss | Take Profit |
+|----------|-----------|-------------|
+| `swing` | Below/above last swing point | Swing target or RR-capped (1.5%) |
+| `atr` | ATR-based distance | ATR × RR ratio (capped) |
+| `fixed` | Fixed % from entry (2%) | Fixed % from entry (1.5%) |
+
+### Indicator Filters
+
+Entry signals can be filtered through indicators:
+
+| Indicator | Filter Logic |
+|-----------|--------------|
+| `rsi` | Block BUY if RSI > 70, block SELL if RSI < 30 |
+| `macd` | Block signals against MACD direction |
+
+### Configuration
+
+```toml
+[tradingbot.strategy]
+# Option 1: Use a preset (recommended for quick setup)
+preset = "balanced"      # Configures everything at once
+
+# Option 2: Configure individually
+entry = "swing_break"    # Entry strategy
+exit = "swing"           # Exit strategy
+
+[tradingbot.indicators]
+enabled = ["rsi", "macd"]  # Indicators for filtering
+filter_mode = "all"        # "all" = all must pass, "any" = one must pass
+signal_mode = "filter"     # "filter" or "none"
+```
+
+### Presets
+
+| Preset | Entry | Exit | Risk | RR | Description |
+|--------|-------|------|------|-----|-------------|
+| `conservative` | swing_break | swing | 0.5% | 1.5:1 | Filtered signals, low risk |
+| `balanced` | swing_break | swing | 1.0% | 1.5:1 | RSI filtering, moderate risk |
+| `aggressive` | swing_break | atr | 2.0% | 2.0:1 | No filters, higher risk |
+| `scalping` | orb | fixed | 0.5% | 1.0:1 | Quick ORB trades, 30min time exit |
+| `mean_reversion` | vwap_reversion | fixed | 1.0% | 1.2:1 | VWAP mean reversion |
+| `momentum` | atr_breakout | atr | 1.5% | 1.5:1 | ATR breakouts, trend following |
+| `divergence` | rsi_divergence | swing | 1.0% | 1.5:1 | Counter-trend at exhaustion |
+
+---
+
+## 3. Market Hypothesis (Swing Break Strategy)
 
 > **"Markets trend, and trends persist until structure breaks."**
 

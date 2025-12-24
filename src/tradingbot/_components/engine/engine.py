@@ -7,9 +7,9 @@ from typing import Final
 
 import polars as pl
 
-from tradingbot.config import get_engine_config
+from tradingbot.config import get_engine_config, get_strategy_config
 from tradingbot.interfaces import BrokerProtocol, DataFeedProtocol
-from tradingbot.types import Bar, Direction, Order, PendingOrder, Position, Signal, SwingPoint
+from tradingbot.types import Bar, Direction, Order, PendingOrder, Position, Signal
 
 from .. import sounds
 from ..brokers.plugins.paper import PaperBroker
@@ -17,8 +17,6 @@ from ..feeds import DataFeed
 from ..live_risk import LiveRiskManager
 from ..risk import PositionSizer
 from ..signals import SignalGenerator
-from ..strategies import ExitStrategy
-from ..swing import find_swing_points
 from .callbacks import EngineCallbacks
 from .events import (
     BarEvent,
@@ -101,6 +99,20 @@ class TradingEngine:
             )
         )
 
+        # Check if market is open
+        clock = self._broker.get_clock()
+        if clock and not clock.is_open:
+            await self._emit_message(
+                f"Market is closed. Next open: {clock.next_open.strftime('%Y-%m-%d %H:%M')} UTC",
+                MessageLevel.WARNING,
+            )
+            if not self._dry_run:
+                await self._emit_message(
+                    "Live trading requires market to be open. Use --dry-run to test outside market hours.",
+                    MessageLevel.ERROR,
+                )
+                return
+
         # Reset daily tracking
         account = self._broker.get_account()
         self._live_risk.reset_daily(account.equity)
@@ -167,8 +179,8 @@ class TradingEngine:
             # Calculate stop/TP from current market structure
             if bp.symbol in self._bars and len(self._bars[bp.symbol]) >= MIN_BARS_REQUIRED:
                 df = self._bars_to_df(bp.symbol)
-                swings = find_swing_points(df, self._sig_gen.swing_lookback)
-                stop, tp = ExitStrategy.calc(bp.direction, bp.avg_entry_price, self._rr_ratio, df, swings)
+                exit_params = self._sig_gen.calc_exit(bp.direction, bp.avg_entry_price, df, self._rr_ratio)
+                stop, tp = exit_params.stop_loss, exit_params.take_profit
             else:
                 stop = bp.avg_entry_price * (0.98 if bp.direction == "LONG" else 1.02)
                 tp = bp.avg_entry_price * (1.04 if bp.direction == "LONG" else 0.96)
@@ -229,7 +241,7 @@ class TradingEngine:
         if position:
             await self._check_exit(bar, position)
 
-        signal, details = self._sig_gen.generate(df, len(df) - 1, position)
+        signal, details = self._sig_gen.generate(df, len(df) - 1, bool(position))
 
         # Check if we should open a new position
         can_open = (
@@ -267,8 +279,8 @@ class TradingEngine:
         price = bar.close
         idx = len(df) - 1
 
-        swings: list[SwingPoint] = find_swing_points(df, self._sig_gen.swing_lookback)
-        stop, tp = ExitStrategy.calc(direction, price, self._rr_ratio, df, swings)
+        exit_params = self._sig_gen.calc_exit(direction, price, df, self._rr_ratio)
+        stop, tp = exit_params.stop_loss, exit_params.take_profit
         size = self._pos_sizer.calc_size(price, stop)
 
         account = self._broker.get_account()
@@ -378,6 +390,7 @@ class TradingEngine:
         should_exit = False
         exit_reason = ""
 
+        # Check stop-loss and take-profit first
         if position.direction == "LONG":
             if bar.low <= position.stop_loss:
                 should_exit, exit_reason = True, "STOP_LOSS"
@@ -389,12 +402,36 @@ class TradingEngine:
             elif bar.low <= position.take_profit:
                 should_exit, exit_reason = True, "TAKE_PROFIT"
 
+        # Check time-based exits if no SL/TP triggered
+        if not should_exit:
+            strategy_cfg = get_strategy_config()
+
+            # Check TIME_EXIT: close after N minutes
+            if strategy_cfg.time_exit_minutes > 0:
+                hold_minutes = (bar.datetime - position.entry_time).total_seconds() / 60
+                if hold_minutes >= strategy_cfg.time_exit_minutes:
+                    should_exit, exit_reason = True, "TIME_EXIT"
+
+            # Check EOD_EXIT: close before market close
+            if not should_exit and strategy_cfg.eod_exit:
+                clock = self._broker.get_clock()
+                if clock and clock.is_open:
+                    minutes_to_close = (clock.next_close - bar.datetime).total_seconds() / 60
+                    if 0 < minutes_to_close <= strategy_cfg.eod_exit_minutes_before:
+                        should_exit, exit_reason = True, "EOD_EXIT"
+
         if should_exit:
             await self._close_position(bar, position, exit_reason)
 
     async def _close_position(self, bar: Bar, position: Position, reason: str) -> None:
         """Close an existing position."""
-        exit_price = position.stop_loss if reason == "STOP_LOSS" else position.take_profit
+        if reason == "STOP_LOSS":
+            exit_price = position.stop_loss
+        elif reason == "TAKE_PROFIT":
+            exit_price = position.take_profit
+        else:
+            # TIME_EXIT and EOD_EXIT use current market price
+            exit_price = bar.close
 
         if self._dry_run:
             pnl = (exit_price - position.entry_price) * position.size

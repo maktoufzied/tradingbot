@@ -82,11 +82,15 @@ class ParameterRanges:
 
     @classmethod
     def default(cls) -> ParameterRanges:
-        """Default parameter ranges for optimization."""
+        """Default parameter ranges for optimization.
+
+        RR ratios are kept realistic for day trading (1:1 to 2:1).
+        Higher RR ratios require unrealistic TP targets on intraday data.
+        """
         return cls(
             swing_lookback=[3, 4, 5, 6, 7, 8, 9, 10],
             risk_pct=[0.005, 0.01, 0.015, 0.02],  # 0.5%, 1%, 1.5%, 2%
-            rr_ratio=[1.5, 2.0, 2.5, 3.0],
+            rr_ratio=[1.0, 1.2, 1.5, 2.0],  # Realistic for day trading
         )
 
     def total_combinations(self) -> int:

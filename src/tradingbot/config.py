@@ -11,22 +11,59 @@ _config: Config | None = None
 
 
 @dataclass(frozen=True)
-class StrategyConfig:
-    """Strategy configuration."""
+class RSIConfig:
+    """RSI indicator configuration."""
 
-    stop: str = "swing"
-    tp: str = "rr"
+    period: int = 14
+    overbought: float = 70.0
+    oversold: float = 30.0
+
+
+@dataclass(frozen=True)
+class MACDConfig:
+    """MACD indicator configuration."""
+
+    fast_period: int = 12
+    slow_period: int = 26
+    signal_period: int = 9
+
+
+@dataclass(frozen=True)
+class IndicatorConfig:
+    """Indicator system configuration."""
+
+    enabled: list[str] = field(default_factory=lambda: ["rsi", "macd"])
+    filter_mode: str = "all"  # all, any, none
+    signal_mode: str = "filter"  # filter, none
+    rsi: RSIConfig = field(default_factory=RSIConfig)
+    macd: MACDConfig = field(default_factory=MACDConfig)
+
+
+@dataclass(frozen=True)
+class StrategyConfig:
+    """Strategy configuration - everything a preset can override."""
+
+    preset: str | None = None  # Preset name (overrides all strategy settings)
+    entry: str = "swing_break"  # Entry: swing_break, vwap_reversion, orb, rsi_divergence, atr_breakout
+    exit: str = "swing"  # Exit: swing, atr, fixed
+    # Risk parameters
+    swing_lb: int = 5  # Swing lookback period (bars)
+    risk_pct: float = 0.01  # Risk per trade (1% = 0.01)
+    rr_ratio: float = 1.5  # Reward/risk ratio
+    allow_short: bool = False  # Allow short selling
+    # Time-based exits
+    eod_exit: bool = True  # Close positions before market close
+    time_exit_minutes: int = 0  # Close after N minutes (0 = disabled)
+    eod_exit_minutes_before: int = 15  # Minutes before close to exit
+    # Indicator filters
+    indicators: IndicatorConfig = field(default_factory=IndicatorConfig)
 
 
 @dataclass(frozen=True)
 class BotConfig:
-    """Bot parameter configuration."""
+    """Bot configuration - account-level settings."""
 
-    swing_lb: int = 5
-    risk_pct: float = 0.01
-    rr_ratio: float = 2.0
-    capital: float = 100000
-    allow_short: bool = False
+    capital: float = 100000  # Starting capital ($)
 
 
 @dataclass(frozen=True)
@@ -111,18 +148,49 @@ def _parse_config(data: dict[str, Any]) -> Config:
     root = data.get("tradingbot", {})
 
     strategy_data = root.get("strategy", {})
+
+    # Parse indicators (nested under strategy)
+    ind_data = strategy_data.get("indicators", {})
+    rsi_data = ind_data.get("rsi", {})
+    macd_data = ind_data.get("macd", {})
+
+    rsi_config = RSIConfig(
+        period=rsi_data.get("period", 14),
+        overbought=rsi_data.get("overbought", 70.0),
+        oversold=rsi_data.get("oversold", 30.0),
+    )
+
+    macd_config = MACDConfig(
+        fast_period=macd_data.get("fast_period", 12),
+        slow_period=macd_data.get("slow_period", 26),
+        signal_period=macd_data.get("signal_period", 9),
+    )
+
+    indicators = IndicatorConfig(
+        enabled=ind_data.get("enabled", ["rsi", "macd"]),
+        filter_mode=ind_data.get("filter_mode", "all"),
+        signal_mode=ind_data.get("signal_mode", "filter"),
+        rsi=rsi_config,
+        macd=macd_config,
+    )
+
     strategy = StrategyConfig(
-        stop=strategy_data.get("stop", "swing"),
-        tp=strategy_data.get("tp", "rr"),
+        preset=strategy_data.get("preset"),
+        entry=strategy_data.get("entry", "swing_break"),
+        exit=strategy_data.get("exit", "swing"),
+        swing_lb=strategy_data.get("swing_lb", 5),
+        risk_pct=strategy_data.get("risk_pct", 0.01),
+        rr_ratio=strategy_data.get("rr_ratio", 1.5),
+        allow_short=strategy_data.get("allow_short", False),
+        eod_exit=strategy_data.get("eod_exit", True),
+        time_exit_minutes=strategy_data.get("time_exit_minutes", 0),
+        eod_exit_minutes_before=strategy_data.get("eod_exit_minutes_before", 15),
+        indicators=indicators,
     )
 
     bot_data = root.get("bot", {})
     bot = BotConfig(
-        swing_lb=bot_data.get("swing_lb", 5),
-        risk_pct=bot_data.get("risk_pct", 0.01),
-        rr_ratio=bot_data.get("rr_ratio", 2.0),
         capital=bot_data.get("capital", 100000),
-        allow_short=bot_data.get("allow_short", False),
     )
 
     engine_data = root.get("engine", {})
@@ -201,6 +269,11 @@ def get_bot_config() -> BotConfig:
     return get_config().bot
 
 
+def get_strategy_config() -> StrategyConfig:
+    """Get strategy configuration."""
+    return get_config().strategy
+
+
 def get_engine_config() -> EngineConfig:
     """Get engine configuration."""
     return get_config().engine
@@ -209,6 +282,11 @@ def get_engine_config() -> EngineConfig:
 def get_cache_config() -> CacheConfig:
     """Get cache configuration."""
     return get_config().cache
+
+
+def get_indicator_config() -> IndicatorConfig:
+    """Get indicator configuration."""
+    return get_config().strategy.indicators
 
 
 def get_config_value(*keys: str, default: str) -> str:

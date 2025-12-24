@@ -23,7 +23,7 @@ from tradingbot import (
     get_broker_registry,
     get_feed_registry,
 )
-from tradingbot.config import get_bot_config, get_engine_config
+from tradingbot.config import get_bot_config, get_engine_config, get_strategy_config
 from tradingbot.interfaces import BrokerProtocol, DataFeedProtocol
 
 console = Console()
@@ -285,13 +285,14 @@ Examples:
     for sym in args.symbols:
         symbols.extend(s.strip().upper() for s in sym.split(",") if s.strip())
 
-    cfg = get_bot_config()
+    bot_cfg = get_bot_config()
+    strategy_cfg = get_strategy_config()
     engine_cfg = get_engine_config()
 
     broker = get_broker_registry().get(engine_cfg.broker)
-    signal_generator = SignalGenerator(cfg.swing_lb)
-    position_sizer = PositionSizer(cfg.capital, cfg.risk_pct)
-    live_risk_manager = LiveRiskManager(engine_cfg.risk, cfg.capital)
+    signal_generator = SignalGenerator(strategy_cfg.swing_lb)
+    position_sizer = PositionSizer(bot_cfg.capital, strategy_cfg.risk_pct)
+    live_risk_manager = LiveRiskManager(engine_cfg.risk, bot_cfg.capital)
 
     feed = get_feed_registry().get(engine_cfg.feed)
 
@@ -303,9 +304,9 @@ Examples:
             signal_generator=signal_generator,
             position_sizer=position_sizer,
             live_risk_manager=live_risk_manager,
-            rr_ratio=cfg.rr_ratio,
+            rr_ratio=strategy_cfg.rr_ratio,
             dry_run=args.dry_run,
-            allow_short=cfg.allow_short,
+            allow_short=strategy_cfg.allow_short,
         )
     else:
         with contextlib.suppress(KeyboardInterrupt):
@@ -317,9 +318,9 @@ Examples:
                     signal_generator=signal_generator,
                     position_sizer=position_sizer,
                     live_risk_manager=live_risk_manager,
-                    rr_ratio=cfg.rr_ratio,
+                    rr_ratio=strategy_cfg.rr_ratio,
                     dry_run=args.dry_run,
-                    allow_short=cfg.allow_short,
+                    allow_short=strategy_cfg.allow_short,
                     callbacks=make_cli_callbacks(),
                 )
             )

@@ -472,6 +472,7 @@ class StatusBar(Static):
     time_str: reactive[str] = reactive("")
     feed_status: reactive[str] = reactive("Disconnected")
     broker_status: reactive[str] = reactive("Disconnected")
+    market_status: reactive[str] = reactive("")
 
     def on_mount(self) -> None:
         self.set_interval(1, self._update_time)
@@ -488,15 +489,23 @@ class StatusBar(Static):
     def watch_broker_status(self, value: str) -> None:
         self.refresh()
 
+    def watch_market_status(self, value: str) -> None:
+        self.refresh()
+
     def render(self) -> str:
         feed_color = "green" if self.feed_status == "Connected" else "red"
         broker_color = "green" if self.broker_status == "Connected" else "red"
 
-        return (
-            f"[bold]{self.time_str}[/bold] │ "
-            f"Feed: [{feed_color}]{self.feed_status}[/{feed_color}] │ "
-            f"Broker: [{broker_color}]{self.broker_status}[/{broker_color}]"
-        )
+        parts = [
+            f"[bold]{self.time_str}[/bold]",
+            f"Feed: [{feed_color}]{self.feed_status}[/{feed_color}]",
+            f"Broker: [{broker_color}]{self.broker_status}[/{broker_color}]",
+        ]
+
+        if self.market_status:
+            parts.append(self.market_status)
+
+        return " │ ".join(parts)
 
 
 class TradingTUI(App[None]):
@@ -702,6 +711,7 @@ class TradingTUI(App[None]):
 
         account = self._broker.get_account()
         positions = self._broker.get_positions()
+        clock = self._broker.get_clock()
 
         if self._start_equity == 0.0:
             self._start_equity = account.equity
@@ -714,6 +724,14 @@ class TradingTUI(App[None]):
 
         if self._positions_panel:
             self._positions_panel.positions = positions
+
+        if self._status_bar and clock:
+            if clock.is_open:
+                close_local = _utc_to_local(clock.next_close)
+                self._status_bar.market_status = f"[green]Market Open[/green] (closes {close_local.strftime('%H:%M')})"
+            else:
+                open_local = _utc_to_local(clock.next_open)
+                self._status_bar.market_status = f"[red]Market Closed[/red] (opens {open_local.strftime('%H:%M')})"
 
     def action_toggle_dark(self) -> None:
         """Toggle dark mode."""

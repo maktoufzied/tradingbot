@@ -1,38 +1,109 @@
+# Trading Bot Configuration
+# ========================
+# All settings have sensible defaults - only override what you need.
+
 [tradingbot]
 
+# =============================================================================
+# STRATEGY - Everything a preset can override
+# =============================================================================
 [tradingbot.strategy]
-# Options: "swing", "atr", "rr"
-stop = "swing"
-tp = "rr"
+# Use a preset to configure everything at once:
+# preset = "balanced"  # Options: conservative, balanced, aggressive, scalping, mean_reversion, momentum, divergence
 
+# Or configure individually:
+entry = "swing_break"        # Entry: swing_break, vwap_reversion, orb, rsi_divergence, atr_breakout
+exit = "swing"               # Exit: swing, atr, fixed
+
+# Risk parameters
+swing_lb = 5                 # Swing lookback period (bars)
+risk_pct = 0.01              # Risk per trade (1% = 0.01)
+rr_ratio = 1.5               # Reward/risk ratio (1.5:1 requires ~55% win rate)
+allow_short = false          # Allow short selling
+
+# Time-based exits (for day trading)
+eod_exit = true              # Close all positions before market close
+eod_exit_minutes_before = 15 # Minutes before close to trigger EOD exit
+time_exit_minutes = 0        # Close position after N minutes (0 = disabled)
+
+# Indicator filters for entry signals
+[tradingbot.strategy.indicators]
+enabled = ["rsi", "macd"]    # Indicators: rsi, macd
+filter_mode = "all"          # "all" = all must pass, "any" = one must pass
+signal_mode = "filter"       # "filter" = filter entry signals, "none" = disabled
+
+[tradingbot.strategy.indicators.rsi]
+period = 14
+overbought = 70.0
+oversold = 30.0
+
+[tradingbot.strategy.indicators.macd]
+fast_period = 12
+slow_period = 26
+signal_period = 9
+
+# =============================================================================
+# BOT - Account-level settings
+# =============================================================================
 [tradingbot.bot]
-# Bot parameters - tune these via optimizer
-swing_lb = 5         # Swing lookback period (in bars)
-risk_pct = 0.01      #  Risk per trade (1% = 0.01)
-rr_ratio = 3.0       # Reward/risk ratio
-capital = 100000     # Starting capital
-allow_short = false  # Allow short selling
+capital = 100000             # Starting capital ($)
 
+# =============================================================================
+# CACHE - Local market data storage
+# =============================================================================
+[tradingbot.cache]
+enabled = true
+source = "yahoo"             # Data source for cache: yahoo
+path = "~/.cache/tradingbot/tradingbot.duckdb"
+
+# Retention policy: days to keep data per interval (-1 = forever)
+[tradingbot.cache.retention]
+"1m" = 7
+"5m" = 30
+"15m" = 90
+"1h" = 365
+"1d" = -1
+
+# =============================================================================
+# ENGINE - Live trading configuration
+# =============================================================================
 [tradingbot.engine]
-# Live trading configuration
-broker = "alpaca"   # Options: "paper", "alpaca"
-feed = "alpaca"    # Options: "alpaca" (yahoo doesn't support streaming)
-bar_interval = "5m"
+broker = "alpaca"            # Broker: paper, alpaca
+feed = "alpaca"              # Feed: yahoo (backtest only), alpaca (live)
+bar_interval = "5m"          # Bar interval: 1m, 5m, 15m
 
 [tradingbot.engine.risk]
-# Risk controls for live trading
-max_daily_loss_pct = 0.05        # Stop trading after 5% daily loss
+max_daily_loss_pct = 0.05    # Stop trading after 5% daily loss
 circuit_breaker_loss_pct = 0.03  # Pause after 3% loss
-max_open_positions = 5           # Max concurrent positions
-max_position_size_pct = 0.10     # Max 10% of equity per position
-trading_hours_only = true        # Only trade 9:30 AM - 4:00 PM ET
-
-[tradingbot.cache]
-source = "alpaca"  # Use Alpaca for cache fetching (supports longer 5m history)
+max_open_positions = 5       # Max concurrent positions
+max_position_size_pct = 0.10 # Max 10% of equity per position
+trading_hours_only = true    # Only trade 9:30 AM - 4:00 PM ET
 
 [tradingbot.engine.alpaca]
-# API keys should be set via environment variables:
+# API keys via environment variables:
 #   export ALPACA_API_KEY="your-api-key"
 #   export ALPACA_SECRET_KEY="your-secret-key"
-# Or create a .env file (gitignored)
-paper = true  # Use paper trading (default: true)
+paper = true                 # Use paper trading endpoint
+
+# =============================================================================
+# CUSTOM PRESETS - Define your own trading configurations
+# =============================================================================
+# [tradingbot.presets.my_preset]
+# description = "My custom strategy"
+# entry = "swing_break"      # Entry strategy
+# exit = "atr"               # Exit strategy
+# risk_pct = 0.015           # Risk per trade
+# rr_ratio = 2.0             # Reward/risk ratio
+# indicators = ["rsi"]       # Indicator filters
+# filter_mode = "all"        # Filter mode
+# eod_exit = true            # EOD exit
+# time_exit_minutes = 0      # Time-based exit
+
+[tradingbot.presets.safe]
+description = "Ultra conservative, tiny risk"
+entry = "swing_break"
+exit = "swing"
+risk_pct = 0.005
+rr_ratio = 1.5
+indicators = ["rsi", "macd"]
+filter_mode = "all"

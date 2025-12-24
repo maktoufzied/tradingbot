@@ -11,7 +11,6 @@ from tradingbot.types import Direction, ExitReason, Position, Signal, SwingPoint
 
 from .risk import PositionSizer
 from .signals import SignalGenerator
-from .strategies import ExitStrategy
 from .swing import find_swing_points
 
 
@@ -66,12 +65,16 @@ class MarketStructureBot:
         rr_ratio: float = 2.0,
         swing_lb: int = 5,
         trailing_stop: bool = False,
+        entry_strategy: str | None = None,
+        exit_strategy: str | None = None,
+        allow_short: bool = False,
     ):
-        self.sig_gen = SignalGenerator(swing_lb)
+        self.sig_gen = SignalGenerator(swing_lb, entry_strategy=entry_strategy, exit_strategy=exit_strategy)
         self.pos_sizer = PositionSizer(capital, risk_pct)
         self.rr_ratio = rr_ratio
         self.swing_lb = swing_lb
         self.trailing_stop = trailing_stop
+        self.allow_short = allow_short
         self.position: Position | None = None
         self.trades: list[Trade] = []
         self.equity: list[float] = []
@@ -109,17 +112,16 @@ class MarketStructureBot:
 
             signal: Signal
             details: dict[str, str | float]
-            signal, details = self.sig_gen.generate(df, i, self.position)
+            signal, details = self.sig_gen.generate(df, i, bool(self.position))
 
-            if not self.position and signal in [Signal.BUY, Signal.SELL]:
-                swings: list[SwingPoint] = find_swing_points(df.head(i + 1), self.swing_lb)
+            can_trade = signal == Signal.BUY or (signal == Signal.SELL and self.allow_short)
+            if not self.position and can_trade:
                 self._open(
                     "LONG" if signal == Signal.BUY else "SHORT",
                     price,
                     i,
                     bar_time,
                     df,
-                    swings,
                 )
 
             self.equity.append(self.pos_sizer.capital)
@@ -184,14 +186,17 @@ class MarketStructureBot:
         idx: int,
         time: datetime,
         df: pl.DataFrame,
-        swings: list[SwingPoint],
     ) -> None:
-        stop, tp = ExitStrategy.calc(direction, price, self.rr_ratio, df.head(idx + 1), swings)
-        size = self.pos_sizer.calc_size(price, stop)
-        self.position = Position(price, idx, time, direction, size, stop, tp, stop)
+        exit_params = self.sig_gen.calc_exit(direction, price, df.head(idx + 1), self.rr_ratio)
+        size = self.pos_sizer.calc_size(price, exit_params.stop_loss)
+        self.position = Position(
+            price, idx, time, direction, size, exit_params.stop_loss, exit_params.take_profit, exit_params.stop_loss
+        )
 
         if self.callbacks and self.callbacks._on_signal:
-            self.callbacks._on_signal(direction, self.symbol, price, stop, tp, size)
+            self.callbacks._on_signal(
+                direction, self.symbol, price, exit_params.stop_loss, exit_params.take_profit, size
+            )
 
     def _close(self, price: float, idx: int, time: datetime, reason: ExitReason) -> None:
         assert self.position is not None

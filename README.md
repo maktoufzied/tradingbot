@@ -85,6 +85,10 @@ uv run tradingbot <SYMBOLS> [OPTIONS]
 | `--risk` | Risk per trade (e.g., 0.01 for 1%) | config value |
 | `--rr` | Reward/risk ratio | config value |
 | `--swing-lb` | Swing lookback period | config value |
+| `--strategy`, `-s` | Entry strategy to use | config value |
+| `--preset`, `-p` | Use a preset (overrides strategy, risk, etc.) | - |
+| `--list-strategies` | List available entry/exit strategies | - |
+| `--list-presets` | List available trading presets | - |
 | `--refresh` | Force re-fetch data from API | - |
 | `--verbose`, `-v` | Print each bar as it processes | - |
 | `--speed` | Simulate real-time (bars/sec, 0=instant) | `0` |
@@ -96,9 +100,13 @@ task backtest -- SPY
 task backtest -- AAPL TSLA GOOGL
 task backtest -- SPY --period 5y --interval 1d
 task backtest -- AAPL --capital 50000 --risk 0.02
-task backtest -- SPY --verbose                    # See each bar
-task backtest -- SPY --speed 10                   # Simulate 10 bars/sec
-task backtest -- SPY --verbose --speed 5          # Both
+task backtest -- SPY -p scalping                 # Use scalping preset
+task backtest -- SPY --preset conservative       # Use conservative preset
+task backtest -- SPY -s vwap_reversion           # Use VWAP strategy
+task backtest -- SPY --list-presets              # Show available presets
+task backtest -- SPY --list-strategies           # Show available strategies
+task backtest -- SPY --verbose                   # See each bar
+task backtest -- SPY --speed 10                  # Simulate 10 bars/sec
 ```
 
 ### `tradingbot-optimize`
@@ -204,30 +212,77 @@ task cache -- clear SPY
 task cache -- clear SPY --interval 1d
 ```
 
+## Presets
+
+Presets provide complete trading configurations optimized for different styles. Use `--list-presets` to see available options.
+
+| Preset | Entry | Exit | Risk | RR | Description |
+|--------|-------|------|------|-----|-------------|
+| `conservative` | swing_break | swing | 0.5% | 1.5:1 | Filtered signals, low risk |
+| `balanced` | swing_break | swing | 1.0% | 1.5:1 | RSI filtering, moderate risk |
+| `aggressive` | swing_break | atr | 2.0% | 2.0:1 | No filters, higher risk |
+| `scalping` | orb | fixed | 0.5% | 1.0:1 | Quick trades, 30min time exit |
+| `mean_reversion` | vwap_reversion | fixed | 1.0% | 1.2:1 | VWAP mean reversion |
+| `momentum` | atr_breakout | atr | 1.5% | 1.5:1 | ATR breakouts, trend following |
+| `divergence` | rsi_divergence | swing | 1.0% | 1.5:1 | Counter-trend at exhaustion |
+
+```bash
+# Use a preset
+task backtest -- SPY --preset scalping
+task backtest -- AAPL -p conservative
+
+# CLI args override preset values
+task backtest -- SPY -p scalping --risk 0.02  # Override risk to 2%
+```
+
 ## Configuration
 
 Create `tradingbot.toml` in your project root:
 
 ```toml
-[tradingbot]
-fetcher = "yahoo"
-
 [tradingbot.strategy]
-# Options: "swing", "atr"
-stop = "swing"
+# Use a preset (overrides entry, exit, risk, indicators)
+# preset = "scalping"
+
+# Or configure individually:
+# Entry strategy: swing_break, vwap_reversion, orb, rsi_divergence, atr_breakout
+entry = "swing_break"
+# Exit strategy: swing, atr, fixed
+exit = "swing"
+# Time-based exits (day trading)
+eod_exit = true              # Close all positions before market close
+eod_exit_minutes_before = 15 # Minutes before close
+time_exit_minutes = 0        # Close after N minutes (0 = disabled)
 
 [tradingbot.bot]
 # Bot parameters - tune these via optimizer
 swing_lb = 5       # Swing lookback period (in bars)
 risk_pct = 0.01    # Risk per trade (1% = 0.01)
-rr_ratio = 2.0     # Reward/risk ratio
+rr_ratio = 1.5     # Reward/risk ratio (1.5:1 for day trading)
 capital = 100000   # Starting capital
+allow_short = false
+
+[tradingbot.indicators]
+# Indicator filtering for entry signals
+enabled = ["rsi", "macd"]  # Indicators to enable
+filter_mode = "all"        # "all" (all must pass), "any" (one must pass)
+signal_mode = "filter"     # "filter" or "none" (disabled)
+
+[tradingbot.indicators.rsi]
+period = 14
+overbought = 70.0
+oversold = 30.0
+
+[tradingbot.indicators.macd]
+fast_period = 12
+slow_period = 26
+signal_period = 9
 
 [tradingbot.engine]
-# Engine configuration
+# Live trading configuration
 broker = "paper"   # Options: "paper", "alpaca"
 feed = "yahoo"     # Options: "yahoo", "alpaca"
-symbols = ["SPY"]  # Default symbols to trade
+bar_interval = "5m"
 
 [tradingbot.engine.risk]
 # Risk controls
@@ -238,30 +293,31 @@ max_position_size_pct = 0.10     # Max 10% of equity per position
 trading_hours_only = true        # Only trade 9:30 AM - 4:00 PM ET
 
 [tradingbot.engine.alpaca]
-# Alpaca API credentials (for live/paper trading with Alpaca)
-api_key = "your-api-key"
-secret_key = "your-secret-key"
+# Use environment variables for API keys:
+#   ALPACA_API_KEY, ALPACA_SECRET_KEY
 paper = true                     # Use paper trading endpoint
 
 [tradingbot.cache]
-# Cache configuration
-enabled = true
-path = "~/.cache/tradingbot/tradingbot.duckdb"
 source = "yahoo"                 # Default data source for caching
-
-[tradingbot.cache.retention]
-# Retention policy (days, -1 = forever)
-1m = 7
-5m = 30
-15m = 90
-1h = 365
-1d = -1
 ```
 
-### Stop-Loss Strategies
+### Entry Strategies
 
-- **swing**: Places stops below/above recent swing points (default)
-- **atr**: Uses Average True Range for volatility-based stops
+| Strategy | Description |
+|----------|-------------|
+| `swing_break` | Market structure breaks (HH/HL/LH/LL) |
+| `vwap_reversion` | Mean reversion to VWAP |
+| `orb` | Opening Range Breakout |
+| `rsi_divergence` | RSI divergence detection |
+| `atr_breakout` | ATR band breakouts |
+
+### Exit Strategies
+
+| Strategy | Description |
+|----------|-------------|
+| `swing` | Swing-based SL/TP with 1.5% TP cap |
+| `atr` | ATR-based volatility stops |
+| `fixed` | Fixed percentage (2% SL, 1.5% TP) |
 
 ## Supported Symbols
 
@@ -496,37 +552,75 @@ asyncio.run(run_trading())
 
 ## Adding Custom Strategies
 
-### Custom Stop-Loss Strategy
+### Custom Entry Strategy
 
-Create a new file in `_strategies/plugins/`:
+Create a new file in `strategies/entry/`:
 
 ```python
-# src/tradingbot/_components/_strategies/plugins/custom.py
-import pandas as pd
-from ...models import Direction, SwingPoint
+# src/tradingbot/_components/strategies/entry/my_strategy.py
+import polars as pl
+from tradingbot.types import Signal
+from ..interfaces import Entry
+from ..registry import register_entry
 
-class CustomStopStrategy:
+class MyStrategy:
     @property
     def name(self) -> str:
-        return "custom"
+        return "my_strategy"
 
-    def calc_stop(
-        self,
-        direction: Direction,
-        entry: float,
-        df: pd.DataFrame,
-        idx: int,
-        swings: list[SwingPoint],
-    ) -> float:
-        # Your stop-loss logic here
-        return entry * 0.95 if direction == "LONG" else entry * 1.05
+    def compute(self, df: pl.DataFrame) -> pl.DataFrame:
+        """Add any computed columns (indicators)."""
+        return df
+
+    def signal(self, df: pl.DataFrame, idx: int, has_position: bool) -> Entry:
+        """Generate BUY/SELL/HOLD signal."""
+        if has_position:
+            return Entry(Signal.HOLD, "Position open", {})
+        # Your signal logic here
+        return Entry(Signal.HOLD, "", {})
+
+# Register on import
+register_entry(MyStrategy())
 ```
 
-Then update `tradingbot.toml`:
+Then import it in `strategies/registry.py` and update config:
 
 ```toml
 [tradingbot.strategy]
-stop = "custom"
+entry = "my_strategy"
+```
+
+### Custom Exit Strategy
+
+Create a new file in `strategies/exit/`:
+
+```python
+# src/tradingbot/_components/strategies/exit/my_exit.py
+import polars as pl
+from tradingbot.types import Direction, SwingPoint
+from ..interfaces import Exit
+from ..registry import register_exit
+
+class MyExitStrategy:
+    @property
+    def name(self) -> str:
+        return "my_exit"
+
+    def calc(
+        self,
+        direction: Direction,
+        entry: float,
+        df: pl.DataFrame,
+        swings: list[SwingPoint],
+        rr_ratio: float,
+    ) -> Exit:
+        """Calculate stop-loss and take-profit."""
+        if direction == "LONG":
+            return Exit(stop_loss=entry * 0.98, take_profit=entry * 1.015)
+        return Exit(stop_loss=entry * 1.02, take_profit=entry * 0.985)
+
+# Register on import
+register_exit(MyExitStrategy())
 ```
 
 ## Running Tests

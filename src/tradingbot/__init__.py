@@ -21,7 +21,7 @@ from ._components.optimizer import Optimizer, ParameterRanges, optimize
 from ._components.risk import PositionSizer
 from ._components.runner import run_multi_backtest, run_single_backtest
 from ._components.signals import SignalGenerator
-from ._components.strategies import ExitStrategy
+from ._components.strategies import Entry, Exit, get_entry_registry, get_exit_registry
 from ._components.swing import analyze_structure, find_swing_points
 from ._components.tui import TradingTUI
 
@@ -31,7 +31,8 @@ __all__ = [
     "EngineCallbacks",
     "EngineStartedEvent",
     "EngineStoppedEvent",
-    "ExitStrategy",
+    "Entry",
+    "Exit",
     "LiveRiskManager",
     "MarketStructureBot",
     "MessageEvent",
@@ -53,6 +54,8 @@ __all__ = [
     "analyze_structure",
     "find_swing_points",
     "get_broker_registry",
+    "get_entry_registry",
+    "get_exit_registry",
     "get_feed_registry",
     "optimize",
     "run_multi_backtest",

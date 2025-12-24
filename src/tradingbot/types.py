@@ -17,7 +17,7 @@ class Signal(Enum):
 
 
 Direction = Literal["LONG", "SHORT"]
-ExitReason = Literal["STOP_LOSS", "TAKE_PROFIT"]
+ExitReason = Literal["STOP_LOSS", "TAKE_PROFIT", "TIME_EXIT", "EOD_EXIT"]
 OrderType = Literal["MARKET", "LIMIT", "STOP"]
 OrderStatus = Literal["FILLED", "PARTIAL", "PENDING", "REJECTED", "CANCELLED"]
 
@@ -131,3 +131,12 @@ class AccountInfo:
     equity: float
     buying_power: float
     cash: float
+
+
+@dataclass
+class MarketClock:
+    """Market clock status."""
+
+    is_open: bool
+    next_open: datetime
+    next_close: datetime

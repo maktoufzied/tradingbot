@@ -11,8 +11,11 @@ from tradingbot.types import (
     Bar,
     BrokerPosition,
     Direction,
+    MarketClock,
     Order,
     OrderResult,
+    Position,
+    Signal,
     SwingPoint,
 )
 
@@ -49,6 +52,10 @@ class BrokerProtocol(ABC):
     def get_account(self) -> AccountInfo:
         """Get account information (equity, buying power, etc.)."""
         ...
+
+    def get_clock(self) -> MarketClock | None:
+        """Get market clock (open/close status). Returns None if not supported."""
+        return None
 
     @property
     @abstractmethod
@@ -160,6 +167,126 @@ class ExitStrategyProtocol(Protocol):
 
         Returns:
             Tuple of (stop_loss, take_profit) prices
+        """
+        ...
+
+
+class IndicatorProtocol(Protocol):
+    """Protocol for technical indicators."""
+
+    @property
+    def name(self) -> str:
+        """Unique identifier for this indicator."""
+        ...
+
+    def compute(self, df: pl.DataFrame) -> pl.DataFrame:
+        """Compute indicator values and add columns to DataFrame.
+
+        Args:
+            df: OHLCV DataFrame with columns: datetime, open, high, low, close, volume
+
+        Returns:
+            DataFrame with original columns plus indicator columns
+        """
+        ...
+
+    def get_signal(self, df: pl.DataFrame, idx: int) -> Signal | None:
+        """Generate standalone signal from indicator (optional).
+
+        Args:
+            df: DataFrame with indicator columns already computed
+            idx: Current bar index
+
+        Returns:
+            Signal.BUY, Signal.SELL, or None (no signal)
+        """
+        ...
+
+    def filter_signal(self, signal: Signal, df: pl.DataFrame, idx: int) -> bool:
+        """Check if a signal should be allowed through the filter.
+
+        Args:
+            signal: The signal to filter (BUY or SELL)
+            df: DataFrame with indicator columns already computed
+            idx: Current bar index
+
+        Returns:
+            True if signal should be allowed, False to block it
+        """
+        ...
+
+
+class EntryStrategyProtocol(Protocol):
+    """Protocol for entry signal generation strategies.
+
+    Entry strategies encapsulate the complete logic for:
+    1. Computing required indicators
+    2. Generating entry signals (BUY/SELL/HOLD)
+    3. Providing strategy-specific exit parameters
+    """
+
+    @property
+    def name(self) -> str:
+        """Unique identifier for this strategy."""
+        ...
+
+    @property
+    def default_rr_ratio(self) -> float:
+        """Recommended RR ratio for this strategy.
+
+        This is used when the strategy calculates its own exit parameters.
+        """
+        ...
+
+    def compute_indicators(self, df: pl.DataFrame) -> pl.DataFrame:
+        """Compute any required indicator columns.
+
+        Args:
+            df: OHLCV DataFrame
+
+        Returns:
+            DataFrame with indicator columns added
+        """
+        ...
+
+    def generate(
+        self,
+        df: pl.DataFrame,
+        idx: int,
+        position: Position | None,
+    ) -> tuple[Signal, dict[str, str | float]]:
+        """Generate entry signal with analysis details.
+
+        Args:
+            df: OHLCV DataFrame with any required indicators
+            idx: Current bar index
+            position: Current open position, if any
+
+        Returns:
+            Tuple of (Signal, details_dict)
+        """
+        ...
+
+    def get_exit_params(
+        self,
+        direction: Direction,
+        entry: float,
+        df: pl.DataFrame,
+        swings: list[SwingPoint],
+    ) -> tuple[float, float] | None:
+        """Calculate strategy-specific stop loss and take profit.
+
+        Some strategies have natural exit levels (e.g., VWAP return).
+        Returns None to use the default exit strategy instead.
+
+        Args:
+            direction: Trade direction
+            entry: Entry price
+            df: OHLCV DataFrame with indicators
+            swings: Detected swing points
+
+        Returns:
+            Tuple of (stop_loss, take_profit) or None to use default
         """
         ...
 

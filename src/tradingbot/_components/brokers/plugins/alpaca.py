@@ -10,7 +10,7 @@ from alpaca.trading.requests import MarketOrderRequest
 
 from tradingbot.config import get_engine_config
 from tradingbot.interfaces import BrokerProtocol
-from tradingbot.types import AccountInfo, BrokerPosition, Direction, Order, OrderResult, OrderStatus
+from tradingbot.types import AccountInfo, BrokerPosition, Direction, MarketClock, Order, OrderResult, OrderStatus
 
 ALPACA_API_KEY_ENV: Final = "ALPACA_API_KEY"
 ALPACA_SECRET_KEY_ENV: Final = "ALPACA_SECRET_KEY"
@@ -139,6 +139,18 @@ class AlpacaBroker(BrokerProtocol):
             buying_power=float(account.buying_power),
             cash=float(account.cash),
         )
+
+    def get_clock(self) -> MarketClock | None:
+        """Get market clock status."""
+        try:
+            clock: Any = self._get_client().get_clock()
+            return MarketClock(
+                is_open=bool(clock.is_open),
+                next_open=clock.next_open.replace(tzinfo=None) if clock.next_open.tzinfo else clock.next_open,
+                next_close=clock.next_close.replace(tzinfo=None) if clock.next_close.tzinfo else clock.next_close,
+            )
+        except APIError:
+            return None
 
     def _map_order_status(self, alpaca_status: str) -> OrderStatus:
         """Map Alpaca order status to internal status."""

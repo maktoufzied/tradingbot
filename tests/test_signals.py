@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import polars as pl
 import pytest
 
-from tradingbot import Position, Signal, SignalGenerator
+from tradingbot import Signal, SignalGenerator
 
 
 @pytest.fixture
@@ -44,34 +44,25 @@ class TestSignalGenerator:
         assert signal_generator.swing_lookback == 3
 
     def test_hold_signal_insufficient_data(self, signal_generator, sample_price_data):
-        signal, details = signal_generator.generate(sample_price_data, idx=2, position=None)
+        signal, details = signal_generator.generate(sample_price_data, idx=2, has_position=False)
         assert signal == Signal.HOLD
         assert "reason" in details
         assert "Insufficient" in details["reason"]
 
     def test_hold_signal_when_position_open(self, signal_generator, sample_price_data):
-        position = Position(
-            entry_price=100.0,
-            entry_index=10,
-            entry_time="2024-01-10",
-            direction="LONG",
-            size=100,
-            stop_loss=98.0,
-            take_profit=104.0,
-        )
-        signal, details = signal_generator.generate(sample_price_data, idx=30, position=position)
+        # When has_position=True, the strategy should return HOLD
+        signal, details = signal_generator.generate(sample_price_data, idx=30, has_position=True)
         assert signal == Signal.HOLD
 
     def test_returns_signal_and_details(self, signal_generator, sample_price_data):
-        signal, details = signal_generator.generate(sample_price_data, idx=30, position=None)
+        signal, details = signal_generator.generate(sample_price_data, idx=30, has_position=False)
         assert isinstance(signal, Signal)
         assert isinstance(details, dict)
 
-    def test_details_contain_trend(self, signal_generator, sample_price_data):
-        signal, details = signal_generator.generate(sample_price_data, idx=30, position=None)
-        # May or may not have trend depending on data
-        if "trend" in details:
-            assert details["trend"] in ["BULLISH", "BEARISH", "NEUTRAL"]
+    def test_details_contain_strategy_name(self, signal_generator, sample_price_data):
+        signal, details = signal_generator.generate(sample_price_data, idx=30, has_position=False)
+        # New architecture includes strategy name in details
+        assert "strategy" in details
 
 
 class TestSignalValues:

@@ -6,7 +6,7 @@ import polars as pl
 from rich.console import Console
 from rich.table import Table
 
-from tradingbot.config import get_bot_config
+from tradingbot.config import get_bot_config, get_strategy_config
 from tradingbot.types import Position, Signal
 
 from .bot import BacktestCallbacks, MarketStructureBot, Stats
@@ -20,6 +20,8 @@ class BacktestParams(TypedDict, total=False):
     risk: float
     rr: float
     swing_lb: int
+    strategy: str
+    preset: str
     refresh: bool
     verbose: bool
     speed: float
@@ -72,32 +74,61 @@ def run_single_backtest(
     risk: float | None = None,
     rr: float | None = None,
     swing_lb: int | None = None,
+    strategy: str | None = None,
+    preset: str | None = None,
     refresh: bool = False,
     verbose: bool = False,
     speed: float = 0,
 ) -> tuple[MarketStructureBot, pl.DataFrame]:
-    cfg = get_bot_config()
-    capital_val = capital if capital is not None else cfg.capital
-    risk_pct = risk if risk is not None else cfg.risk_pct
-    rr_ratio = rr if rr is not None else cfg.rr_ratio
-    swing_lb_val = swing_lb if swing_lb is not None else cfg.swing_lb
+    bot_cfg = get_bot_config()
+    strategy_cfg = get_strategy_config()
+
+    # Load preset if specified
+    preset_obj = None
+    if preset:
+        from .presets import get_preset
+
+        preset_obj = get_preset(preset)
+
+    # Apply values: CLI args > preset > config defaults
+    capital_val = capital if capital is not None else bot_cfg.capital
+    risk_pct = risk if risk is not None else (preset_obj.risk_pct if preset_obj else strategy_cfg.risk_pct)
+    rr_ratio = rr if rr is not None else (preset_obj.rr_ratio if preset_obj else strategy_cfg.rr_ratio)
+    swing_lb_val = swing_lb if swing_lb is not None else strategy_cfg.swing_lb
+    entry_strategy = strategy if strategy is not None else (preset_obj.entry if preset_obj else None)
+    exit_strategy = preset_obj.exit if preset_obj else None
+    allow_short = strategy_cfg.allow_short
 
     console.print()
     console.rule(f"[bold yellow]BACKTEST: {symbol}[/bold yellow]", style="cyan")
 
     df: pl.DataFrame = DataFeed.history(symbol, period=period, interval=interval, refresh=refresh)
 
-    if verbose or speed > 0:
-        console.print(f"[dim]Bars: {len(df)} | Period: {period} | Interval: {interval}[/dim]")
-        if speed > 0:
-            console.print(f"[dim]Speed: {speed} bars/sec[/dim]")
-        console.print()
+    # Show config summary
+    entry_name = entry_strategy or "swing_break"
+    exit_name = exit_strategy or "swing"
+    preset_info = f"[cyan]{preset}[/cyan] | " if preset else ""
+    short_info = "long+short" if allow_short else "long only"
+    console.print(
+        f"  {preset_info}"
+        f"[dim]{period} {interval}[/dim] | "
+        f"[dim]{len(df)} bars[/dim] | "
+        f"entry=[cyan]{entry_name}[/cyan] exit=[cyan]{exit_name}[/cyan] | "
+        f"risk=[cyan]{risk_pct * 100:.1f}%[/cyan] rr=[cyan]{rr_ratio}:1[/cyan] | "
+        f"[dim]{short_info}[/dim]"
+    )
+    if verbose and speed > 0:
+        console.print(f"  [dim]Speed: {speed} bars/sec[/dim]")
+    console.print()
 
     bot = MarketStructureBot(
         capital=capital_val,
         risk_pct=risk_pct,
         rr_ratio=rr_ratio,
         swing_lb=swing_lb_val,
+        entry_strategy=entry_strategy,
+        exit_strategy=exit_strategy,
+        allow_short=allow_short,
     )
 
     callbacks = make_verbose_callbacks() if verbose else None
@@ -122,19 +153,16 @@ def run_single_backtest(
             if exit_reason:
                 bot._close(price, i, bar_time, exit_reason)
 
-        signal, details = bot.sig_gen.generate(df, i, bot.position)
+        signal, details = bot.sig_gen.generate(df, i, bool(bot.position))
 
-        if not bot.position and signal in [Signal.BUY, Signal.SELL]:
-            from .swing import find_swing_points
-
-            swings = find_swing_points(df.head(i + 1), bot.swing_lb)
+        can_trade = signal == Signal.BUY or (signal == Signal.SELL and bot.allow_short)
+        if not bot.position and can_trade:
             bot._open(
                 "LONG" if signal == Signal.BUY else "SHORT",
                 price,
                 i,
                 bar_time,
                 df,
-                swings,
             )
 
         bot.equity.append(bot.pos_sizer.capital)
@@ -182,28 +210,30 @@ def run_single_backtest(
     if bot.trades:
         console.print()
         trades_table = Table(title="Recent Trades", box=None)
-        trades_table.add_column("Status", justify="center")
-        trades_table.add_column("Direction", justify="center")
+        trades_table.add_column("Date", justify="left")
+        trades_table.add_column("Dir", justify="center")
         trades_table.add_column("Entry", justify="right")
         trades_table.add_column("Exit", justify="right")
         trades_table.add_column("P&L", justify="right")
-        trades_table.add_column("Reason", justify="center")
+        trades_table.add_column("Hold", justify="right")
+        trades_table.add_column("Result", justify="center")
 
-        for t in bot.trades[-5:]:
+        for t in bot.trades[-10:]:
             if t.pnl > 0:
-                status = "[green]WIN[/green]"
+                result = "[green]WIN[/green]"
                 pnl_style = "green"
             else:
-                status = "[red]LOSS[/red]"
+                result = "[red]LOSS[/red]"
                 pnl_style = "red"
 
             trades_table.add_row(
-                status,
-                t.direction,
+                t.entry_time.strftime("%Y-%m-%d"),
+                t.direction[:1],  # L or S
                 f"${t.entry_price:.2f}",
                 f"${t.exit_price:.2f}",
                 f"[{pnl_style}]${t.pnl:+,.2f}[/{pnl_style}]",
-                t.exit_reason,
+                f"{t.holding_period}d",
+                result,
             )
 
         console.print(trades_table)
