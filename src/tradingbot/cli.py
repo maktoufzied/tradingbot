@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import threading
 from datetime import datetime, timedelta
 
 from rich.console import Console
@@ -331,6 +332,8 @@ def _run_with_modern_tui(
     allow_short: bool,
     ws_port: int = 8765,
     enable_ws: bool = True,
+    serve_web: bool = False,
+    web_port: int | None = None,
     preset_name: str = "custom",
     entry_strategy: str = "swing_break",
     exit_strategy: str = "swing",
@@ -374,44 +377,155 @@ def _run_with_modern_tui(
             self._ws_server: HubServer | None = None
 
         def on_mount(self) -> None:
-            """Start WebSocket server and trading engine on mount."""
+            """Start trading engine on mount."""
             super().on_mount()
-            # Start WebSocket server in background (if enabled)
-            if enable_ws:
-                self.run_worker(self._start_ws_server)  # type: ignore[arg-type]
-            # Start trading engine
+            # Start trading engine (WS server is started before TUI)
             self.run_worker(self._run_engine, exclusive=True)  # type: ignore[arg-type]
-
-        async def _start_ws_server(self) -> None:
-            """Start WebSocket server for remote clients."""
-            try:
-                self._ws_server = HubServer(hub, port=ws_port)
-                await self._ws_server.start()
-                self.notify(f"WebSocket server on ws://127.0.0.1:{ws_port}")
-            except Exception as e:
-                self.notify(f"WebSocket server failed: {e}", severity="warning")
 
         async def _run_engine(self) -> None:
             """Run the trading engine."""
-            try:
-                await run_live(
-                    symbols=symbols,
-                    broker=broker,
-                    feed=feed,
-                    signal_generator=signal_generator,
-                    position_sizer=position_sizer,
-                    live_risk_manager=live_risk_manager,
-                    rr_ratio=rr_ratio,
-                    dry_run=dry_run,
-                    allow_short=allow_short,
-                    callbacks=adapter.callbacks,
-                )
-            finally:
-                if self._ws_server:
-                    await self._ws_server.stop()
+            await run_live(
+                symbols=symbols,
+                broker=broker,
+                feed=feed,
+                signal_generator=signal_generator,
+                position_sizer=position_sizer,
+                live_risk_manager=live_risk_manager,
+                rr_ratio=rr_ratio,
+                dry_run=dry_run,
+                allow_short=allow_short,
+                callbacks=adapter.callbacks,
+            )
+
+    # Start WebSocket server in background thread (needs its own event loop)
+    ws_server: HubServer | None = None
+    ws_loop: asyncio.AbstractEventLoop | None = None
+    ws_thread: threading.Thread | None = None
+
+    if enable_ws:
+        import asyncio
+
+        def run_ws_server() -> None:
+            nonlocal ws_server, ws_loop
+            ws_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(ws_loop)
+
+            async def start_and_run() -> None:
+                nonlocal ws_server
+                ws_server = HubServer(hub, port=ws_port, serve_web=serve_web, web_port=web_port)
+                await ws_server.start()
+                # Keep running until cancelled
+                try:
+                    await asyncio.Future()  # Run forever
+                except asyncio.CancelledError:
+                    await ws_server.stop()
+
+            with contextlib.suppress(Exception):
+                ws_loop.run_until_complete(start_and_run())
+
+        ws_thread = threading.Thread(target=run_ws_server, daemon=True)
+        ws_thread.start()
+
+        # Wait for server to start
+        import time
+
+        for _ in range(50):  # Wait up to 5 seconds
+            time.sleep(0.1)
+            if ws_server and ws_server.is_running:
+                break
+
+        if ws_server and ws_server.is_running:
+            print(f"\n📡 WebSocket server: ws://127.0.0.1:{ws_port}")
+            if ws_server.web_url:
+                print(f"🌐 Web interface: {ws_server.web_url}")
+            print()
+        else:
+            print("\n⚠️  WebSocket server failed to start\n")
 
     app = ModernTUIApp()
     app.run()
+
+    # Cleanup after TUI exits
+    if ws_loop:
+        ws_loop.call_soon_threadsafe(ws_loop.stop)
+
+
+def _run_headless_with_hub(
+    symbols: list[str],
+    broker: BrokerProtocol,
+    feed: DataFeedProtocol,
+    signal_generator: SignalGenerator,
+    position_sizer: PositionSizer,
+    live_risk_manager: LiveRiskManager,
+    rr_ratio: float,
+    dry_run: bool,
+    allow_short: bool,
+    ws_port: int = 8765,
+    serve_web: bool = False,
+    web_port: int | None = None,
+    preset_name: str = "custom",
+    entry_strategy: str = "swing_break",
+    exit_strategy: str = "swing",
+    risk_pct: float = 0.01,
+    indicators: list[str] | None = None,
+    is_replay: bool = False,
+) -> None:
+    """Run headless with hub-based architecture (WebSocket + optional web UI).
+
+    This mode runs without a terminal UI but provides:
+    - WebSocket server for remote clients
+    - Optional HTTP server for web interface
+    - Console output for monitoring
+    """
+    import contextlib
+
+    from tradingbot._components.hub.types import StrategyInfo
+
+    # Create the event hub
+    hub = EventHub()
+
+    # Set strategy info
+    strategy_info = StrategyInfo(
+        preset_name=preset_name,
+        entry_strategy=entry_strategy,
+        exit_strategy=exit_strategy,
+        risk_pct=risk_pct,
+        rr_ratio=rr_ratio,
+        indicators=indicators or [],
+    )
+    hub.set_strategy(strategy_info)
+
+    # Create adapter that transforms engine events to hub updates
+    adapter = EngineAdapter(hub, symbols, is_replay=is_replay)
+
+    async def run_with_server() -> None:
+        # Start WebSocket server (and optionally web server)
+        server = HubServer(hub, port=ws_port, serve_web=serve_web, web_port=web_port)
+        await server.start()
+
+        print(f"\nWebSocket server: ws://127.0.0.1:{ws_port}")
+        if server.web_url:
+            print(f"Web interface:    {server.web_url}")
+        print()
+
+        try:
+            await run_live(
+                symbols=symbols,
+                broker=broker,
+                feed=feed,
+                signal_generator=signal_generator,
+                position_sizer=position_sizer,
+                live_risk_manager=live_risk_manager,
+                rr_ratio=rr_ratio,
+                dry_run=dry_run,
+                allow_short=allow_short,
+                callbacks=adapter.callbacks,
+            )
+        finally:
+            await server.stop()
+
+    with contextlib.suppress(KeyboardInterrupt):
+        asyncio.run(run_with_server())
 
 
 def main() -> None:
@@ -449,6 +563,8 @@ Examples:
     parser.add_argument("--legacy-tui", action="store_true", help="Run with legacy terminal UI")
     parser.add_argument("--ws-port", type=int, default=8765, help="WebSocket server port (default: 8765)")
     parser.add_argument("--no-ws", action="store_true", help="Disable WebSocket server")
+    parser.add_argument("--web", action="store_true", help="Serve web interface (on ws-port - 1)")
+    parser.add_argument("--web-port", type=int, help="Web interface port (default: ws-port - 1)")
     args = parser.parse_args()
 
     symbols: list[str] = []
@@ -517,6 +633,30 @@ Examples:
             allow_short=strategy_cfg.allow_short,
             ws_port=args.ws_port,
             enable_ws=not args.no_ws,
+            serve_web=args.web,
+            web_port=args.web_port,
+            preset_name=preset_name,
+            entry_strategy=entry_strategy,
+            exit_strategy=exit_strategy,
+            risk_pct=risk_pct,
+            indicators=indicators,
+            is_replay=args.replay,
+        )
+    elif args.web:
+        # Headless mode with web interface (includes WebSocket server)
+        _run_headless_with_hub(
+            symbols=symbols,
+            broker=broker,
+            feed=feed,
+            signal_generator=signal_generator,
+            position_sizer=position_sizer,
+            live_risk_manager=live_risk_manager,
+            rr_ratio=rr_ratio,
+            dry_run=args.dry_run,
+            allow_short=strategy_cfg.allow_short,
+            ws_port=args.ws_port,
+            serve_web=args.web,
+            web_port=args.web_port,
             preset_name=preset_name,
             entry_strategy=entry_strategy,
             exit_strategy=exit_strategy,

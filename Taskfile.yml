@@ -47,3 +47,23 @@ tasks:
   pre-commit:
     desc: Run pre-commit hooks
     cmd: uv run pre-commit run --all-files
+
+  # Web interface tasks
+  web:install:
+    desc: Install web interface dependencies
+    dir: web
+    cmd: npm install
+
+  web:dev:
+    desc: Start web dev server (port 5173)
+    dir: web
+    cmd: npm run dev
+
+  web:build:
+    desc: Build web interface for production
+    dir: web
+    cmd: npm run build
+
+  live:web:
+    desc: Run live trading with web interface
+    cmd: uv run tradingbot-live {{.CLI_ARGS}} --tui --web
