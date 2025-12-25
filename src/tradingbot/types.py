@@ -138,5 +138,5 @@ class MarketClock:
     """Market clock status."""
 
     is_open: bool
-    next_open: datetime
-    next_close: datetime
+    next_open: datetime | None = None
+    next_close: datetime | None = None

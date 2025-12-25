@@ -2,8 +2,10 @@
 
 import asyncio
 import contextlib
+from datetime import datetime, timedelta
 
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from tradingbot import (
     BarEvent,
@@ -23,10 +25,66 @@ from tradingbot import (
     get_broker_registry,
     get_feed_registry,
 )
+from tradingbot._components.hub import EngineAdapter, EventHub, HubServer
 from tradingbot.config import get_bot_config, get_engine_config, get_strategy_config
 from tradingbot.interfaces import BrokerProtocol, DataFeedProtocol
 
 console = Console()
+
+
+def update_cache_for_replay(symbols: list[str], days: int) -> None:
+    """Update cache with latest data before replay."""
+    from tradingbot._components.cache.db import get_date_range, insert_bars
+
+    engine_cfg = get_engine_config()
+    feed = get_feed_registry().get(engine_cfg.feed)
+    interval = engine_cfg.bar_interval  # Use same interval as replay
+
+    # Use local time for date range - users think in terms of local dates
+    # (e.g., "14 days ago" from Dec 24 local should be Dec 10, not Dec 11 if it's already Dec 25 UTC)
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        for symbol in symbols:
+            task = progress.add_task(f"[cyan]{symbol}[/cyan] checking cache...", total=None)
+
+            # Check what we have cached
+            cached_start, cached_end = get_date_range(symbol, interval)
+
+            need_fetch = False
+            if cached_start is None or cached_end is None:
+                need_fetch = True
+                progress.update(task, description=f"[cyan]{symbol}[/cyan] fetching {days} days...")
+            elif cached_start > start_date or cached_end < end_date - timedelta(hours=1):
+                need_fetch = True
+                progress.update(task, description=f"[cyan]{symbol}[/cyan] updating cache...")
+
+            if need_fetch:
+                try:
+                    df = feed.history(
+                        symbol,
+                        start_date=start_date.strftime("%Y-%m-%d"),
+                        end_date=end_date.strftime("%Y-%m-%d"),
+                        interval=interval,
+                    )
+                    if not df.is_empty():
+                        insert_bars(df, symbol, interval, engine_cfg.feed)
+                        progress.update(task, description=f"[green]{symbol}[/green] cached {len(df)} bars")
+                    else:
+                        progress.update(task, description=f"[yellow]{symbol}[/yellow] no data")
+                except Exception as e:
+                    progress.update(task, description=f"[red]{symbol}[/red] error: {e}")
+            else:
+                progress.update(task, description=f"[green]{symbol}[/green] cache up to date")
+
+            progress.remove_task(task)
+
+    console.print()
 
 
 def make_cli_callbacks() -> EngineCallbacks:
@@ -261,6 +319,101 @@ def _run_with_tui(
     app.run()
 
 
+def _run_with_modern_tui(
+    symbols: list[str],
+    broker: BrokerProtocol,
+    feed: DataFeedProtocol,
+    signal_generator: SignalGenerator,
+    position_sizer: PositionSizer,
+    live_risk_manager: LiveRiskManager,
+    rr_ratio: float,
+    dry_run: bool,
+    allow_short: bool,
+    ws_port: int = 8765,
+    enable_ws: bool = True,
+    preset_name: str = "custom",
+    entry_strategy: str = "swing_break",
+    exit_strategy: str = "swing",
+    risk_pct: float = 0.01,
+    indicators: list[str] | None = None,
+    is_replay: bool = False,
+) -> None:
+    """Run live trading with modern hub-based TUI.
+
+    This uses the new event-driven architecture with:
+    - EventHub for state management and callbacks
+    - EngineAdapter for event transformation
+    - WebSocket server for remote clients
+    - Modern TradingApp with multi-stock grid
+    """
+    from tradingbot._components.hub.types import StrategyInfo
+    from tradingbot._components.tui.app import TradingApp as ModernTradingApp
+
+    # Create the event hub
+    hub = EventHub()
+
+    # Set strategy info
+    strategy_info = StrategyInfo(
+        preset_name=preset_name,
+        entry_strategy=entry_strategy,
+        exit_strategy=exit_strategy,
+        risk_pct=risk_pct,
+        rr_ratio=rr_ratio,
+        indicators=indicators or [],
+    )
+    hub.set_strategy(strategy_info)
+
+    # Create adapter that transforms engine events to hub updates
+    adapter = EngineAdapter(hub, symbols, is_replay=is_replay)
+
+    class ModernTUIApp(ModernTradingApp):
+        """Modern TUI app with integrated trading engine."""
+
+        def __init__(self) -> None:
+            super().__init__(hub, symbols, title="TRADINGBOT")
+            self._ws_server: HubServer | None = None
+
+        def on_mount(self) -> None:
+            """Start WebSocket server and trading engine on mount."""
+            super().on_mount()
+            # Start WebSocket server in background (if enabled)
+            if enable_ws:
+                self.run_worker(self._start_ws_server)  # type: ignore[arg-type]
+            # Start trading engine
+            self.run_worker(self._run_engine, exclusive=True)  # type: ignore[arg-type]
+
+        async def _start_ws_server(self) -> None:
+            """Start WebSocket server for remote clients."""
+            try:
+                self._ws_server = HubServer(hub, port=ws_port)
+                await self._ws_server.start()
+                self.notify(f"WebSocket server on ws://127.0.0.1:{ws_port}")
+            except Exception as e:
+                self.notify(f"WebSocket server failed: {e}", severity="warning")
+
+        async def _run_engine(self) -> None:
+            """Run the trading engine."""
+            try:
+                await run_live(
+                    symbols=symbols,
+                    broker=broker,
+                    feed=feed,
+                    signal_generator=signal_generator,
+                    position_sizer=position_sizer,
+                    live_risk_manager=live_risk_manager,
+                    rr_ratio=rr_ratio,
+                    dry_run=dry_run,
+                    allow_short=allow_short,
+                    callbacks=adapter.callbacks,
+                )
+            finally:
+                if self._ws_server:
+                    await self._ws_server.stop()
+
+    app = ModernTUIApp()
+    app.run()
+
+
 def main() -> None:
     """CLI entry point for live trading."""
     import argparse
@@ -287,7 +440,15 @@ Examples:
     parser.add_argument("--risk", type=float, help="Risk per trade as decimal (e.g., 0.01 for 1%%)")
     parser.add_argument("--rr", type=float, help="Reward/risk ratio (e.g., 2.0)")
     parser.add_argument("--dry-run", action="store_true", help="Log signals without executing trades")
-    parser.add_argument("--tui", action="store_true", help="Run with terminal UI")
+    parser.add_argument("--replay", action="store_true", help="Use historical data replay instead of live feed")
+    parser.add_argument(
+        "--replay-speed", type=float, default=0.5, help="Seconds between bars in replay mode (default: 0.5)"
+    )
+    parser.add_argument("--replay-days", type=int, default=5, help="Days of historical data to replay (default: 5)")
+    parser.add_argument("--tui", action="store_true", help="Run with modern terminal UI")
+    parser.add_argument("--legacy-tui", action="store_true", help="Run with legacy terminal UI")
+    parser.add_argument("--ws-port", type=int, default=8765, help="WebSocket server port (default: 8765)")
+    parser.add_argument("--no-ws", action="store_true", help="Disable WebSocket server")
     args = parser.parse_args()
 
     symbols: list[str] = []
@@ -307,15 +468,64 @@ Examples:
     risk_pct = args.risk if args.risk is not None else (preset.risk_pct if preset else strategy_cfg.risk_pct)
     rr_ratio = args.rr if args.rr is not None else (preset.rr_ratio if preset else strategy_cfg.rr_ratio)
     entry_strategy = args.strategy if args.strategy is not None else (preset.entry if preset else strategy_cfg.entry)
+    exit_strategy = preset.exit if preset else strategy_cfg.exit
+    indicators = preset.indicators if preset else []
+    preset_name = preset.name if preset else "custom"
 
-    broker = get_broker_registry().get(engine_cfg.broker)
     signal_generator = SignalGenerator(strategy_cfg.swing_lb, entry_strategy=entry_strategy)
     position_sizer = PositionSizer(bot_cfg.capital, risk_pct)
-    live_risk_manager = LiveRiskManager(engine_cfg.risk, bot_cfg.capital)
 
-    feed = get_feed_registry().get(engine_cfg.feed)
+    # For replay mode, disable trading hours restriction since we're replaying historical data
+    risk_config = engine_cfg.risk
+    if args.replay:
+        from dataclasses import replace
+
+        risk_config = replace(risk_config, trading_hours_only=False)
+
+    live_risk_manager = LiveRiskManager(risk_config, bot_cfg.capital)
+
+    # Use replay feed and paper broker if --replay specified
+    feed: DataFeedProtocol
+    broker: BrokerProtocol
+    if args.replay:
+        from tradingbot._components.brokers.plugins.paper import PaperBroker
+        from tradingbot._components.feeds.plugins.replay import ReplayFeed
+
+        # Update cache before replay
+        console.print("[bold]Updating cache for replay...[/bold]")
+        update_cache_for_replay(symbols, args.replay_days)
+
+        feed = ReplayFeed(delay=args.replay_speed, days=args.replay_days)
+        broker = PaperBroker(initial_capital=bot_cfg.capital)
+        # PaperBroker is safe (simulated) so we don't need dry_run
+        # dry_run would prevent orders from reaching the broker, breaking account tracking
+    else:
+        feed = get_feed_registry().get(engine_cfg.feed)
+        broker = get_broker_registry().get(engine_cfg.broker)
 
     if args.tui:
+        # Modern TUI with hub-based architecture
+        _run_with_modern_tui(
+            symbols=symbols,
+            broker=broker,
+            feed=feed,
+            signal_generator=signal_generator,
+            position_sizer=position_sizer,
+            live_risk_manager=live_risk_manager,
+            rr_ratio=rr_ratio,
+            dry_run=args.dry_run,
+            allow_short=strategy_cfg.allow_short,
+            ws_port=args.ws_port,
+            enable_ws=not args.no_ws,
+            preset_name=preset_name,
+            entry_strategy=entry_strategy,
+            exit_strategy=exit_strategy,
+            risk_pct=risk_pct,
+            indicators=indicators,
+            is_replay=args.replay,
+        )
+    elif args.legacy_tui:
+        # Legacy TUI (for backwards compatibility)
         _run_with_tui(
             symbols=symbols,
             broker=broker,

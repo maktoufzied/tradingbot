@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass
 
 from tradingbot.interfaces import BrokerProtocol
-from tradingbot.types import AccountInfo, BrokerPosition, Direction, Order, OrderResult
+from tradingbot.types import AccountInfo, BrokerPosition, Direction, MarketClock, Order, OrderResult
 
 
 @dataclass
@@ -29,6 +29,10 @@ class PaperBroker(BrokerProtocol):
     @property
     def name(self) -> str:
         return "paper"
+
+    def get_clock(self) -> MarketClock:
+        """Paper broker always reports market as open."""
+        return MarketClock(is_open=True, next_open=None, next_close=None)
 
     def set_price(self, symbol: str, price: float) -> None:
         """Update the current price for a symbol (called by live engine)."""

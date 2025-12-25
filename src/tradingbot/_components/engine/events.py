@@ -64,6 +64,7 @@ class TradeClosedEvent:
     symbol: str
     entry: float
     exit_price: float
+    size: float
     pnl: float
     reason: str
 
@@ -74,3 +75,22 @@ class StatsUpdatedEvent:
     trades: int
     winners: int
     losers: int
+
+
+@dataclass
+class AccountEvent:
+    equity: float
+    cash: float
+    buying_power: float
+    day_pnl: float
+
+
+@dataclass
+class RiskEvent:
+    daily_loss_pct: float
+    max_daily_loss_pct: float
+    open_positions: int
+    max_positions: int
+    circuit_breaker_active: bool
+    can_trade: bool
+    blocked_reason: str | None

@@ -12,6 +12,7 @@ dependencies = [
     "pyarrow>=19.0.0",
     "rich>=14.2.0",
     "textual>=6.7.0",
+    "websockets>=15.0",
     "yfinance>=0.2.66",
 ]
 

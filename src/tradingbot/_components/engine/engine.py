@@ -19,11 +19,13 @@ from ..risk import PositionSizer
 from ..signals import SignalGenerator
 from .callbacks import EngineCallbacks
 from .events import (
+    AccountEvent,
     BarEvent,
     EngineStartedEvent,
     EngineStoppedEvent,
     MessageEvent,
     MessageLevel,
+    RiskEvent,
     SignalEvent,
     StatsUpdatedEvent,
     TradeClosedEvent,
@@ -88,6 +90,31 @@ class TradingEngine:
             )
         )
 
+    async def _emit_account(self) -> None:
+        account = self._broker.get_account()
+        await self._cb.emit_account(
+            AccountEvent(
+                equity=account.equity,
+                cash=account.cash,
+                buying_power=account.buying_power,
+                day_pnl=self._live_risk.session_pnl,
+            )
+        )
+
+    async def _emit_risk(self) -> None:
+        can_trade, blocked_reason = self._live_risk.can_open_position()
+        await self._cb.emit_risk(
+            RiskEvent(
+                daily_loss_pct=self._live_risk.daily_pnl_pct,
+                max_daily_loss_pct=self._live_risk._config.max_daily_loss_pct,
+                open_positions=len(self._positions),
+                max_positions=self._live_risk._config.max_open_positions,
+                circuit_breaker_active=self._live_risk.check_circuit_breaker(),
+                can_trade=can_trade,
+                blocked_reason=blocked_reason if not can_trade else None,
+            )
+        )
+
     async def start(self) -> None:
         """Start live trading."""
         await self._cb.emit_started(
@@ -102,8 +129,9 @@ class TradingEngine:
         # Check if market is open
         clock = self._broker.get_clock()
         if clock and not clock.is_open:
+            next_open_str = clock.next_open.strftime("%Y-%m-%d %H:%M") if clock.next_open else "unknown"
             await self._emit_message(
-                f"Market is closed. Next open: {clock.next_open.strftime('%Y-%m-%d %H:%M')} UTC",
+                f"Market is closed. Next open: {next_open_str} UTC",
                 MessageLevel.WARNING,
             )
             if not self._dry_run:
@@ -258,6 +286,8 @@ class TradingEngine:
         current_pos = self._positions.get(bar.symbol)
         await self._cb.emit_bar(BarEvent(bar=bar, signal=signal, trend=trend, position=current_pos))
         await self._emit_stats()
+        await self._emit_account()
+        await self._emit_risk()
 
     def _bars_to_df(self, symbol: str) -> pl.DataFrame:
         """Convert bar deque to DataFrame."""
@@ -415,7 +445,7 @@ class TradingEngine:
             # Check EOD_EXIT: close before market close
             if not should_exit and strategy_cfg.eod_exit:
                 clock = self._broker.get_clock()
-                if clock and clock.is_open:
+                if clock and clock.is_open and clock.next_close:
                     minutes_to_close = (clock.next_close - bar.datetime).total_seconds() / 60
                     if 0 < minutes_to_close <= strategy_cfg.eod_exit_minutes_before:
                         should_exit, exit_reason = True, "EOD_EXIT"
@@ -445,6 +475,7 @@ class TradingEngine:
                     symbol=bar.symbol,
                     entry=position.entry_price,
                     exit_price=exit_price,
+                    size=position.size,
                     pnl=pnl,
                     reason=reason,
                 )
@@ -473,6 +504,7 @@ class TradingEngine:
                     symbol=bar.symbol,
                     entry=position.entry_price,
                     exit_price=actual_exit,
+                    size=position.size,
                     pnl=pnl,
                     reason=reason,
                 )

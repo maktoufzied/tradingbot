@@ -917,11 +917,19 @@ class TradingTUI(App[None]):
 
         if self._status_bar and clock:
             if clock.is_open:
-                close_local = _utc_to_local(clock.next_close)
-                self._status_bar.market_status = f"[green]Market Open[/green] (closes {close_local.strftime('%H:%M')})"
+                if clock.next_close:
+                    close_local = _utc_to_local(clock.next_close)
+                    self._status_bar.market_status = (
+                        f"[green]Market Open[/green] (closes {close_local.strftime('%H:%M')})"
+                    )
+                else:
+                    self._status_bar.market_status = "[green]Market Open[/green]"
             else:
-                open_local = _utc_to_local(clock.next_open)
-                self._status_bar.market_status = f"[red]Market Closed[/red] (opens {open_local.strftime('%H:%M')})"
+                if clock.next_open:
+                    open_local = _utc_to_local(clock.next_open)
+                    self._status_bar.market_status = f"[red]Market Closed[/red] (opens {open_local.strftime('%H:%M')})"
+                else:
+                    self._status_bar.market_status = "[red]Market Closed[/red]"
 
     def action_toggle_dark(self) -> None:
         """Toggle dark mode."""

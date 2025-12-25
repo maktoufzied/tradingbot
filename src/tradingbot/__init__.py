@@ -23,7 +23,7 @@ from ._components.runner import run_multi_backtest, run_single_backtest
 from ._components.signals import SignalGenerator
 from ._components.strategies import Entry, Exit, get_entry_registry, get_exit_registry
 from ._components.swing import analyze_structure, find_swing_points
-from ._components.tui import TradingTUI
+from ._components.tui_legacy import TradingTUI
 
 __all__ = [
     "BarEvent",

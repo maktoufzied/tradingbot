@@ -6,10 +6,12 @@ from dataclasses import dataclass, field
 from typing import TypeVar
 
 from .events import (
+    AccountEvent,
     BarEvent,
     EngineStartedEvent,
     EngineStoppedEvent,
     MessageEvent,
+    RiskEvent,
     SignalEvent,
     StatsUpdatedEvent,
     TradeClosedEvent,
@@ -46,6 +48,8 @@ class EngineCallbacks:
     _on_signal: list[EventCallback[SignalEvent]] = field(default_factory=list)
     _on_trade_closed: list[EventCallback[TradeClosedEvent]] = field(default_factory=list)
     _on_stats_updated: list[EventCallback[StatsUpdatedEvent]] = field(default_factory=list)
+    _on_account: list[EventCallback[AccountEvent]] = field(default_factory=list)
+    _on_risk: list[EventCallback[RiskEvent]] = field(default_factory=list)
 
     def on_started[C: EventCallback[EngineStartedEvent]](self, cb: C) -> C:
         self._on_started.append(cb)
@@ -75,6 +79,14 @@ class EngineCallbacks:
         self._on_stats_updated.append(cb)
         return cb
 
+    def on_account[C: EventCallback[AccountEvent]](self, cb: C) -> C:
+        self._on_account.append(cb)
+        return cb
+
+    def on_risk[C: EventCallback[RiskEvent]](self, cb: C) -> C:
+        self._on_risk.append(cb)
+        return cb
+
     async def emit_started(self, event: EngineStartedEvent) -> None:
         await self._emit(self._on_started, event)
 
@@ -95,6 +107,12 @@ class EngineCallbacks:
 
     async def emit_stats_updated(self, event: StatsUpdatedEvent) -> None:
         await self._emit(self._on_stats_updated, event)
+
+    async def emit_account(self, event: AccountEvent) -> None:
+        await self._emit(self._on_account, event)
+
+    async def emit_risk(self, event: RiskEvent) -> None:
+        await self._emit(self._on_risk, event)
 
     async def _emit[E](self, callbacks: list[EventCallback[E]], event: E) -> None:
         """Emit an event to all registered callbacks."""

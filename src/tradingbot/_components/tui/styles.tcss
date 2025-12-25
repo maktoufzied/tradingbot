@@ -1,0 +1,310 @@
+/* Trading Dashboard Styles
+   Bloomberg amber + Modern gradient theme
+*/
+
+/* Color Variables */
+$bg: #0a0a0f;
+$surface: #12121a;
+$surface-dark: #0f0f18;
+$surface-light: #1a1a24;
+
+$primary: #ffaa00;
+$primary-dim: #cc8800;
+$primary-bright: #ffcc44;
+
+$positive: #00ff88;
+$positive-dim: #00cc6a;
+$negative: #ff3366;
+$negative-dim: #cc2952;
+$neutral: #00d4ff;
+$neutral-dim: #00a8cc;
+$warning: #ffaa00;
+
+$text: #ffffff;
+$text-secondary: #b0b0b8;
+$text-dim: #6a6a7a;
+$text-muted: #4a4a5a;
+
+$border: #2a2a3a;
+$border-focus: #00ff88;
+$border-dim: #1a1a2a;
+
+$connected: #00ff88;
+$disconnected: #ff3366;
+
+/* Base Screen */
+Screen {
+    background: $bg;
+}
+
+/* Header */
+Header {
+    background: $surface-dark;
+    color: $primary;
+    text-style: bold;
+    height: 1;
+}
+
+Header .header--title {
+    color: $primary;
+    text-style: bold;
+}
+
+/* Footer */
+Footer {
+    background: $surface-dark;
+    height: 1;
+}
+
+Footer .footer-key {
+    color: $primary;
+    text-style: bold;
+}
+
+/* Main Container */
+#main-container {
+    height: 1fr;
+    width: 100%;
+    padding: 0;
+}
+
+/* Symbol Grid - 2x2 layout */
+#symbol-grid {
+    grid-size: 2 2;
+    grid-gutter: 1;
+    grid-columns: 1fr 1fr;
+    grid-rows: 1fr 1fr;
+    height: 1fr;
+    min-height: 20;
+    padding: 1;
+}
+
+/* Symbol Cards */
+SymbolCard {
+    border: round $border;
+    background: $surface;
+    padding: 0 1;
+    height: 100%;
+    min-height: 8;
+}
+
+SymbolCard:focus {
+    border: round $positive;
+}
+
+SymbolCard:hover {
+    border: round $neutral;
+}
+
+SymbolCard .card-header {
+    height: 1;
+    margin-bottom: 0;
+}
+
+SymbolCard .symbol-name {
+    text-style: bold;
+    color: $primary;
+}
+
+SymbolCard .price-row {
+    height: 1;
+}
+
+SymbolCard .trend-signal-row {
+    height: 1;
+    margin-top: 0;
+}
+
+/* Empty card placeholder */
+.empty-card {
+    border: dashed $border-dim;
+    background: $surface-dark;
+    height: 100%;
+}
+
+/* Sparkline */
+Sparkline {
+    height: 1;
+    width: 100%;
+    margin: 0;
+}
+
+/* Position Panel */
+PositionPanel {
+    height: auto;
+    width: 100%;
+    padding: 0;
+    margin-top: 0;
+}
+
+PositionPanel .separator {
+    color: $text-muted;
+    height: 1;
+}
+
+PositionPanel .position-header {
+    height: 1;
+}
+
+PositionPanel .position-details {
+    height: 1;
+}
+
+PositionPanel .position-pnl {
+    height: 1;
+}
+
+PositionPanel .no-position {
+    color: $text-dim;
+    text-style: italic;
+    height: 1;
+}
+
+/* Stats Bar */
+StatsBar {
+    height: 6;
+    width: 100%;
+    border: round $border;
+    background: $surface-dark;
+    margin: 0 1;
+}
+
+StatsBar .panel-title {
+    color: $primary;
+    text-style: bold;
+    height: 1;
+}
+
+StatsBar Horizontal {
+    height: 100%;
+}
+
+SessionPanel {
+    height: 100%;
+    width: 1fr;
+    padding: 0 1;
+    border-right: solid $border-dim;
+}
+
+SessionPanel Static {
+    height: 1;
+}
+
+AccountPanel {
+    height: 100%;
+    width: 1fr;
+    padding: 0 1;
+    border-right: solid $border-dim;
+}
+
+AccountPanel Static {
+    height: 1;
+}
+
+RiskPanel {
+    height: 100%;
+    width: 1fr;
+    padding: 0 1;
+}
+
+RiskPanel Static {
+    height: 1;
+}
+
+/* Signal Log */
+SignalLog {
+    height: 8;
+    width: 100%;
+    border: round $border;
+    background: $surface;
+    margin: 0 1;
+}
+
+SignalLog .log-title {
+    height: 1;
+    padding: 0 1;
+    color: $primary;
+    text-style: bold;
+    background: $surface-dark;
+}
+
+SignalLog VerticalScroll {
+    height: 1fr;
+    scrollbar-size: 1 1;
+    scrollbar-background: $surface-dark;
+    scrollbar-color: $border;
+    scrollbar-color-hover: $neutral;
+    scrollbar-color-active: $positive;
+}
+
+SignalLogEntry {
+    height: 1;
+    width: 100%;
+    padding: 0 1;
+}
+
+SignalLogEntry.entry {
+    background: transparent;
+}
+
+SignalLogEntry.exit-win {
+    background: $positive 10%;
+}
+
+SignalLogEntry.exit-loss {
+    background: $negative 10%;
+}
+
+SignalLogEntry.blocked {
+    background: $warning 10%;
+}
+
+/* Status Bar */
+StatusBar {
+    height: 1;
+    width: 100%;
+    background: $surface-dark;
+    dock: bottom;
+}
+
+StatusBar Horizontal {
+    height: 1;
+    width: 100%;
+}
+
+StatusBar .replay-badge {
+    width: auto;
+    padding: 0 1;
+}
+
+StatusBar .status-indicators {
+    width: 1fr;
+    padding: 0 1;
+}
+
+StatusBar .view-mode {
+    width: auto;
+    padding: 0 1;
+    color: $primary;
+}
+
+/* Scrollbar styling */
+VerticalScroll {
+    scrollbar-size: 1 1;
+    scrollbar-background: $surface-dark;
+    scrollbar-color: $border;
+    scrollbar-color-hover: $neutral;
+    scrollbar-color-active: $positive;
+}
+
+/* Notification styling */
+Toast {
+    background: $surface;
+    color: $text;
+    border: round $primary;
+}
+
+/* Loading indicator */
+LoadingIndicator {
+    color: $primary;
+}
