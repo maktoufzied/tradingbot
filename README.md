@@ -46,8 +46,8 @@ task backtest -- SPY
 task backtest -- AAPL --period 5y
 
 # Or using uv directly
-uv run tradingbot SPY
-uv run tradingbot AAPL TSLA GOOGL
+uv run tradingbot-backtest SPY
+uv run tradingbot-backtest AAPL TSLA GOOGL
 ```
 
 ### Run Parameter Optimization
@@ -64,7 +64,7 @@ uv run tradingbot-optimize TSLA --swing 5,6,7,8 --rr 2.0,2.5,3.0
 
 ## CLI Commands
 
-### `tradingbot`
+### `tradingbot-backtest`
 
 Run backtests on one or more symbols.
 
@@ -72,7 +72,7 @@ Run backtests on one or more symbols.
 task backtest -- <SYMBOLS> [OPTIONS]
 
 # Or using uv directly
-uv run tradingbot <SYMBOLS> [OPTIONS]
+uv run tradingbot-backtest <SYMBOLS> [OPTIONS]
 ```
 
 **Options:**
@@ -193,6 +193,18 @@ uv run tradingbot-cache <COMMAND> [OPTIONS]
 | `stats` | Show cache statistics (symbols, bar counts, date ranges) |
 | `fetch <SYMBOLS>` | Fetch and cache data for symbols |
 | `clear <SYMBOLS>` | Clear cached data for symbols |
+| `aggregate [SYMBOLS]` | Aggregate 1m bars to coarser intervals (5m, 15m, 1h, 1d) |
+| `maintain` | Run maintenance: aggregate + purge old data per retention policy |
+
+**Retention Policy:**
+
+| Interval | Keep For |
+|----------|----------|
+| 1m | 7 days |
+| 5m | 30 days |
+| 15m | 90 days |
+| 1h | 365 days |
+| 1d | Forever |
 
 **Examples:**
 
@@ -210,6 +222,15 @@ task cache -- fetch SPY --refresh
 # Clear cached data
 task cache -- clear SPY
 task cache -- clear SPY --interval 1d
+
+# Aggregate 1m bars to coarser intervals
+task cache -- aggregate              # All symbols
+task cache -- aggregate SPY          # Specific symbol
+
+# Run maintenance (aggregate + purge old data)
+task cache -- maintain               # Full maintenance
+task cache -- maintain --dry-run     # Preview what would be purged
+task cache -- maintain --show-policy # Show retention policy
 ```
 
 ## Presets
@@ -245,38 +266,55 @@ Create `tradingbot.toml` in your project root:
 # preset = "scalping"
 
 # Or configure individually:
-# Entry strategy: swing_break, vwap_reversion, orb, rsi_divergence, atr_breakout
+# Entry strategies: swing_break, vwap_reversion, orb, rsi_divergence, atr_breakout,
+#                   gap_and_go, order_blocks, fvg, liquidity_sweeps
 entry = "swing_break"
 # Exit strategy: swing, atr, fixed
 exit = "swing"
+# Risk parameters - tune these via optimizer
+swing_lb = 5       # Swing lookback period (in bars)
+risk_pct = 0.01    # Risk per trade (1% = 0.01)
+rr_ratio = 1.5     # Reward/risk ratio (1.5:1 for day trading)
+allow_short = false
 # Time-based exits (day trading)
 eod_exit = true              # Close all positions before market close
 eod_exit_minutes_before = 15 # Minutes before close
 time_exit_minutes = 0        # Close after N minutes (0 = disabled)
 
 [tradingbot.bot]
-# Bot parameters - tune these via optimizer
-swing_lb = 5       # Swing lookback period (in bars)
-risk_pct = 0.01    # Risk per trade (1% = 0.01)
-rr_ratio = 1.5     # Reward/risk ratio (1.5:1 for day trading)
 capital = 100000   # Starting capital
-allow_short = false
 
-[tradingbot.indicators]
+[tradingbot.strategy.indicators]
 # Indicator filtering for entry signals
+# Available: rsi, macd, bollinger, ema_crossover, stochastic, adx, keltner,
+#            vwap_bands, volume_profile, pivot_points, fibonacci
 enabled = ["rsi", "macd"]  # Indicators to enable
 filter_mode = "all"        # "all" (all must pass), "any" (one must pass)
 signal_mode = "filter"     # "filter" or "none" (disabled)
 
-[tradingbot.indicators.rsi]
+[tradingbot.strategy.indicators.rsi]
 period = 14
 overbought = 70.0
 oversold = 30.0
 
-[tradingbot.indicators.macd]
+[tradingbot.strategy.indicators.macd]
 fast_period = 12
 slow_period = 26
 signal_period = 9
+
+[tradingbot.strategy.indicators.bollinger]
+period = 20
+std_dev = 2.0
+
+[tradingbot.strategy.indicators.stochastic]
+k_period = 14
+d_period = 3
+overbought = 80.0
+oversold = 20.0
+
+[tradingbot.strategy.indicators.adx]
+period = 14
+trend_threshold = 25.0
 
 [tradingbot.engine]
 # Live trading configuration
@@ -310,6 +348,10 @@ source = "yahoo"                 # Default data source for caching
 | `orb` | Opening Range Breakout |
 | `rsi_divergence` | RSI divergence detection |
 | `atr_breakout` | ATR band breakouts |
+| `gap_and_go` | Opening gap continuation with momentum |
+| `order_blocks` | ICT institutional order zones |
+| `fvg` | Fair Value Gaps (imbalance zones) |
+| `liquidity_sweeps` | ICT stop hunts at swing points |
 
 ### Exit Strategies
 
@@ -513,15 +555,16 @@ import asyncio
 from tradingbot import (
     TradingEngine,
     SignalGenerator,
-    RiskManager,
+    PositionSizer,
     LiveRiskManager,
     get_broker_registry,
     get_feed_registry,
 )
-from tradingbot.config import get_bot_config, get_engine_config
+from tradingbot.config import get_bot_config, get_engine_config, get_strategy_config
 
 async def run_trading():
-    cfg = get_bot_config()
+    bot_cfg = get_bot_config()
+    strategy_cfg = get_strategy_config()
     engine_cfg = get_engine_config()
 
     # Get broker and feed from registry
@@ -529,9 +572,9 @@ async def run_trading():
     feed = get_feed_registry().get(engine_cfg.feed)
 
     # Create components
-    signal_generator = SignalGenerator(cfg.swing_lb)
-    risk_manager = RiskManager(cfg.capital, cfg.risk_pct, cfg.rr_ratio)
-    live_risk_manager = LiveRiskManager(engine_cfg.risk, cfg.capital)
+    signal_generator = SignalGenerator(strategy_cfg.swing_lb)
+    position_sizer = PositionSizer(bot_cfg.capital, strategy_cfg.risk_pct)
+    live_risk_manager = LiveRiskManager(engine_cfg.risk, bot_cfg.capital)
 
     # Create and run engine
     engine = TradingEngine(
@@ -539,8 +582,10 @@ async def run_trading():
         broker=broker,
         feed=feed,
         signal_generator=signal_generator,
-        risk_manager=risk_manager,
+        position_sizer=position_sizer,
         live_risk_manager=live_risk_manager,
+        rr_ratio=strategy_cfg.rr_ratio,
+        allow_short=strategy_cfg.allow_short,
         dry_run=True,  # Set to False for actual paper trading
     )
 

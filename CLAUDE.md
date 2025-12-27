@@ -33,6 +33,8 @@ task backtest -- SPY            # Run backtest
 task optimize -- SPY            # Run parameter optimization
 task live -- SPY                # Run live trading
 task replay -- SPY              # Replay historical data as live
+task cache -- stats             # Show cache statistics
+task cache -- maintain          # Run cache maintenance
 ```
 
 Alternative using `uv` directly:
@@ -42,10 +44,12 @@ uv sync                              # Install dependencies
 uv run pytest                        # Run tests
 uv run ruff check src tests          # Run linter
 uv run mypy                          # Run type checker
-uv run tradingbot SPY                # Run backtest
+uv run tradingbot-backtest SPY       # Run backtest
 uv run tradingbot-optimize SPY       # Run parameter optimization
 uv run tradingbot-live SPY           # Run live trading
 uv run tradingbot-live SPY --replay  # Replay historical data as live
+uv run tradingbot-cache stats        # Show cache statistics
+uv run tradingbot-cache maintain     # Run cache maintenance
 ```
 
 ## Code Style
@@ -80,9 +84,21 @@ uv run tradingbot-live SPY --replay  # Replay historical data as live
 
 ## Documentation
 
-- **README.md**: User-facing documentation. Update when adding CLI commands, options, or changing the public API
-- **guide-strategy.md**: Trading strategy specification. Update when modifying entry/exit rules or risk parameters
-- **glossary.md**: Definitions for trading terms, parameters, and metrics (swing_lb, rr_ratio, profit factor, etc.)
+**IMPORTANT**: Always keep documentation in sync with code changes. After modifying any component, update the relevant docs.
+
+| Document | Purpose | Update When |
+|----------|---------|-------------|
+| **README.md** | User guide: installation, CLI, config, examples | Adding CLI commands, options, config changes, public API |
+| **ARCHITECTURE.md** | Technical architecture: components, data flow, patterns | Adding/modifying components, registries, protocols, plugins |
+| **guide-strategy.md** | Strategy details: entry/exit rules, indicators, optimization | Modifying strategies, indicators, risk parameters, presets |
+| **glossary.md** | Term definitions: trading concepts, parameters, metrics | Adding new concepts, indicators, or strategy terms |
+
+**Checklist after code changes:**
+1. New indicator/strategy → Update ARCHITECTURE.md (registry list), guide-strategy.md (tables), glossary.md (definitions)
+2. New CLI option → Update README.md (CLI section)
+3. Config change → Update README.md (config example), guide-strategy.md if strategy-related
+4. New component → Update ARCHITECTURE.md (directory structure, data flow)
+5. Cache changes → Update README.md (cache commands), ARCHITECTURE.md (cache section)
 
 ## Key Concepts
 

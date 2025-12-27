@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -201,3 +201,219 @@ def get_storage_stats() -> dict[str, Any]:
 def get_retention_policy() -> dict[str, int]:
     """Get retention policy from config."""
     return get_cache_config().retention.as_dict()
+
+
+# Interval to minutes mapping
+INTERVAL_MINUTES: dict[str, int] = {
+    "1m": 1,
+    "5m": 5,
+    "15m": 15,
+    "30m": 30,
+    "1h": 60,
+    "1d": 1440,
+}
+
+
+def get_symbols() -> list[str]:
+    """Get list of all symbols in database."""
+    with db_connection() as conn:
+        result = conn.execute("SELECT DISTINCT symbol FROM bars").fetchall()
+        return [row[0] for row in result]
+
+
+def aggregate_bars(symbol: str, source_interval: str, target_interval: str) -> int:
+    """Aggregate bars from finer to coarser interval.
+
+    Uses DuckDB's time_bucket for OHLCV aggregation:
+    - Open: first value in bucket
+    - High: max value in bucket
+    - Low: min value in bucket
+    - Close: last value in bucket
+    - Volume: sum of all values in bucket
+
+    Args:
+        symbol: Stock symbol
+        source_interval: Source interval (e.g., "1m")
+        target_interval: Target interval (e.g., "5m")
+
+    Returns:
+        Number of aggregated bars created
+
+    Example:
+        aggregate_bars("SPY", "1m", "5m")
+    """
+    source_mins = INTERVAL_MINUTES.get(source_interval)
+    target_mins = INTERVAL_MINUTES.get(target_interval)
+
+    if source_mins is None:
+        raise ValueError(f"Unknown source interval: {source_interval}")
+    if target_mins is None:
+        raise ValueError(f"Unknown target interval: {target_interval}")
+    if target_mins <= source_mins:
+        raise ValueError(f"Target interval ({target_interval}) must be larger than source ({source_interval})")
+
+    with db_connection() as conn:
+        # Check if source data exists
+        source_count = conn.execute(
+            "SELECT COUNT(*) FROM bars WHERE symbol = ? AND interval = ?",
+            [symbol, source_interval],
+        ).fetchone()
+
+        if not source_count or source_count[0] == 0:
+            return 0
+
+        # Count existing bars before aggregation
+        before_count = conn.execute(
+            "SELECT COUNT(*) FROM bars WHERE symbol = ? AND interval = ?",
+            [symbol, target_interval],
+        ).fetchone()
+        before = before_count[0] if before_count else 0
+
+        # Use DuckDB's time_bucket for aggregation
+        # FIRST_VALUE and LAST_VALUE with ORDER BY to get open/close correctly
+        conn.execute(
+            f"""
+            INSERT OR REPLACE INTO bars
+            (symbol, interval, datetime, open, high, low, close, volume, source)
+            SELECT
+                symbol,
+                '{target_interval}' as interval,
+                time_bucket(INTERVAL '{target_mins} minutes', datetime) as datetime,
+                FIRST(open ORDER BY datetime) as open,
+                MAX(high) as high,
+                MIN(low) as low,
+                LAST(close ORDER BY datetime) as close,
+                SUM(volume) as volume,
+                'aggregated' as source
+            FROM bars
+            WHERE symbol = ? AND interval = ?
+            GROUP BY symbol, time_bucket(INTERVAL '{target_mins} minutes', datetime)
+            """,
+            [symbol, source_interval],
+        )
+
+        # Count after aggregation to get actual new bars
+        after_count = conn.execute(
+            "SELECT COUNT(*) FROM bars WHERE symbol = ? AND interval = ?",
+            [symbol, target_interval],
+        ).fetchone()
+        after = after_count[0] if after_count else 0
+
+        return after - before
+
+
+def aggregate_all_intervals(symbol: str) -> dict[str, int]:
+    """Aggregate 1m bars to all coarser intervals for a symbol.
+
+    Aggregation chain: 1m → 5m → 15m → 1h → 1d
+
+    Returns:
+        Dict of {interval: bars_created}
+    """
+    results: dict[str, int] = {}
+
+    # Check if we have 1m data
+    with db_connection() as conn:
+        has_1m = conn.execute(
+            "SELECT 1 FROM bars WHERE symbol = ? AND interval = '1m' LIMIT 1",
+            [symbol],
+        ).fetchone()
+
+    if not has_1m:
+        return results
+
+    # Aggregate in chain: 1m → 5m → 15m → 1h → 1d
+    for target in ["5m", "15m", "1h", "1d"]:
+        count = aggregate_bars(symbol, "1m", target)
+        if count > 0:
+            results[target] = count
+
+    return results
+
+
+def purge_old_bars(symbol: str | None = None) -> dict[str, int]:
+    """Purge old bars according to retention policy.
+
+    Args:
+        symbol: Optional symbol to purge (default: all symbols)
+
+    Returns:
+        Dict of {interval: rows_deleted}
+    """
+    retention = get_retention_policy()
+    deleted: dict[str, int] = {}
+
+    with db_connection() as conn:
+        for interval, days in retention.items():
+            if days < 0:
+                # Keep forever
+                continue
+
+            # Use UTC since all stored datetimes are naive UTC
+            cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days)
+
+            # Count before delete
+            if symbol:
+                count_result = conn.execute(
+                    "SELECT COUNT(*) FROM bars WHERE symbol = ? AND interval = ? AND datetime < ?",
+                    [symbol, interval, cutoff],
+                ).fetchone()
+            else:
+                count_result = conn.execute(
+                    "SELECT COUNT(*) FROM bars WHERE interval = ? AND datetime < ?",
+                    [interval, cutoff],
+                ).fetchone()
+
+            count = count_result[0] if count_result else 0
+
+            if count > 0:
+                # Delete old bars
+                if symbol:
+                    conn.execute(
+                        "DELETE FROM bars WHERE symbol = ? AND interval = ? AND datetime < ?",
+                        [symbol, interval, cutoff],
+                    )
+                else:
+                    conn.execute(
+                        "DELETE FROM bars WHERE interval = ? AND datetime < ?",
+                        [interval, cutoff],
+                    )
+                deleted[interval] = count
+
+    return deleted
+
+
+def run_maintenance(
+    symbol: str | None = None,
+    aggregate: bool = True,
+    purge: bool = True,
+) -> dict[str, Any]:
+    """Run cache maintenance: aggregate and purge old data.
+
+    Args:
+        symbol: Optional symbol to maintain (default: all symbols)
+        aggregate: Whether to aggregate 1m bars to coarser intervals
+        purge: Whether to purge old data per retention policy
+
+    Returns:
+        Dict with 'aggregated' and 'purged' results
+    """
+    results: dict[str, Any] = {
+        "aggregated": {},
+        "purged": {},
+    }
+
+    symbols = [symbol] if symbol else get_symbols()
+
+    # Aggregate 1m bars to coarser intervals
+    if aggregate:
+        for sym in symbols:
+            agg_results = aggregate_all_intervals(sym)
+            if agg_results:
+                results["aggregated"][sym] = agg_results
+
+    # Purge old data per retention policy
+    if purge:
+        results["purged"] = purge_old_bars(symbol)
+
+    return results

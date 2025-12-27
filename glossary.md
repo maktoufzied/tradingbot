@@ -18,6 +18,17 @@ Quick reference for trading and technical terms used in this project.
 | **Lower Low (LL)** | A swing low that is lower than the previous swing low. Confirms downtrend continuation. |
 | **Structure Break** | When price breaks a key swing point, signaling potential trend reversal. Bullish break = price exceeds last Lower High. Bearish break = price falls below last Higher Low. |
 
+### Smart Money Concepts (ICT)
+
+| Term | Definition |
+|------|------------|
+| **Order Block (OB)** | The last opposing candle before a significant price move. Represents institutional entry zones. Bullish OB = last bearish candle before a big up move. Bearish OB = last bullish candle before a big down move. |
+| **Fair Value Gap (FVG)** | An imbalance zone where price moved too fast, creating a gap between candle 1's high and candle 3's low (bullish) or candle 1's low and candle 3's high (bearish). Price tends to return to "fill" these gaps. |
+| **Liquidity Sweep** | When price briefly breaks above swing highs or below swing lows to trigger stop losses (grabbing liquidity) before reversing. Also called "stop hunts." |
+| **Point of Control (POC)** | The price level with the highest traded volume in a given period. Acts as a strong magnet for price. |
+| **Value Area High (VAH)** | Upper boundary of the price range containing 70% of trading volume. Acts as resistance. |
+| **Value Area Low (VAL)** | Lower boundary of the price range containing 70% of trading volume. Acts as support. |
+
 ### Position & Risk
 
 | Term | Definition |
@@ -341,3 +352,58 @@ swing_lb=7: -3% return
 ```bash
 task replay -- SPY --speed 10 --from 2024-01-01
 ```
+
+---
+
+## Technical Indicators
+
+### Momentum Indicators
+
+| Indicator | Definition |
+|-----------|------------|
+| **RSI (Relative Strength Index)** | Measures momentum on a 0-100 scale. RSI > 70 = overbought, RSI < 30 = oversold. |
+| **Stochastic Oscillator** | Compares closing price to price range. %K and %D lines cross in extreme zones to signal reversals. |
+| **MACD** | Moving Average Convergence Divergence. MACD line crossing signal line indicates momentum shifts. |
+
+### Trend Indicators
+
+| Indicator | Definition |
+|-----------|------------|
+| **EMA Crossover** | Fast EMA (9) crossing slow EMA (21) signals trend direction changes. |
+| **ADX (Average Directional Index)** | Measures trend strength (not direction). ADX > 25 = strong trend, < 20 = ranging. |
+
+### Volatility Indicators
+
+| Indicator | Definition |
+|-----------|------------|
+| **Bollinger Bands** | SMA ± 2 standard deviations. Squeeze (narrow bands) = low volatility, expansion = high volatility. |
+| **Keltner Channels** | EMA ± ATR multiplier. Used with Bollinger Bands for squeeze detection. |
+| **ATR (Average True Range)** | Measures volatility by averaging the true range over N periods. |
+
+### Volume Indicators
+
+| Indicator | Definition |
+|-----------|------------|
+| **VWAP (Volume Weighted Average Price)** | Average price weighted by volume. Institutional benchmark. Price above VWAP = bullish, below = bearish. |
+| **VWAP Bands** | Standard deviation bands around VWAP (1σ, 2σ). Dynamic support/resistance levels. |
+| **Volume Profile** | Distribution of volume across price levels. Shows POC, VAH, VAL. |
+
+### Support/Resistance Indicators
+
+| Indicator | Definition |
+|-----------|------------|
+| **Pivot Points** | Classic floor trader levels calculated from previous session. PP = (H + L + C) / 3, with R1-R3 above and S1-S3 below. |
+| **Fibonacci Retracements** | Key retracement levels (23.6%, 38.2%, 50%, 61.8%, 78.6%) from swing high to swing low. Used for pullback entries. |
+
+---
+
+## Cache System Terms
+
+| Term | Definition |
+|------|------------|
+| **DuckDB Cache** | Local database storing historical OHLCV bars. Eliminates redundant API calls and survives restarts. |
+| **Bar Aggregation** | Converting fine-grained bars to coarser intervals. Example: 1m bars → 5m/15m/1h/1d bars. |
+| **Retention Policy** | Rules for how long to keep bars per interval. 1m=7d, 5m=30d, 15m=90d, 1h=365d, 1d=forever. |
+| **Cache Maintenance** | Periodic process that aggregates 1m bars and purges data older than retention policy. |
+| **Cache Hit** | When requested data is found in local DuckDB cache, avoiding API call. |
+| **Cache Miss** | When requested data is not in cache and must be fetched from upstream API (Yahoo/Alpaca). |

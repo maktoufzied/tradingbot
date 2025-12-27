@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-tradingbot = "tradingbot.backtest_cli:main"
+tradingbot-backtest = "tradingbot.backtest_cli:main"
 tradingbot-optimize = "tradingbot.optimize_cli:main"
 tradingbot-live = "tradingbot.cli:main"
 tradingbot-cache = "tradingbot.cache_cli:main"

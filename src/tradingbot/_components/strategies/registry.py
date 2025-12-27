@@ -18,7 +18,11 @@ def _bootstrap() -> None:
     # Import entry strategies to trigger registration
     from .entry import (  # noqa: F401
         atr_breakout,
+        fair_value_gaps,
+        gap_and_go,
+        liquidity_sweeps,
         orb,
+        order_blocks,
         rsi_divergence,
         swing_break,
         vwap_reversion,

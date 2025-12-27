@@ -1,6 +1,6 @@
 """Cached wrapper for data feeds."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import polars as pl
 
@@ -59,12 +59,12 @@ class CachedFeed:
         if not self._cache_enabled:
             return self._upstream.history(symbol, start_date, end_date, period, interval)
 
-        # Determine date range we need
+        # Determine date range we need (all datetimes are naive UTC)
         if start_date and end_date:
             need_start = datetime.fromisoformat(start_date)
             need_end = datetime.fromisoformat(end_date)
         else:
-            need_end = datetime.now()
+            need_end = datetime.now(UTC).replace(tzinfo=None)
             need_start = self._period_to_start(period, need_end)
 
         source = get_cache_config().source

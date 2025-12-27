@@ -29,6 +29,50 @@ class MACDConfig:
 
 
 @dataclass(frozen=True)
+class BollingerConfig:
+    """Bollinger Bands indicator configuration."""
+
+    period: int = 20
+    std_dev: float = 2.0
+
+
+@dataclass(frozen=True)
+class EMACrossoverConfig:
+    """EMA Crossover indicator configuration."""
+
+    fast_period: int = 9
+    slow_period: int = 21
+
+
+@dataclass(frozen=True)
+class StochasticConfig:
+    """Stochastic Oscillator indicator configuration."""
+
+    k_period: int = 14
+    d_period: int = 3
+    smooth_k: int = 3
+    overbought: float = 80.0
+    oversold: float = 20.0
+
+
+@dataclass(frozen=True)
+class ADXConfig:
+    """ADX indicator configuration."""
+
+    period: int = 14
+    trend_threshold: float = 25.0
+
+
+@dataclass(frozen=True)
+class KeltnerConfig:
+    """Keltner Channels indicator configuration."""
+
+    ema_period: int = 20
+    atr_period: int = 10
+    multiplier: float = 2.0
+
+
+@dataclass(frozen=True)
 class IndicatorConfig:
     """Indicator system configuration."""
 
@@ -37,6 +81,11 @@ class IndicatorConfig:
     signal_mode: str = "filter"  # filter, none
     rsi: RSIConfig = field(default_factory=RSIConfig)
     macd: MACDConfig = field(default_factory=MACDConfig)
+    bollinger: BollingerConfig = field(default_factory=BollingerConfig)
+    ema_crossover: EMACrossoverConfig = field(default_factory=EMACrossoverConfig)
+    stochastic: StochasticConfig = field(default_factory=StochasticConfig)
+    adx: ADXConfig = field(default_factory=ADXConfig)
+    keltner: KeltnerConfig = field(default_factory=KeltnerConfig)
 
 
 @dataclass(frozen=True)
@@ -44,7 +93,9 @@ class StrategyConfig:
     """Strategy configuration - everything a preset can override."""
 
     preset: str | None = None  # Preset name (overrides all strategy settings)
-    entry: str = "swing_break"  # Entry: swing_break, vwap_reversion, orb, rsi_divergence, atr_breakout
+    # Entry strategies: swing_break, vwap_reversion, orb, rsi_divergence, atr_breakout,
+    #                   gap_and_go, order_blocks, fvg, liquidity_sweeps
+    entry: str = "swing_break"
     exit: str = "swing"  # Exit: swing, atr, fixed
     # Risk parameters
     swing_lb: int = 5  # Swing lookback period (bars)

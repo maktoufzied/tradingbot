@@ -30,7 +30,7 @@ tasks:
 
   backtest:
     desc: Run backtest
-    cmd: uv run tradingbot {{.CLI_ARGS}}
+    cmd: uv run tradingbot-backtest {{.CLI_ARGS}}
 
   optimize:
     desc: Run parameter optimization

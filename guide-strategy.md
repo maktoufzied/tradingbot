@@ -54,6 +54,10 @@ The trading system uses a pluggable architecture with separate **entry** and **e
 | `orb` | Opening Range Breakout (first 30min) | 55-60% | High volatility opens |
 | `rsi_divergence` | RSI divergence detection | 52-58% | Trend exhaustion |
 | `atr_breakout` | ATR band breakouts | 50-55% | Volatile markets |
+| `gap_and_go` | Opening gap continuation | 55-65% | News-driven gaps |
+| `order_blocks` | ICT institutional order zones | 50-60% | After liquidity sweeps |
+| `fvg` | Fair Value Gaps (imbalance fill) | 55-65% | Trending markets |
+| `liquidity_sweeps` | Stop hunts at swing points | 55-65% | Reversal setups |
 
 ### Exit Strategies (SL/TP Calculation)
 
@@ -70,7 +74,16 @@ Entry signals can be filtered through indicators:
 | Indicator | Filter Logic |
 |-----------|--------------|
 | `rsi` | Block BUY if RSI > 70, block SELL if RSI < 30 |
-| `macd` | Block signals against MACD direction |
+| `macd` | Block signals against MACD histogram direction |
+| `bollinger` | Block signals during squeeze (low bandwidth) |
+| `ema_crossover` | Block signals against EMA trend direction |
+| `stochastic` | Block BUY if %K > 80, block SELL if %K < 20 |
+| `adx` | Require +DI/-DI alignment with signal direction |
+| `keltner` | Filter based on channel position |
+| `vwap_bands` | Block signals too close to VWAP |
+| `volume_profile` | Confirm signals near POC/VAH/VAL levels |
+| `pivot_points` | Confirm signals based on pivot position |
+| `fibonacci` | Require signal alignment with Fib trend |
 
 ### Configuration
 
@@ -200,6 +213,15 @@ Position Size = $1,000 / $2.00 = 500 shares
 | RSI | Avoid extremes | 14-period, avoid <20 or >80 |
 | ATR | Dynamic stops | 14-period, 1.5x for stop width |
 | 200 EMA | Trend filter | Only long above, short below |
+| Bollinger Bands | Volatility & mean reversion | 20-period, 2 std dev |
+| EMA Crossover | Trend direction | 9/21 EMA cross |
+| VWAP Bands | Dynamic S/R levels | 1σ, 2σ deviation bands |
+| Volume Profile | Key price levels | POC, VAH, VAL |
+| Stochastic | Overbought/oversold with momentum | 14-period %K, 3-period %D |
+| Pivot Points | Pre-market S/R levels | Daily PP, R1-R3, S1-S3 |
+| ADX | Trend strength filter | 14-period, >25 = trending |
+| Fibonacci | Pullback entry levels | 38.2%, 50%, 61.8% retracements |
+| Keltner Channels | Squeeze detection with BB | 20 EMA, 10 ATR, 2x multiplier |
 
 ---
 
@@ -278,7 +300,7 @@ Best by Profit Factor:    +3.19%  (risk=0.5%, drawdown=0.48%)
 After running optimization, update `tradingbot.toml` with the recommended parameters:
 
 ```toml
-[tradingbot.bot]
+[tradingbot.strategy]
 # From "Best by Risk-Adjusted Return" (balanced approach)
 swing_lb = 6       # swing_lookback from optimization
 risk_pct = 0.02    # risk_pct (2.0% = 0.02)
@@ -339,7 +361,36 @@ rr_ratio = 2.5     # rr_ratio from optimization
 
 ---
 
-## 10. Common Pitfalls to Avoid
+## 10. Day Trading Specifics
+
+### Time-Based Exits
+
+Day trading requires closing positions before market close to avoid overnight risk.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `eod_exit` | `true` | Close all positions before market close |
+| `eod_exit_minutes_before` | `15` | Minutes before close to trigger EOD exit |
+| `time_exit_minutes` | `0` | Close position after N minutes (0 = disabled) |
+
+**Exit Priority:**
+1. Stop Loss (highest priority)
+2. Take Profit
+3. Time Exit (if `time_exit_minutes > 0`)
+4. EOD Exit (if `eod_exit = true`)
+
+### Take Profit Cap
+
+All exit strategies enforce a **1.5% take-profit cap** for realistic day trading targets.
+
+**Why 1.5%?**
+- Individual stocks on 5-15m bars rarely move >2% in a few bars
+- Ensures positions are exited before momentum fades
+- Matches the statistical basis of the strategies (1:1 to 1.5:1 RR)
+
+---
+
+## 11. Common Pitfalls to Avoid
 
 1. **Over-optimization** → Use walk-forward testing
 2. **Ignoring transaction costs** → Include in backtest
@@ -349,7 +400,17 @@ rr_ratio = 2.5     # rr_ratio from optimization
 
 ---
 
-## 11. Quick Reference Card
+## 12. Risk Warnings
+
+1. **Past performance does not guarantee future results.** Win rates are statistical averages from backtesting and academic research.
+2. **Market conditions change.** A strategy that works in trending markets may underperform in ranging markets.
+3. **Slippage and commissions** are not included in win rate estimates. Actual performance will be lower.
+4. **Position sizing is critical.** Always use proper risk management (1-2% per trade max).
+5. **Backtest before live trading.** Use the optimizer to validate strategy parameters on your target symbols.
+
+---
+
+## 13. Quick Reference Card
 
 ```
 ┌────────────────────────────────────────────┐
