@@ -152,5 +152,7 @@ Examples:
             rr_ratio=best_trial.params["rr_ratio"],
             total_return=best_trial.user_attrs.get("total_return"),
             max_drawdown=best_trial.user_attrs.get("max_drawdown"),
+            entry_strategy=args.strategy or defaults.get("entry_strategy"),
+            exit_strategy=args.exit_strategy or defaults.get("exit_strategy"),
         )
         print(f"\n✓ Saved preset '{args.save_preset}' to tradingbot.toml")

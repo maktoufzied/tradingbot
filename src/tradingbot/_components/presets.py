@@ -239,6 +239,8 @@ def save_preset(
     rr_ratio: float,
     total_return: float | None = None,
     max_drawdown: float | None = None,
+    entry_strategy: str | None = None,
+    exit_strategy: str | None = None,
 ) -> None:
     """Save optimization results as a custom preset to tradingbot.toml.
 
@@ -252,6 +254,8 @@ def save_preset(
         rr_ratio: Reward/risk ratio
         total_return: Optional backtest return for description
         max_drawdown: Optional max drawdown for description
+        entry_strategy: Entry strategy used (optional)
+        exit_strategy: Exit strategy used (optional)
     """
     from pathlib import Path
 
@@ -288,6 +292,10 @@ def save_preset(
     preset.add("swing_lb", swing_lb)
     preset.add("risk_pct", round(risk_pct, 4))  # Round for readability
     preset.add("rr_ratio", round(rr_ratio, 1))
+    if entry_strategy:
+        preset.add("entry", entry_strategy)
+    if exit_strategy:
+        preset.add("exit", exit_strategy)
 
     doc["tradingbot"]["presets"].add(name, preset)  # type: ignore[union-attr,index]
 
