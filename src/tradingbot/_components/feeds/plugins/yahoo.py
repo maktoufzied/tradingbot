@@ -42,8 +42,8 @@ class YahooFeed(DataFeedProtocol):
         symbol: str,
         start_date: str | None = None,
         end_date: str | None = None,
-        period: str = "2y",
-        interval: str = "1d",
+        period: str = "1y",
+        interval: str = "1h",
         debug: bool = False,
     ) -> pl.DataFrame:
         """Fetch historical bar data from Yahoo Finance."""

@@ -40,7 +40,7 @@ class CachedFeed:
         start_date: str | None = None,
         end_date: str | None = None,
         period: str = "1y",
-        interval: str = "1d",
+        interval: str = "1h",
         refresh: bool = False,
         *,
         debug: bool = False,

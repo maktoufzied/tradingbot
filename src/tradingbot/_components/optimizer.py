@@ -21,10 +21,10 @@ MAX_WORKERS = os.cpu_count() or 4
 
 
 def _run_backtest_worker(
-    args: tuple[pl.DataFrame, str, float, int, float, float],
+    args: tuple[pl.DataFrame, str, float, str, str, int, float, float],
 ) -> OptimizationResult | None:
     """Worker function for parallel backtest execution."""
-    df, symbol, capital, swing_lb, risk, rr = args
+    df, symbol, capital, interval, period, swing_lb, risk, rr = args
 
     bot = MarketStructureBot(
         capital=capital,
@@ -50,6 +50,8 @@ def _run_backtest_worker(
     max_dd = float(str(stats["max_drawdown"]).rstrip("%"))
 
     return OptimizationResult(
+        interval=interval,
+        period=period,
         swing_lookback=swing_lb,
         risk_pct=risk,
         rr_ratio=rr,
@@ -62,6 +64,8 @@ def _run_backtest_worker(
 
 
 class OptimizationResult(TypedDict):
+    interval: str
+    period: str
     swing_lookback: int
     risk_pct: float
     rr_ratio: float
@@ -76,6 +80,8 @@ class OptimizationResult(TypedDict):
 class ParameterRanges:
     """Define ranges for parameter optimization."""
 
+    interval: list[str]
+    period: list[str]
     swing_lookback: list[int]
     risk_pct: list[float]
     rr_ratio: list[float]
@@ -88,13 +94,17 @@ class ParameterRanges:
         Higher RR ratios require unrealistic TP targets on intraday data.
         """
         return cls(
+            interval=["1h"],  # Single interval by default
+            period=["1y"],  # Single period by default
             swing_lookback=[3, 4, 5, 6, 7, 8, 9, 10],
             risk_pct=[0.005, 0.01, 0.015, 0.02],  # 0.5%, 1%, 1.5%, 2%
             rr_ratio=[1.0, 1.2, 1.5, 2.0],  # Realistic for day trading
         )
 
     def total_combinations(self) -> int:
-        return len(self.swing_lookback) * len(self.risk_pct) * len(self.rr_ratio)
+        return (
+            len(self.interval) * len(self.period) * len(self.swing_lookback) * len(self.risk_pct) * len(self.rr_ratio)
+        )
 
 
 class Optimizer:
@@ -102,16 +112,24 @@ class Optimizer:
 
     def __init__(
         self,
-        df: pl.DataFrame,
-        symbol: str = "UNKNOWN",
+        symbol: str,
         capital: float = 100000,
         params: ParameterRanges | None = None,
     ):
-        self.df: pl.DataFrame = df
         self.symbol: str = symbol
         self.capital: float = capital
         self.params: ParameterRanges = params or ParameterRanges.default()
         self.results: list[OptimizationResult] = []
+        self._data_cache: dict[tuple[str, str], pl.DataFrame] = {}
+
+    def _get_data(self, interval: str, period: str) -> pl.DataFrame:
+        """Get data for interval/period, caching to avoid re-fetching."""
+        key = (interval, period)
+        if key not in self._data_cache:
+            from .feeds import DataFeed
+
+            self._data_cache[key] = DataFeed.history(self.symbol, period=period, interval=interval)
+        return self._data_cache[key]
 
     def optimize(self, verbose: bool = True, parallel: bool = True) -> list[OptimizationResult]:
         """Run optimization across all parameter combinations.
@@ -120,8 +138,17 @@ class Optimizer:
             verbose: Show progress bar
             parallel: Run backtests in parallel (default True)
         """
+        # Pre-fetch all data combinations
+        if verbose:
+            console.print("[dim]Fetching data for all interval/period combinations...[/dim]")
+        for interval in self.params.interval:
+            for period in self.params.period:
+                self._get_data(interval, period)
+
         combinations = list(
             product(
+                self.params.interval,
+                self.params.period,
                 self.params.swing_lookback,
                 self.params.risk_pct,
                 self.params.rr_ratio,
@@ -134,7 +161,8 @@ class Optimizer:
         if parallel:
             # Prepare args for parallel execution
             worker_args = [
-                (self.df, self.symbol, self.capital, swing_lb, risk, rr) for swing_lb, risk, rr in combinations
+                (self._get_data(interval, period), self.symbol, self.capital, interval, period, swing_lb, risk, rr)
+                for interval, period, swing_lb, risk, rr in combinations
             ]
 
             if verbose:
@@ -193,22 +221,26 @@ class Optimizer:
                 ) as progress:
                     task = progress.add_task(f"Testing {total} combinations...", total=total)
 
-                    for swing_lb, risk, rr in combinations:
-                        opt_result = self._run_single(swing_lb, risk, rr)
+                    for interval, period, swing_lb, risk, rr in combinations:
+                        df = self._get_data(interval, period)
+                        opt_result = self._run_single(df, interval, period, swing_lb, risk, rr)
                         if opt_result:
                             self.results.append(opt_result)
                         progress.update(task, advance=1)
 
                 console.print(f"[green]Completed {len(self.results)} valid backtests[/green]")
             else:
-                for swing_lb, risk, rr in combinations:
-                    result = self._run_single(swing_lb, risk, rr)
+                for interval, period, swing_lb, risk, rr in combinations:
+                    df = self._get_data(interval, period)
+                    result = self._run_single(df, interval, period, swing_lb, risk, rr)
                     if result:
                         self.results.append(result)
 
         return self.results
 
-    def _run_single(self, swing_lb: int, risk: float, rr: float) -> OptimizationResult | None:
+    def _run_single(
+        self, df: pl.DataFrame, interval: str, period: str, swing_lb: int, risk: float, rr: float
+    ) -> OptimizationResult | None:
         """Run a single backtest with given parameters."""
         bot = MarketStructureBot(
             capital=self.capital,
@@ -217,7 +249,7 @@ class Optimizer:
             swing_lb=swing_lb,
         )
 
-        bot.backtest(self.df, self.symbol)
+        bot.backtest(df, self.symbol)
 
         if not bot.trades:
             return None
@@ -235,6 +267,8 @@ class Optimizer:
         profit_factor: float = float(pf_str) if pf_str != "inf" else 999.0
 
         return {
+            "interval": interval,
+            "period": period,
             "swing_lookback": swing_lb,
             "risk_pct": risk,
             "rr_ratio": rr,
@@ -290,7 +324,12 @@ class Optimizer:
 
         console.print(f"\nTested [cyan]{len(self.results)}[/cyan] valid parameter combinations")
         console.print(f"Symbol: [yellow]{self.symbol}[/yellow]")
-        console.print(f"Data: [cyan]{len(self.df)}[/cyan] bars")
+
+        # Show data summary
+        data_summary = ", ".join(
+            f"{interval}/{period}: {len(df)} bars" for (interval, period), df in self._data_cache.items()
+        )
+        console.print(f"Data: [cyan]{data_summary}[/cyan]")
 
         # Best by return
         best_ret = self.best_by_return()
@@ -319,6 +358,8 @@ class Optimizer:
         top5 = self.top_results(5)
         if not top5.is_empty():
             table = Table()
+            table.add_column("Interval", justify="center")
+            table.add_column("Period", justify="center")
             table.add_column("Swing LB", justify="center")
             table.add_column("Risk %", justify="center")
             table.add_column("R:R", justify="center")
@@ -331,6 +372,8 @@ class Optimizer:
             for row in top5.iter_rows(named=True):
                 ret_style = "green" if row["total_return"] > 0 else "red"
                 table.add_row(
+                    row["interval"],
+                    row["period"],
                     str(row["swing_lookback"]),
                     f"{row['risk_pct'] * 100:.1f}%",
                     str(row["rr_ratio"]),
@@ -348,6 +391,8 @@ class Optimizer:
         table.add_column("Param", style="cyan")
         table.add_column("Value")
 
+        table.add_row("interval", r["interval"])
+        table.add_row("period", r["period"])
         table.add_row("swing_lookback", str(r["swing_lookback"]))
         table.add_row("risk_pct", f"{r['risk_pct'] * 100:.1f}%")
         table.add_row("rr_ratio", str(r["rr_ratio"]))
@@ -487,51 +532,68 @@ class Optimizer:
         """
         Check for overfitting using walk-forward analysis.
 
-        Splits data into train/test and compares performance.
-        Large differences suggest overfitting.
+        Uses the best result's interval/period, splits data into train/test
+        and compares performance. Large differences suggest overfitting.
         """
         console.print()
         console.rule("[bold]Overfitting Analysis[/bold]")
 
-        n_bars = len(self.df)
+        best = self.best_by_return()
+        if not best:
+            console.print("[yellow]No results to analyze[/yellow]")
+            return {}
+
+        # Get data for the best result's interval/period
+        interval, period = best["interval"], best["period"]
+        df = self._get_data(interval, period)
+
+        n_bars = len(df)
         split_idx = int(n_bars * (1 - test_ratio))
 
-        train_df = self.df.head(split_idx)
-        test_df = self.df.slice(split_idx, n_bars - split_idx)
+        train_df = df.head(split_idx)
+        test_df = df.slice(split_idx, n_bars - split_idx)
 
+        console.print(f"Using best config: [cyan]{interval}[/cyan] / [cyan]{period}[/cyan]")
         console.print(f"Training period: [cyan]{len(train_df)}[/cyan] bars")
         console.print(f"Testing period:  [cyan]{len(test_df)}[/cyan] bars")
 
-        # Find best params on training data
-        console.print("\n[dim]Optimizing on training data...[/dim]")
-        train_opt = Optimizer(train_df, self.symbol, self.capital, self.params)
-        train_opt.optimize(verbose=False)
+        # Run backtest on training data with best params
+        train_bot = MarketStructureBot(
+            capital=self.capital,
+            risk_pct=best["risk_pct"],
+            rr_ratio=best["rr_ratio"],
+            swing_lb=best["swing_lookback"],
+        )
+        train_bot.backtest(train_df, self.symbol)
 
-        best_train = train_opt.best_by_return()
-        if not best_train:
+        if not train_bot.trades:
             console.print("[yellow]No valid results on training data[/yellow]")
             return {}
 
-        console.print("\n[bold]Best training params:[/bold]")
+        train_stats = train_bot.get_stats()
+        train_return = float(str(train_stats.get("total_return", "0")).rstrip("%"))
+
+        console.print("\n[bold]Best params from full optimization:[/bold]")
         console.print(
-            f"  swing_lookback={best_train['swing_lookback']}, "
-            f"risk={best_train['risk_pct'] * 100:.1f}%, "
-            f"rr={best_train['rr_ratio']}"
+            f"  interval={best['interval']}, period={best['period']}, "
+            f"swing_lookback={best['swing_lookback']}, "
+            f"risk={best['risk_pct'] * 100:.1f}%, "
+            f"rr={best['rr_ratio']}"
         )
-        console.print(f"  Training return: [green]{best_train['total_return']:+.2f}%[/green]")
+        console.print(f"  Training return: [green]{train_return:+.2f}%[/green]")
 
         # Test on out-of-sample data
         test_bot = MarketStructureBot(
             capital=self.capital,
-            risk_pct=best_train["risk_pct"],
-            rr_ratio=best_train["rr_ratio"],
-            swing_lb=best_train["swing_lookback"],
+            risk_pct=best["risk_pct"],
+            rr_ratio=best["rr_ratio"],
+            swing_lb=best["swing_lookback"],
         )
         test_bot.backtest(test_df, self.symbol)
 
         if not test_bot.trades:
             console.print("\n[yellow]Warning: No trades in test period[/yellow]")
-            return {"train_return": best_train["total_return"], "test_return": 0.0}
+            return {"train_return": train_return, "test_return": 0.0}
 
         test_stats = test_bot.get_stats()
         test_return = float(str(test_stats.get("total_return", "0")).rstrip("%"))
@@ -540,17 +602,17 @@ class Optimizer:
         console.print(f"  Test return:     [{test_color}]{test_return:+.2f}%[/{test_color}]")
 
         # Calculate degradation
-        degradation = best_train["total_return"] - test_return
+        degradation = train_return - test_return
 
         console.print("\n[bold]Overfitting Assessment:[/bold]")
 
-        if degradation > best_train["total_return"] * 0.5:
+        if degradation > train_return * 0.5:
             console.print(
                 f"[red bold]⚠ HIGH RISK:[/red bold] [red]Performance dropped {degradation:.1f}% on test data[/red]"
             )
             console.print("[red]  The optimized parameters may be overfit to historical data[/red]")
             console.print("[yellow]  Recommendation: Use more conservative parameters or longer test period[/yellow]")
-        elif degradation > best_train["total_return"] * 0.25:
+        elif degradation > train_return * 0.25:
             console.print(
                 f"[yellow bold]⚠ MODERATE RISK:[/yellow bold] [yellow]Performance dropped {degradation:.1f}% on test data[/yellow]"
             )
@@ -565,10 +627,10 @@ class Optimizer:
             console.print("[red]  Optimized parameters may not generalize well[/red]")
 
         # Sensitivity analysis
-        self._sensitivity_analysis(best_train)
+        self._sensitivity_analysis(best)
 
         return {
-            "train_return": best_train["total_return"],
+            "train_return": train_return,
             "test_return": test_return,
             "degradation": degradation,
         }
@@ -650,18 +712,46 @@ class Optimizer:
 
 def optimize(
     symbol: str,
-    period: str = "2y",
-    interval: str = "1d",
+    period: str | list[str] = "1y",
+    interval: str | list[str] = "1h",
     capital: float = 100000,
     params: ParameterRanges | None = None,
     parallel: bool = True,
 ) -> Optimizer:
-    """Convenience function to run optimization."""
-    from .feeds import DataFeed
+    """Convenience function to run optimization.
 
-    df: pl.DataFrame = DataFeed.history(symbol, period=period, interval=interval)
+    Args:
+        symbol: Stock symbol to optimize
+        period: Period(s) to test - single value or list (e.g., "1y" or ["6mo", "1y", "2y"])
+        interval: Interval(s) to test - single value or list (e.g., "1h" or ["15m", "1h", "1d"])
+        capital: Starting capital
+        params: Custom parameter ranges (if None, uses defaults with provided interval/period)
+        parallel: Run backtests in parallel
+    """
+    # Convert single values to lists
+    intervals = [interval] if isinstance(interval, str) else interval
+    periods = [period] if isinstance(period, str) else period
 
-    optimizer = Optimizer(df, symbol, capital, params)
+    # Build params with interval/period if not provided
+    if params is None:
+        params = ParameterRanges(
+            interval=intervals,
+            period=periods,
+            swing_lookback=[3, 4, 5, 6, 7, 8, 9, 10],
+            risk_pct=[0.005, 0.01, 0.015, 0.02],
+            rr_ratio=[1.0, 1.2, 1.5, 2.0],
+        )
+    else:
+        # Override interval/period in provided params
+        params = ParameterRanges(
+            interval=intervals,
+            period=periods,
+            swing_lookback=params.swing_lookback,
+            risk_pct=params.risk_pct,
+            rr_ratio=params.rr_ratio,
+        )
+
+    optimizer = Optimizer(symbol, capital, params)
     optimizer.optimize(parallel=parallel)
     optimizer.print_report()
 

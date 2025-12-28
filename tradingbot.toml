@@ -15,6 +15,10 @@
 entry = "swing_break"        # Entry: swing_break, vwap_reversion, orb, rsi_divergence, atr_breakout
 exit = "swing"               # Exit: swing, atr, fixed
 
+# Timeframe (CLI args override these)
+interval = "1h"              # Bar interval: 1m, 5m, 15m, 1h, 1d
+period = "1y"                # History: 1mo, 3mo, 6mo, 1y, 2y
+
 # Risk parameters
 swing_lb = 5                 # Swing lookback period (bars)
 risk_pct = 0.01              # Risk per trade (1% = 0.01)
@@ -53,7 +57,7 @@ capital = 100000             # Starting capital ($)
 # =============================================================================
 [tradingbot.cache]
 enabled = true
-source = "yahoo"             # Data source for cache: yahoo
+source = "alpaca"             # Data source for cache: yahoo, alpaca
 path = "~/.cache/tradingbot/tradingbot.duckdb"
 
 # Retention policy: days to keep data per interval (-1 = forever)
@@ -90,6 +94,8 @@ paper = true                 # Use paper trading endpoint
 # =============================================================================
 # [tradingbot.presets.my_preset]
 # description = "My custom strategy"
+# interval = "1h"            # Timeframe
+# period = "1y"              # History
 # entry = "swing_break"      # Entry strategy
 # exit = "atr"               # Exit strategy
 # risk_pct = 0.015           # Risk per trade
@@ -107,3 +113,35 @@ risk_pct = 0.005
 rr_ratio = 1.5
 indicators = ["rsi", "macd"]
 filter_mode = "all"
+
+[tradingbot.presets.apld_optimized]
+description = "Optimized for APLD, return=+29.5%, DD=4.3%"
+interval = "1h"
+period = "1y"
+swing_lb = 3
+risk_pct = 0.01799264218662403
+rr_ratio = 2.2
+
+[tradingbot.presets.msft_optimized]
+description = "Optimized for MSFT, return=+22.7%, DD=1.8%"
+interval = "1h"
+period = "1y"
+swing_lb = 4
+risk_pct = 0.0199
+rr_ratio = 1.7
+
+[tradingbot.presets.msft_optimized_5m]
+description = "Optimized for MSFT, return=-1.4%, DD=6.2%"
+interval = "5m"
+period = "3mo"
+swing_lb = 4
+risk_pct = 0.0077
+rr_ratio = 2.3
+
+[tradingbot.presets.msft_optimized_15m]
+description = "Optimized for MSFT, return=+1.7%, DD=3.0%"
+interval = "15m"
+period = "3mo"
+swing_lb = 5
+risk_pct = 0.0104
+rr_ratio = 1.3

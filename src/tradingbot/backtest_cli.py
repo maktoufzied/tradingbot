@@ -14,7 +14,7 @@ def main() -> None:
 Examples:
   tradingbot AAPL
   tradingbot AAPL TSLA GOOGL
-  tradingbot AAPL --period 5y --interval 1d
+  tradingbot AAPL --period 2y --interval 1d
   tradingbot AAPL --capital 50000 --risk 0.02
   tradingbot AAPL --preset scalping
   tradingbot AAPL --strategy vwap
@@ -26,9 +26,9 @@ Examples:
     parser.add_argument("symbols", nargs="*", help="Stock symbol(s) to backtest (e.g., MSFT, AAPL)")
     parser.add_argument("--list-strategies", action="store_true", help="List available entry strategies")
     parser.add_argument("--list-presets", action="store_true", help="List available trading presets")
-    parser.add_argument("--preset", "-p", help="Use a preset (overrides strategy, risk, indicators)")
-    parser.add_argument("--period", default="2y", help="Data period (default: 2y)")
-    parser.add_argument("--interval", default="1d", help="Data interval (default: 1d)")
+    parser.add_argument("--preset", "-p", help="Use a preset (overrides strategy, risk, indicators, interval, period)")
+    parser.add_argument("--period", help="Data period (default: from config or 1y)")
+    parser.add_argument("--interval", help="Data interval (default: from config or 1h)")
     parser.add_argument("--capital", type=float, help="Starting capital (uses config default)")
     parser.add_argument("--risk", type=float, help="Risk per trade as decimal (e.g., 0.01 for 1%%)")
     parser.add_argument("--rr", type=float, help="Reward/risk ratio (e.g., 2.0)")
@@ -51,6 +51,7 @@ Examples:
         for name, preset in PRESETS.items():
             print(f"  {name}")
             print(f"    {preset.description}")
+            print(f"    Interval: {preset.interval}, Period: {preset.period}")
             print(f"    Entry: {preset.entry}, Exit: {preset.exit}")
             print(f"    Risk: {preset.risk_pct * 100:.1f}%, RR: {preset.rr_ratio}:1")
             if preset.indicators:
@@ -62,6 +63,7 @@ Examples:
             for name, preset in custom.items():
                 print(f"  {name}")
                 print(f"    {preset.description}")
+                print(f"    Interval: {preset.interval}, Period: {preset.period}")
                 print(f"    Entry: {preset.entry}, Exit: {preset.exit}")
                 print(f"    Risk: {preset.risk_pct * 100:.1f}%, RR: {preset.rr_ratio}:1")
                 if preset.indicators:
@@ -87,12 +89,31 @@ Examples:
     if not args.symbols:
         parser.error("symbols are required (or use --list-strategies, --list-presets)")
 
+    # Resolve interval/period: CLI > preset > config > hardcoded defaults
+    from tradingbot._components.presets import get_preset, get_strategy_defaults
+
+    defaults = get_strategy_defaults()
+    interval = defaults["interval"]
+    period = defaults["period"]
+
+    # Preset overrides config defaults
+    if args.preset:
+        preset = get_preset(args.preset)
+        interval = preset.interval
+        period = preset.period
+
+    # CLI args override everything
+    if args.interval:
+        interval = args.interval
+    if args.period:
+        period = args.period
+
     try:
         if len(args.symbols) == 1:
             run_single_backtest(
                 args.symbols[0],
-                period=args.period,
-                interval=args.interval,
+                period=period,
+                interval=interval,
                 capital=args.capital,
                 risk=args.risk,
                 rr=args.rr,
@@ -106,8 +127,8 @@ Examples:
         else:
             run_multi_backtest(
                 args.symbols,
-                period=args.period,
-                interval=args.interval,
+                period=period,
+                interval=interval,
                 capital=args.capital,
                 risk=args.risk,
                 rr=args.rr,

@@ -63,9 +63,9 @@ The trading system uses a pluggable architecture with separate **entry** and **e
 
 | Strategy | Stop Loss | Take Profit |
 |----------|-----------|-------------|
-| `swing` | Below/above last swing point | Swing target or RR-capped (1.5%) |
-| `atr` | ATR-based distance | ATR × RR ratio (capped) |
-| `fixed` | Fixed % from entry (2%) | Fixed % from entry (1.5%) |
+| `swing` | Below/above last swing point | Nearest swing target (≥1R) or R:R fallback |
+| `atr` | ATR-based distance | ATR × RR ratio |
+| `fixed` | Fixed % from entry (2%) | Fixed % from entry |
 
 ### Indicator Filters
 
@@ -158,8 +158,8 @@ signal_mode = "filter"     # "filter" or "none"
 | **SHORT** | Above last swing high + 0.2% buffer |
 
 ### Take Profit
-- **Primary**: 2:1 Risk-Reward ratio
-- **Alternative**: Next significant swing point
+- **Primary**: Nearest swing point in profit direction (must offer ≥1R)
+- **Fallback**: R:R ratio if no valid swing target exists
 - **Trailing**: Move stop to break-even after 1R profit
 
 ### Exit Reasons
@@ -379,15 +379,6 @@ Day trading requires closing positions before market close to avoid overnight ri
 3. Time Exit (if `time_exit_minutes > 0`)
 4. EOD Exit (if `eod_exit = true`)
 
-### Take Profit Cap
-
-All exit strategies enforce a **1.5% take-profit cap** for realistic day trading targets.
-
-**Why 1.5%?**
-- Individual stocks on 5-15m bars rarely move >2% in a few bars
-- Ensures positions are exited before momentum fades
-- Matches the statistical basis of the strategies (1:1 to 1.5:1 RR)
-
 ---
 
 ## 11. Common Pitfalls to Avoid
@@ -423,7 +414,7 @@ All exit strategies enforce a **1.5% take-profit cap** for realistic day trading
 │ BEARISH BREAK = Price < Last HL (in up)   │
 │                                            │
 │ STOP = Beyond last swing point + buffer   │
-│ TARGET = 2x the risk distance             │
+│ TARGET = Swing point (≥1R) or R:R ratio   │
 │ SIZE = 1% risk ÷ (Entry - Stop)           │
 └────────────────────────────────────────────┘
 ```

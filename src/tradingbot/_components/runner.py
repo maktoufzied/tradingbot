@@ -68,8 +68,8 @@ def make_verbose_callbacks() -> BacktestCallbacks:
 
 def run_single_backtest(
     symbol: str,
-    period: str = "2y",
-    interval: str = "1d",
+    period: str = "1y",
+    interval: str = "1h",
     capital: float | None = None,
     risk: float | None = None,
     rr: float | None = None,

@@ -66,16 +66,34 @@ class SwingBreakStrategy:
         if trend == Trend.BULLISH and lows and price < lows[-1].price:
             return Entry(Signal.SELL, "Bearish structure break", details)
 
-        # Pullback/Rally signals
-        if trend == Trend.BULLISH and len(lows) >= 2:
-            last_low = lows[-1].price
-            if bar["low"] <= last_low * 1.01 and bar["close"] > bar["open"]:
-                return Entry(Signal.BUY, "Pullback to HL", details)
-
-        if trend == Trend.BEARISH and len(highs) >= 2:
+        # Continuation signals: pullback recovery (not at new highs/lows)
+        if trend == Trend.BULLISH and len(highs) >= 2 and len(lows) >= 1:
             last_high = highs[-1].price
-            if bar["high"] >= last_high * 0.99 and bar["close"] < bar["open"]:
-                return Entry(Signal.SELL, "Rally to LH", details)
+            last_low = lows[-1].price
+            candle_range = bar["high"] - bar["low"]
+
+            # Conditions for pullback recovery entry:
+            pulled_back = price < last_high * 0.98  # Not at new high
+            above_support = price > last_low  # Still above swing low (trend intact)
+            bullish_candle = bar["close"] > bar["open"]  # Bullish candle
+            strong_close = candle_range > 0 and (bar["close"] - bar["low"]) > 0.6 * candle_range
+
+            if pulled_back and above_support and bullish_candle and strong_close:
+                return Entry(Signal.BUY, "Pullback recovery", details)
+
+        if trend == Trend.BEARISH and len(lows) >= 2 and len(highs) >= 1:
+            last_low = lows[-1].price
+            last_high = highs[-1].price
+            candle_range = bar["high"] - bar["low"]
+
+            # Conditions for rally rejection entry:
+            rallied_back = price > last_low * 1.02  # Not at new low
+            below_resistance = price < last_high  # Still below swing high (trend intact)
+            bearish_candle = bar["close"] < bar["open"]  # Bearish candle
+            strong_close = candle_range > 0 and (bar["high"] - bar["close"]) > 0.6 * candle_range
+
+            if rallied_back and below_resistance and bearish_candle and strong_close:
+                return Entry(Signal.SELL, "Rally rejection", details)
 
         return Entry(Signal.HOLD, "", details)
 

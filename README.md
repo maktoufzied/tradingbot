@@ -53,13 +53,16 @@ uv run tradingbot-backtest AAPL TSLA GOOGL
 ### Run Parameter Optimization
 
 ```bash
-# Using task
-task optimize -- SPY
+# Using task - Optuna (recommended)
+task optimize -- SPY --optuna
+task optimize -- AAPL --optuna --trials 200 --save-preset aapl_best
+
+# Grid search with analysis
 task optimize -- AAPL --heatmap --overfit
 
 # Or using uv directly
-uv run tradingbot-optimize SPY
-uv run tradingbot-optimize TSLA --swing 5,6,7,8 --rr 2.0,2.5,3.0
+uv run tradingbot-optimize SPY --optuna
+uv run tradingbot-optimize TSLA --optuna --interval 15m,1h --period 3mo,1y
 ```
 
 ## CLI Commands
@@ -79,8 +82,8 @@ uv run tradingbot-backtest <SYMBOLS> [OPTIONS]
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--period` | Data period | `2y` |
-| `--interval` | Data interval | `1d` |
+| `--period` | Data period | `1y` |
+| `--interval` | Data interval | `1h` |
 | `--capital` | Starting capital | config value |
 | `--risk` | Risk per trade (e.g., 0.01 for 1%) | config value |
 | `--rr` | Reward/risk ratio | config value |
@@ -98,7 +101,7 @@ uv run tradingbot-backtest <SYMBOLS> [OPTIONS]
 ```bash
 task backtest -- SPY
 task backtest -- AAPL TSLA GOOGL
-task backtest -- SPY --period 5y --interval 1d
+task backtest -- SPY --period 2y --interval 1d
 task backtest -- AAPL --capital 50000 --risk 0.02
 task backtest -- SPY -p scalping                 # Use scalping preset
 task backtest -- SPY --preset conservative       # Use conservative preset
@@ -111,7 +114,7 @@ task backtest -- SPY --speed 10                  # Simulate 10 bars/sec
 
 ### `tradingbot-optimize`
 
-Optimize trading parameters with grid search.
+Optimize trading parameters with grid search or Optuna.
 
 ```bash
 task optimize -- <SYMBOL> [OPTIONS]
@@ -120,13 +123,28 @@ task optimize -- <SYMBOL> [OPTIONS]
 uv run tradingbot-optimize <SYMBOL> [OPTIONS]
 ```
 
-**Options:**
+**General Options:**
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--period` | Data period | `2y` |
-| `--interval` | Data interval | `1d` |
+| `--period` | Data period(s), comma-separated | `1y` |
+| `--interval` | Data interval(s), comma-separated | `1h` |
 | `--capital` | Starting capital | `100000` |
+| `--save-preset NAME` | Save best params as preset to tradingbot.toml | - |
+
+**Optuna Options** (smart sampling - recommended):
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--optuna` | Use Optuna instead of grid search | - |
+| `--trials` | Number of Optuna trials | `100` |
+| `--objective` | Optimization target: `return`, `calmar`, `profit_factor`, `multi` | `calmar` |
+| `--seed` | Random seed for reproducible results | - |
+
+**Grid Search Options** (exhaustive):
+
+| Flag | Description | Default |
+|------|-------------|---------|
 | `--heatmap` | Show parameter heatmaps | - |
 | `--overfit` | Run overfitting analysis | - |
 | `--plot` | Show parameter impact charts | - |
@@ -237,20 +255,28 @@ task cache -- maintain --show-policy # Show retention policy
 
 Presets provide complete trading configurations optimized for different styles. Use `--list-presets` to see available options.
 
-| Preset | Entry | Exit | Risk | RR | Description |
-|--------|-------|------|------|-----|-------------|
-| `conservative` | swing_break | swing | 0.5% | 1.5:1 | Filtered signals, low risk |
-| `balanced` | swing_break | swing | 1.0% | 1.5:1 | RSI filtering, moderate risk |
-| `aggressive` | swing_break | atr | 2.0% | 2.0:1 | No filters, higher risk |
-| `scalping` | orb | fixed | 0.5% | 1.0:1 | Quick trades, 30min time exit |
-| `mean_reversion` | vwap_reversion | fixed | 1.0% | 1.2:1 | VWAP mean reversion |
-| `momentum` | atr_breakout | atr | 1.5% | 1.5:1 | ATR breakouts, trend following |
-| `divergence` | rsi_divergence | swing | 1.0% | 1.5:1 | Counter-trend at exhaustion |
+**Day Trading** (intraday, closes positions at EOD):
+
+| Preset | Interval | Entry | Exit | Risk | RR | Indicator |
+|--------|----------|-------|------|------|-----|-----------|
+| `scalping` | 5m | orb | fixed | 0.5% | 1.5:1 | stochastic |
+| `day_momentum` | 15m | atr_breakout | atr | 1.0% | 1.5:1 | adx |
+| `mean_reversion` | 15m | vwap_reversion | fixed | 1.0% | 1.2:1 | bollinger |
+| `day_breakout` | 15m | atr_breakout | atr | 1.0% | 1.5:1 | keltner, ema_crossover |
+
+**Swing Trading** (multi-day, holds overnight):
+
+| Preset | Interval | Entry | Exit | Risk | RR | Indicator |
+|--------|----------|-------|------|------|-----|-----------|
+| `swing_conservative` | 1h | swing_break | swing | 0.5% | 2.0:1 | ema_crossover |
+| `swing_balanced` | 1h | swing_break | swing | 1.0% | 2.0:1 | adx |
+| `swing_aggressive` | 1h | swing_break | atr | 2.0% | 2.5:1 | none |
+| `divergence` | 1h | rsi_divergence | swing | 1.0% | 2.0:1 | macd |
 
 ```bash
 # Use a preset
 task backtest -- SPY --preset scalping
-task backtest -- AAPL -p conservative
+task backtest -- AAPL -p swing_balanced
 
 # CLI args override preset values
 task backtest -- SPY -p scalping --risk 0.02  # Override risk to 2%
@@ -357,9 +383,9 @@ source = "yahoo"                 # Default data source for caching
 
 | Strategy | Description |
 |----------|-------------|
-| `swing` | Swing-based SL/TP with 1.5% TP cap |
+| `swing` | SL at swing point, TP at nearest swing target (≥1R) or R:R fallback |
 | `atr` | ATR-based volatility stops |
-| `fixed` | Fixed percentage (2% SL, 1.5% TP) |
+| `fixed` | Fixed percentage stops |
 
 ## Supported Symbols
 
@@ -383,7 +409,7 @@ source = "yahoo"                 # Default data source for caching
 |----------|------------|----------|
 | `1m` | 7 days | Scalping |
 | `5m`, `15m` | 60 days | Day trading |
-| `1h` | 730 days | Swing trading |
+| `1h` | 730 days | Day/swing trading (default) |
 | `1d` | Unlimited | Position trading |
 
 ## Example Output
@@ -524,7 +550,7 @@ from tradingbot import (
 )
 
 # Run backtest
-bot, results = run_single_backtest("AAPL", period="2y", capital=50000)
+bot, results = run_single_backtest("AAPL", period="1y", capital=50000)
 
 # Access trades
 for trade in bot.trades:

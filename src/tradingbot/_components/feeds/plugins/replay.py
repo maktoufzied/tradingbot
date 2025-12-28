@@ -146,7 +146,7 @@ class ReplayFeed(DataFeedProtocol):
         start_date: str | None = None,
         end_date: str | None = None,
         period: str = "1y",
-        interval: str = "1d",
+        interval: str = "1h",
         debug: bool = False,  # noqa: ARG002
     ) -> pl.DataFrame:
         """Get historical data from cache."""

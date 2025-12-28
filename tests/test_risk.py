@@ -77,31 +77,27 @@ class TestExitStrategy:
         """Get the swing exit strategy from registry."""
         return get_exit_registry().get("swing")
 
-    def test_long_stop_capped_at_max_distance(
+    def test_long_stop_at_swing_low(
         self, swing_exit, swing_points_for_stop: list[SwingPoint], sample_df: pl.DataFrame
     ) -> None:
         result = swing_exit.calc("LONG", 105.0, sample_df, swing_points_for_stop, 2.0)
-        # Swing stop would be 98.0 * 0.998 = 97.804, but that's >5% from entry
-        # Max stop distance is 5%, so: 105 * 0.95 = 99.75
-        assert result.stop_loss == pytest.approx(99.75, rel=0.001)
+        # Stop at last swing low (98.0) with buffer: 98.0 * 0.998 = 97.804
+        assert result.stop_loss == pytest.approx(97.804, rel=0.001)
 
-    def test_short_stop_capped_at_max_distance(
+    def test_short_stop_at_swing_high(
         self, swing_exit, swing_points_for_stop: list[SwingPoint], sample_df: pl.DataFrame
     ) -> None:
         result = swing_exit.calc("SHORT", 100.0, sample_df, swing_points_for_stop, 2.0)
-        # Swing stop would be 108.0 * 1.002 = 108.216, but that's >5% from entry
-        # Max stop distance is 5%, so: 100 * 1.05 = 105.0
-        assert result.stop_loss == pytest.approx(105.0, rel=0.001)
+        # Stop at last swing high (108.0) with buffer: 108.0 * 1.002 = 108.216
+        assert result.stop_loss == pytest.approx(108.216, rel=0.001)
 
-    def test_long_stop_uses_swing_when_within_cap(self, swing_exit, sample_df: pl.DataFrame) -> None:
-        # Swing at 98.0 is within 5% of entry 100.0, so swing stop is used
+    def test_long_stop_uses_swing(self, swing_exit, sample_df: pl.DataFrame) -> None:
         swings = [SwingPoint(5, 98.0, False)]
         result = swing_exit.calc("LONG", 100.0, sample_df, swings, 2.0)
         # 98.0 * 0.998 = 97.804
         assert result.stop_loss == pytest.approx(97.804, rel=0.001)
 
-    def test_short_stop_uses_swing_when_within_cap(self, swing_exit, sample_df: pl.DataFrame) -> None:
-        # Swing at 102.0 is within 5% of entry 100.0, so swing stop is used
+    def test_short_stop_uses_swing(self, swing_exit, sample_df: pl.DataFrame) -> None:
         swings = [SwingPoint(5, 102.0, True)]
         result = swing_exit.calc("SHORT", 100.0, sample_df, swings, 2.0)
         # 102.0 * 1.002 = 102.204
@@ -117,73 +113,69 @@ class TestExitStrategy:
         # Fallback: 2% above entry
         assert result.stop_loss == 102.0
 
-    def test_long_take_profit(self, swing_exit, sample_df: pl.DataFrame) -> None:
+    def test_long_take_profit_rr_based(self, swing_exit, sample_df: pl.DataFrame) -> None:
         result = swing_exit.calc("LONG", 100.0, sample_df, [], 2.0)
-        # Default swing strategy with no swings uses RR-based TP
-        # Stop = 98.0, risk = $2, reward would be 2x = $4
-        # But TP is capped at 1.5% = $1.50, so TP = 101.5
-        assert result.take_profit == 101.5
+        # No swings, uses RR-based TP
+        # Stop = 98.0, risk = $2, reward = 2x = $4, TP = 104.0
+        assert result.take_profit == 104.0
 
-    def test_short_take_profit(self, swing_exit, sample_df: pl.DataFrame) -> None:
+    def test_short_take_profit_rr_based(self, swing_exit, sample_df: pl.DataFrame) -> None:
         result = swing_exit.calc("SHORT", 100.0, sample_df, [], 2.0)
-        # Stop = 102.0, risk = $2, reward would be 2x = $4
-        # But TP is capped at 1.5% = $1.50, so TP = 98.5
-        assert result.take_profit == 98.5
+        # Stop = 102.0, risk = $2, reward = 2x = $4, TP = 96.0
+        assert result.take_profit == 96.0
 
     def test_take_profit_with_different_rr(self, swing_exit, sample_df: pl.DataFrame) -> None:
         result = swing_exit.calc("LONG", 100.0, sample_df, [], 3.0)
-        # Stop = 98.0, risk = $2, reward would be 3x = $6
-        # But TP is capped at 1.5% = $1.50, so TP = 101.5
-        assert result.take_profit == 101.5
+        # Stop = 98.0, risk = $2, reward = 3x = $6, TP = 106.0
+        assert result.take_profit == 106.0
 
 
 class TestSwingTakeProfit:
-    """Tests for swing-based take-profit targeting.
-
-    Note: TP is now capped at 1.5% for realistic day trading targets.
-    """
+    """Tests for swing-based take-profit targeting."""
 
     @pytest.fixture
     def swing_exit(self):
         """Get the swing exit strategy from registry."""
         return get_exit_registry().get("swing")
 
-    def test_long_tp_targets_swing_high_within_cap(self, swing_exit, sample_df: pl.DataFrame) -> None:
-        # Swing high at 101.2 is within 1.5% cap and offers >= 1R
-        # Stop: 99.5 * 0.998 = 99.301, risk = 0.699
-        # Swing at 101.2: distance = 1.2 >= 0.699 (1R) and <= 1.5 (cap)
-        swings = [SwingPoint(5, 101.2, True), SwingPoint(10, 99.5, False)]
+    def test_long_tp_targets_swing_high(self, swing_exit, sample_df: pl.DataFrame) -> None:
+        # Swing high at 105.0 offers >= 1R
+        # Stop: 98.0 * 0.998 = 97.804, risk = 2.196
+        # Swing at 105.0: distance = 5.0 >= 2.196 (1R)
+        swings = [SwingPoint(5, 105.0, True), SwingPoint(10, 98.0, False)]
         result = swing_exit.calc("LONG", 100.0, sample_df, swings, 2.0)
-        assert result.take_profit == 101.2
+        assert result.take_profit == 105.0
 
-    def test_short_tp_targets_swing_low_within_cap(self, swing_exit, sample_df: pl.DataFrame) -> None:
-        # Swing low at 98.8 is within 1.5% cap and offers >= 1R
-        # Stop: 100.5 * 1.002 = 100.701, risk = 0.701
-        # Swing at 98.8: distance = 1.2 >= 0.701 (1R) and <= 1.5 (cap)
-        swings = [SwingPoint(5, 100.5, True), SwingPoint(10, 98.8, False)]
+    def test_short_tp_targets_swing_low(self, swing_exit, sample_df: pl.DataFrame) -> None:
+        # Swing low at 95.0 offers >= 1R
+        # Stop: 102.0 * 1.002 = 102.204, risk = 2.204
+        # Swing at 95.0: distance = 5.0 >= 2.204 (1R)
+        swings = [SwingPoint(5, 102.0, True), SwingPoint(10, 95.0, False)]
         result = swing_exit.calc("SHORT", 100.0, sample_df, swings, 2.0)
-        assert result.take_profit == 98.8
+        assert result.take_profit == 95.0
 
-    def test_swing_tp_capped_when_swing_too_far(self, swing_exit, sample_df: pl.DataFrame) -> None:
-        # Swing high at 110 is beyond 1.5% cap, should be capped
-        swings = [SwingPoint(5, 110.0, True), SwingPoint(10, 95.0, False)]
+    def test_swing_tp_uses_nearest_swing(self, swing_exit, sample_df: pl.DataFrame) -> None:
+        # Multiple swing highs above entry, should use nearest
+        # Swing low at 98.0 gives stop at 97.804, risk ~2.196
+        # Swing high at 105.0 offers 5.0 reward (>= 1R), so it's used
+        swings = [SwingPoint(5, 110.0, True), SwingPoint(8, 105.0, True), SwingPoint(10, 98.0, False)]
         result = swing_exit.calc("LONG", 100.0, sample_df, swings, 2.0)
-        # Swing at 110 is 10% away, exceeds 1.5% cap
-        # TP capped at 100 * 1.015 = 101.5
-        assert result.take_profit == 101.5
+        # Nearest swing high above entry is 105.0
+        assert result.take_profit == 105.0
 
-    def test_swing_tp_fallback_to_capped_rr(self, swing_exit, sample_df: pl.DataFrame) -> None:
-        # No valid swing points, falls back to capped RR-based TP
-        swings = [SwingPoint(5, 95.0, False)]  # Only swing low, no swing high
+    def test_swing_tp_fallback_to_rr(self, swing_exit, sample_df: pl.DataFrame) -> None:
+        # No swing highs above entry, falls back to RR-based TP
+        swings = [SwingPoint(5, 95.0, False)]  # Only swing low
         result = swing_exit.calc("LONG", 100.0, sample_df, swings, 2.0)
-        # Fallback to RR-based TP, but capped at 1.5%
-        assert result.take_profit == 101.5
+        # Stop: 95 * 0.998 = 94.81, risk = 5.19, RR 2x = 10.38
+        # TP = 100 + 10.38 = 110.38
+        assert result.take_profit == pytest.approx(110.38, rel=0.01)
 
-    def test_swing_tp_uses_capped_rr_when_swing_too_close(self, swing_exit, sample_df: pl.DataFrame) -> None:
-        # Swing high at 100.5 is within 1R but very close, use capped RR
+    def test_swing_tp_fallback_when_swing_too_close(self, swing_exit, sample_df: pl.DataFrame) -> None:
+        # Swing high at 100.5 is within 1R, fallback to RR-based
         swings = [SwingPoint(5, 100.5, True), SwingPoint(10, 98.0, False)]
         result = swing_exit.calc("LONG", 100.0, sample_df, swings, 2.0)
         # Stop at 98 * 0.998 = 97.804, risk ~$2.196
-        # Swing at 100.5 only offers ~0.23:1 RR (too close)
-        # Fallback to RR-based TP, capped at 1.5%
-        assert result.take_profit == 101.5
+        # Swing at 100.5 only offers $0.5 (~0.23R) - less than 1R
+        # Fallback to RR-based TP: 100 + 2.196 * 2 = 104.392
+        assert result.take_profit == pytest.approx(104.392, rel=0.01)

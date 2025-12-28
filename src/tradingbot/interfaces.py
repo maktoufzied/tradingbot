@@ -121,7 +121,7 @@ class DataFeedProtocol(ABC):
         start_date: str | None = None,
         end_date: str | None = None,
         period: str = "1y",
-        interval: str = "1d",
+        interval: str = "1h",
         debug: bool = False,
     ) -> pl.DataFrame:
         """Fetch historical OHLCV data for a symbol.

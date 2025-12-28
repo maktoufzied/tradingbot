@@ -1,6 +1,11 @@
 """Swing-based exit strategy.
 
 Places stop-loss and take-profit at swing points (local highs/lows).
+
+SL: At the last swing low (for longs) or last swing high (for shorts)
+TP: At the next swing high (for longs) or next swing low (for shorts)
+
+If no swing-based TP exists, falls back to R:R ratio calculation.
 """
 
 from typing import Final
@@ -15,18 +20,23 @@ from ..registry import register_exit
 # Small buffer beyond swing point to avoid stop-hunting wicks
 SWING_BUFFER_PCT: Final[float] = 0.002  # 0.2%
 
-# Maximum allowed stop distance from entry price
-MAX_STOP_DISTANCE_PCT: Final[float] = 0.05  # 5%
-
-# Maximum allowed take-profit distance (realistic for day trading)
-MAX_TP_DISTANCE_PCT: Final[float] = 0.015  # 1.5%
-
 # Fallback stop distance when no swing points exist
 DEFAULT_STOP_PCT: Final[float] = 0.02  # 2%
 
 
 class SwingExitStrategy:
-    """Exit strategy using swing points for SL/TP placement."""
+    """Exit strategy using swing points for SL/TP placement.
+
+    Stop Loss: Placed at the most recent swing point in the opposite direction.
+    - LONG: SL at last swing low (with small buffer below)
+    - SHORT: SL at last swing high (with small buffer above)
+
+    Take Profit: Placed at the nearest swing point in the profit direction.
+    - LONG: TP at next swing high above entry
+    - SHORT: TP at next swing low below entry
+
+    If no valid swing TP exists, falls back to R:R ratio calculation.
+    """
 
     @property
     def name(self) -> str:
@@ -49,14 +59,14 @@ class SwingExitStrategy:
         """Calculate stop-loss at recent swing point."""
         if direction == "LONG":
             lows = [s for s in swings if not s.is_high]
-            swing_stop = lows[-1].price * (1 - SWING_BUFFER_PCT) if lows else entry * (1 - DEFAULT_STOP_PCT)
-            max_stop = entry * (1 - MAX_STOP_DISTANCE_PCT)
-            return max(swing_stop, max_stop)
+            if lows:
+                return lows[-1].price * (1 - SWING_BUFFER_PCT)
+            return entry * (1 - DEFAULT_STOP_PCT)
         else:
             highs = [s for s in swings if s.is_high]
-            swing_stop = highs[-1].price * (1 + SWING_BUFFER_PCT) if highs else entry * (1 + DEFAULT_STOP_PCT)
-            max_stop = entry * (1 + MAX_STOP_DISTANCE_PCT)
-            return min(swing_stop, max_stop)
+            if highs:
+                return highs[-1].price * (1 + SWING_BUFFER_PCT)
+            return entry * (1 + DEFAULT_STOP_PCT)
 
     def _calc_tp(
         self,
@@ -66,30 +76,31 @@ class SwingExitStrategy:
         rr_ratio: float,
         swings: list[SwingPoint],
     ) -> float:
-        """Calculate take-profit at swing level or RR-based, capped at max distance."""
+        """Calculate take-profit at next swing level, or R:R-based fallback."""
         risk = abs(entry - stop)
-        max_tp_distance = entry * MAX_TP_DISTANCE_PCT
 
-        # RR-based TP (capped)
-        rr_distance = min(risk * rr_ratio, max_tp_distance)
-        rr_tp = entry + rr_distance if direction == "LONG" else entry - rr_distance
-
-        # Try swing-based TP
+        # Try swing-based TP first (next resistance/support)
         if direction == "LONG":
-            highs = [s for s in swings if s.is_high and s.price > entry]
-            if highs:
-                swing_tp = min(h.price for h in highs)
-                swing_distance = swing_tp - entry
-                if swing_distance >= risk and swing_distance <= max_tp_distance:
+            # Find swing highs above entry price
+            highs_above = [s for s in swings if s.is_high and s.price > entry]
+            if highs_above:
+                # Use the nearest swing high as TP
+                swing_tp = min(h.price for h in highs_above)
+                # Only use if it gives at least 1:1 R:R
+                if (swing_tp - entry) >= risk:
                     return swing_tp
         else:
-            lows = [s for s in swings if not s.is_high and s.price < entry]
-            if lows:
-                swing_tp = max(low.price for low in lows)
-                swing_distance = entry - swing_tp
-                if swing_distance >= risk and swing_distance <= max_tp_distance:
+            # Find swing lows below entry price
+            lows_below = [s for s in swings if not s.is_high and s.price < entry]
+            if lows_below:
+                # Use the nearest swing low as TP
+                swing_tp = max(low.price for low in lows_below)
+                # Only use if it gives at least 1:1 R:R
+                if (entry - swing_tp) >= risk:
                     return swing_tp
 
+        # Fallback: R:R-based TP
+        rr_tp = entry + (risk * rr_ratio) if direction == "LONG" else entry - (risk * rr_ratio)
         return rr_tp
 
 

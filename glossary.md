@@ -201,6 +201,24 @@ Strategy B is "better" despite lower absolute return
 
 ---
 
+### Calmar Ratio
+
+**Definition:** A risk-adjusted performance metric calculated as Annual Return ÷ Max Drawdown. Named after its creator (California Managed Accounts Reports).
+
+```
+Example:
+  Strategy A: +20% return, 10% drawdown → Calmar = 2.0
+  Strategy B: +30% return, 20% drawdown → Calmar = 1.5
+
+Strategy A has better risk-adjusted performance
+```
+
+**Why it matters:** Used by the optimizer (`--objective calmar`) to find strategies that balance returns with risk. Higher is better. A Calmar > 1.0 means return exceeds max drawdown.
+
+**Related:** Sharpe Ratio uses standard deviation instead of drawdown, but Calmar is more intuitive for traders who think in terms of "how much can I lose?"
+
+---
+
 ## Optimization Concepts
 
 ### Overfitting
@@ -269,6 +287,71 @@ swing_lb=7: -3% return
 
 ---
 
+### Grid Search
+
+**Definition:** An exhaustive optimization method that tests every combination of parameter values.
+
+```
+Example search space:
+  swing_lb: [3, 4, 5, 6, 7]     → 5 values
+  risk_pct: [0.01, 0.015, 0.02] → 3 values
+  rr_ratio: [1.5, 2.0, 2.5]     → 3 values
+
+Total combinations: 5 × 3 × 3 = 45 backtests
+```
+
+**Pros:** Guaranteed to find the best combination within the search space.
+**Cons:** Slow for large parameter spaces. 10 values × 10 values × 10 values = 1,000 backtests.
+
+**Usage:** `task optimize -- SPY --swing 3,4,5,6,7 --risk 0.01,0.015,0.02`
+
+---
+
+### Optuna
+
+**Definition:** A smart optimization library that uses Bayesian optimization (TPE algorithm) to find good parameters faster than grid search.
+
+**How it works:**
+1. Starts with random samples
+2. Learns which parameter regions perform well
+3. Focuses exploration on promising areas
+4. Avoids wasting time on bad regions
+
+```
+Example:
+  Grid search: 1000 combinations → 1000 backtests
+  Optuna: 100 trials → often finds similar or better results
+```
+
+**Objectives available:**
+| Objective | Optimizes For |
+|-----------|---------------|
+| `return` | Maximize total return |
+| `calmar` | Maximize return ÷ drawdown (default) |
+| `profit_factor` | Maximize gross profit ÷ gross loss |
+| `multi` | Pareto front (return vs drawdown trade-offs) |
+
+**Usage:** `task optimize -- SPY --optuna --trials 100 --objective calmar`
+
+---
+
+### Preset
+
+**Definition:** A saved configuration that bundles interval, period, entry strategy, exit strategy, risk parameters, and indicator filters into a single named profile.
+
+**Built-in presets:** `scalping`, `day_momentum`, `mean_reversion`, `swing_balanced`, etc.
+
+**Custom presets:** Saved to `tradingbot.toml` via `--save-preset`:
+```bash
+# Optimize and save best params as preset
+task optimize -- AAPL --optuna --save-preset aapl_optimized
+
+# Use the preset later
+task backtest -- AAPL --preset aapl_optimized
+```
+
+---
+
 ## Data Terms
 
 ### Period
@@ -279,8 +362,8 @@ swing_lb=7: -3% return
 |-------|---------|
 | `1mo` | 1 month |
 | `6mo` | 6 months |
-| `1y` | 1 year |
-| `2y` | 2 years (default) |
+| `1y` | 1 year (default) |
+| `2y` | 2 years |
 | `5y` | 5 years |
 | `max` | All available history |
 
@@ -294,8 +377,8 @@ swing_lb=7: -3% return
 |-------|----------|
 | `1m` | Scalping (max 7 days history) |
 | `5m`, `15m` | Day trading (max 60 days) |
-| `1h` | Swing trading (max 730 days) |
-| `1d` | Position trading (default, unlimited history) |
+| `1h` | Day/swing trading (default, max 730 days) |
+| `1d` | Position trading (unlimited history) |
 
 ---
 

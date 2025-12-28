@@ -7,11 +7,13 @@ requires-python = ">=3.14"
 dependencies = [
     "alpaca-py>=0.30.0",
     "duckdb>=1.1.0",
+    "optuna>=4.6.0",
     "plotext>=5.3.2",
     "polars>=1.35.2",
     "pyarrow>=19.0.0",
     "rich>=14.2.0",
     "textual>=6.7.0",
+    "tomlkit>=0.13.3",
     "websockets>=15.0",
     "yfinance>=0.2.66",
 ]
@@ -82,5 +84,5 @@ show_error_codes = true
 files = ["src/tradingbot"]
 
 [[tool.mypy.overrides]]
-module = ["yfinance", "yfinance.*", "plotext", "plotext.*"]
+module = ["yfinance", "yfinance.*", "plotext", "plotext.*", "optuna", "optuna.*", "tomlkit", "tomlkit.*"]
 ignore_missing_imports = true
