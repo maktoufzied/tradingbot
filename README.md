@@ -53,16 +53,15 @@ uv run tradingbot-backtest AAPL TSLA GOOGL
 ### Run Parameter Optimization
 
 ```bash
-# Using task - Optuna (recommended)
-task optimize -- SPY --optuna
-task optimize -- AAPL --optuna --trials 200 --save-preset aapl_best
+# Optuna (smart sampling - recommended)
+task optuna -- SPY
+task optuna -- AAPL --trials 200 --save-preset aapl_best
 
-# Grid search with analysis
+# Grid search (exhaustive)
 task optimize -- AAPL --heatmap --overfit
 
-# Or using uv directly
-uv run tradingbot-optimize SPY --optuna
-uv run tradingbot-optimize TSLA --optuna --interval 15m,1h --period 3mo,1y
+# Walk-forward validation (prevents overfitting)
+task optimize -- SPY --walk-forward --folds 3
 ```
 
 ## CLI Commands
@@ -116,9 +115,45 @@ task backtest -- SPY --verbose                   # See each bar
 task backtest -- SPY --speed 10                  # Simulate 10 bars/sec
 ```
 
+### `tradingbot-optuna`
+
+Optimize trading parameters using Optuna smart sampling (recommended).
+
+```bash
+task optuna -- <SYMBOL> [OPTIONS]
+
+# Or using uv directly
+uv run tradingbot-optuna <SYMBOL> [OPTIONS]
+```
+
+**Options:**
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--period` | Data period(s), comma-separated | `1y` |
+| `--interval` | Data interval(s), comma-separated | `1h` |
+| `--capital` | Starting capital | `100000` |
+| `--trials` | Number of Optuna trials | `100` |
+| `--objective` | Optimization target: `return`, `calmar`, `profit_factor`, `multi` | `calmar` |
+| `--seed` | Random seed for reproducible results | - |
+| `--save-preset NAME` | Save best params as preset to tradingbot.toml | - |
+| `--walk-forward` | Run walk-forward validation | - |
+| `--folds` | Number of walk-forward folds | `5` |
+| `--train-ratio` | Training data ratio per fold | `0.7` |
+
+**Examples:**
+
+```bash
+task optuna -- SPY                              # Default: 100 trials, calmar objective
+task optuna -- AAPL --trials 200                # More trials for better results
+task optuna -- MSFT --objective multi           # Pareto optimization
+task optuna -- AAPL --save-preset aapl_best     # Save best params
+task optuna -- SPY --walk-forward               # Validate with walk-forward
+```
+
 ### `tradingbot-optimize`
 
-Optimize trading parameters with grid search or Optuna.
+Optimize trading parameters using exhaustive grid search.
 
 ```bash
 task optimize -- <SYMBOL> [OPTIONS]
@@ -127,42 +162,33 @@ task optimize -- <SYMBOL> [OPTIONS]
 uv run tradingbot-optimize <SYMBOL> [OPTIONS]
 ```
 
-**General Options:**
+**Options:**
 
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--period` | Data period(s), comma-separated | `1y` |
 | `--interval` | Data interval(s), comma-separated | `1h` |
 | `--capital` | Starting capital | `100000` |
-| `--save-preset NAME` | Save best params as preset to tradingbot.toml | - |
-
-**Optuna Options** (smart sampling - recommended):
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--optuna` | Use Optuna instead of grid search | - |
-| `--trials` | Number of Optuna trials | `100` |
-| `--objective` | Optimization target: `return`, `calmar`, `profit_factor`, `multi` | `calmar` |
-| `--seed` | Random seed for reproducible results | - |
-
-**Grid Search Options** (exhaustive):
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--heatmap` | Show parameter heatmaps | - |
-| `--overfit` | Run overfitting analysis | - |
-| `--plot` | Show parameter impact charts | - |
 | `--swing` | Swing lookback values (comma-separated) | `3,4,5,6,7,8,9,10` |
 | `--risk` | Risk percentages (comma-separated) | `0.005,0.01,0.015,0.02` |
 | `--rr` | Reward/risk ratios (comma-separated) | `1.5,2.0,2.5,3.0` |
-
-**Walk-Forward Validation** (prevents overfitting):
-
-| Flag | Description | Default |
-|------|-------------|---------|
+| `--heatmap` | Show parameter heatmaps | - |
+| `--overfit` | Run overfitting analysis | - |
+| `--plot` | Show parameter impact charts | - |
+| `--sequential` | Run backtests sequentially | - |
+| `--save-preset NAME` | Save best params as preset to tradingbot.toml | - |
 | `--walk-forward` | Run walk-forward validation | - |
 | `--folds` | Number of walk-forward folds | `5` |
 | `--train-ratio` | Training data ratio per fold | `0.7` |
+
+**Examples:**
+
+```bash
+task optimize -- SPY                            # Default grid search
+task optimize -- AAPL --heatmap --overfit       # With analysis
+task optimize -- SPY --swing 5,6,7 --risk 0.01  # Custom ranges
+task optimize -- SPY --walk-forward --folds 3   # Walk-forward validation
+```
 
 ### `tradingbot-live`
 

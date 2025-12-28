@@ -33,8 +33,12 @@ tasks:
     cmd: uv run tradingbot-backtest {{.CLI_ARGS}}
 
   optimize:
-    desc: Run parameter optimization
+    desc: Run grid search optimization
     cmd: uv run tradingbot-optimize {{.CLI_ARGS}}
+
+  optuna:
+    desc: Run Optuna smart sampling optimization
+    cmd: uv run tradingbot-optuna {{.CLI_ARGS}}
 
   live:
     desc: Run live trading
