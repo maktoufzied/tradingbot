@@ -52,10 +52,12 @@ class Trade:
     entry_index: int
     direction: Direction
     size: float
-    pnl: float
+    pnl: float  # Net P&L (after costs)
     pnl_pct: float
     exit_reason: ExitReason
     holding_period: int
+    gross_pnl: float | None = None  # P&L before costs (None for backward compat)
+    execution_costs: float | None = None  # Total execution costs
 
 
 # Live trading models

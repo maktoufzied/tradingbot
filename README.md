@@ -95,6 +95,10 @@ uv run tradingbot-backtest <SYMBOLS> [OPTIONS]
 | `--refresh` | Force re-fetch data from API | - |
 | `--verbose`, `-v` | Print each bar as it processes | - |
 | `--speed` | Simulate real-time (bars/sec, 0=instant) | `0` |
+| `--no-costs` | Disable execution costs for comparison | - |
+| `--slippage BPS` | Slippage in basis points | `5` |
+| `--spread BPS` | Bid-ask spread in basis points | `2` |
+| `--commission USD` | Commission per share | `0.005` |
 
 **Examples:**
 

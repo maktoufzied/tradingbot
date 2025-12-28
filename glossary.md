@@ -40,12 +40,24 @@ Quick reference for trading and technical terms used in this project.
 | **Reward/Risk Ratio (R:R)** | The ratio of potential profit to potential loss. A 2:1 R:R means you aim to make $2 for every $1 risked. |
 | **Trailing Stop** | A stop loss that moves in the direction of profit, locking in gains as the trade moves favorably. |
 
+### Execution Costs
+
+| Term | Definition |
+|------|------------|
+| **Slippage** | The difference between expected trade price and actual execution price. Caused by market movement during order transmission. Measured in basis points (bps). |
+| **Bid-Ask Spread** | The difference between the highest buy price (bid) and lowest sell price (ask). Buyers pay the ask, sellers receive the bid. Measured in basis points. |
+| **Commission** | Fee charged by the broker per share or per trade. Typically $0.005/share for discount brokers. |
+| **Gross P&L** | Profit/loss calculated from signal prices (before execution costs). |
+| **Net P&L** | Actual profit/loss after accounting for slippage, spread, and commission. Net = Gross - Costs. |
+| **Basis Point (bps)** | One hundredth of a percent (0.01%). 100 bps = 1%. Used to express small price differences. |
+| **Round-Trip Costs** | Total execution costs for both entry and exit of a trade. Includes entry slippage + exit slippage + entry spread + exit spread + commission × 2. |
+
 ### Trade Outcomes
 
 | Term | Definition |
 |------|------------|
 | **Win Rate** | Percentage of trades that are profitable. Win Rate = Winners ÷ Total Trades × 100. |
-| **P&L (Profit & Loss)** | The monetary gain or loss from a trade or series of trades. |
+| **P&L (Profit & Loss)** | The monetary gain or loss from a trade or series of trades (typically net of execution costs). |
 | **Drawdown** | The decline from a peak equity value to a trough. Measures how much you "give back" before recovering. |
 | **Max Drawdown** | The largest peak-to-trough decline in account value. Critical for understanding worst-case scenarios. |
 

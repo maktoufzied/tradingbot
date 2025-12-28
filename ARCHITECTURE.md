@@ -20,6 +20,7 @@ src/tradingbot/
     ├── bot.py               # MarketStructureBot (backtesting)
     ├── runner.py            # Backtest orchestration
     ├── optimizer.py         # Parameter optimization
+    ├── execution.py         # ExecutionModel (slippage, spread, commission)
     ├── signals.py           # SignalGenerator
     ├── swing.py             # Swing point detection
     ├── risk.py              # PositionSizer
@@ -44,8 +45,9 @@ Defined in `types.py`:
 |------|-------------|
 | `Bar` | OHLCV data point with datetime |
 | `Position` | Active trade state (entry, size, SL/TP) |
-| `Trade` | Closed trade record with P&L |
+| `Trade` | Closed trade record with P&L (gross, net, costs) |
 | `Signal` | BUY / SELL / HOLD decision |
+| `ExecutionModel` | Slippage, spread, commission modeling |
 | `SwingPoint` | Local high/low for structure analysis |
 | `Order` | Broker order request |
 | `Trend` | BULLISH / BEARISH / NEUTRAL |
@@ -468,6 +470,67 @@ flowchart LR
 | `purge_old_bars()` | Delete bars older than retention policy |
 | `run_maintenance()` | Full maintenance: aggregate + purge |
 
+### Execution Cost Model
+
+The `ExecutionModel` provides realistic trade execution cost simulation:
+
+```mermaid
+flowchart LR
+    subgraph Entry
+        SP[Signal Price] --> Spread[+ Spread/2]
+        Spread --> Slip[+ Slippage]
+        Slip --> EP[Entry Price]
+    end
+
+    subgraph Exit
+        XP[Signal Price] --> XSpread[- Spread/2]
+        XSpread --> XSlip[- Slippage]
+        XSlip --> Exit[Exit Price]
+    end
+
+    subgraph Costs
+        EP --> Comm[+ Commission]
+        Exit --> Comm
+        Comm --> Total[Total Costs]
+    end
+```
+
+**Cost Components:**
+
+| Component | Default | Description |
+|-----------|---------|-------------|
+| Slippage | 5 bps | Price movement between signal and fill |
+| Spread | 2 bps | Bid-ask spread (pay ask, sell bid) |
+| Commission | $0.005/share | Per-share brokerage fee |
+
+**P&L Calculation:**
+
+```python
+# LONG trade example
+entry_price = signal_price * (1 + spread_bps/20000 + slippage_bps/10000)
+exit_price = signal_price * (1 - spread_bps/20000 - slippage_bps/10000)
+gross_pnl = (exit_signal - entry_signal) * shares
+commission = shares * commission_per_share * 2  # round-trip
+net_pnl = (exit_price - entry_price) * shares - commission
+```
+
+**Factory Methods:**
+
+| Method | Use Case |
+|--------|----------|
+| `ExecutionModel()` | Default costs (5bps slip, 2bps spread, $0.005 comm) |
+| `ExecutionModel.zero()` | No costs (for comparison/benchmarking) |
+| `ExecutionModel.conservative()` | Higher costs (10bps slip, 5bps spread) |
+
+**CLI Flags:**
+
+```bash
+tradingbot-backtest AAPL --no-costs           # Disable all costs
+tradingbot-backtest AAPL --slippage 10        # Custom slippage (bps)
+tradingbot-backtest AAPL --spread 5           # Custom spread (bps)
+tradingbot-backtest AAPL --commission 0.01    # Custom commission ($/share)
+```
+
 **Retention Policy:**
 | Interval | Default Retention |
 |----------|-------------------|
@@ -592,6 +655,7 @@ tests/
 ├── test_swing.py         # Swing detection
 ├── test_indicators.py    # Indicator calculations
 ├── test_risk.py          # Position sizing, risk
+├── test_execution.py     # Execution cost modeling
 ├── test_alpaca_broker.py # Broker integration
 ├── test_alpaca_feed.py   # Feed integration
 └── test_models.py        # Data models

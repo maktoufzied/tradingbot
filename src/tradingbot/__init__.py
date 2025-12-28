@@ -14,6 +14,7 @@ from ._components.engine import (
     TradeClosedEvent,
     TradingEngine,
 )
+from ._components.execution import ExecutionModel
 from ._components.feeds import DataFeed
 from ._components.feeds import get_registry as get_feed_registry
 from ._components.live_risk import LiveRiskManager
@@ -33,6 +34,7 @@ __all__ = [
     "EngineStartedEvent",
     "EngineStoppedEvent",
     "Entry",
+    "ExecutionModel",
     "Exit",
     "LiveRiskManager",
     "MarketStructureBot",

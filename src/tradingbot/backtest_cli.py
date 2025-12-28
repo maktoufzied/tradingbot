@@ -40,6 +40,31 @@ Examples:
     parser.add_argument("--verbose", "-v", action="store_true", help="Print each bar as it processes")
     parser.add_argument("--speed", type=float, default=0, help="Simulate real-time: bars per second (0 = instant)")
 
+    # Execution cost options
+    parser.add_argument(
+        "--no-costs",
+        action="store_true",
+        help="Disable execution costs (slippage, spread, commission) for comparison",
+    )
+    parser.add_argument(
+        "--slippage",
+        type=float,
+        metavar="BPS",
+        help="Slippage in basis points (default: 5)",
+    )
+    parser.add_argument(
+        "--spread",
+        type=float,
+        metavar="BPS",
+        help="Bid-ask spread in basis points (default: 2)",
+    )
+    parser.add_argument(
+        "--commission",
+        type=float,
+        metavar="USD",
+        help="Commission per share in USD (default: 0.005)",
+    )
+
     args = parser.parse_args()
 
     if args.list_presets:
@@ -123,6 +148,10 @@ Examples:
                 refresh=args.refresh,
                 verbose=args.verbose,
                 speed=args.speed,
+                no_costs=args.no_costs,
+                slippage_bps=args.slippage,
+                spread_bps=args.spread,
+                commission=args.commission,
             )
         else:
             run_multi_backtest(
@@ -138,6 +167,10 @@ Examples:
                 refresh=args.refresh,
                 verbose=args.verbose,
                 speed=args.speed,
+                no_costs=args.no_costs,
+                slippage_bps=args.slippage,
+                spread_bps=args.spread,
+                commission=args.commission,
             )
     except ValueError as e:
         import sys

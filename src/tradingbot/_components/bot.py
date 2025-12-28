@@ -9,6 +9,7 @@ import polars as pl
 
 from tradingbot.types import Direction, ExitReason, Position, Signal, SwingPoint, Trade
 
+from .execution import ExecutionModel
 from .risk import PositionSizer
 from .signals import SignalGenerator
 from .swing import find_swing_points
@@ -28,6 +29,10 @@ class Stats(TypedDict):
     max_drawdown: str
     final_capital: str
     avg_holding_period: str
+    # Execution cost fields (optional for backward compat)
+    gross_pnl: str
+    gross_return: str
+    total_costs: str
 
 
 class BacktestCallbacks:
@@ -68,6 +73,7 @@ class MarketStructureBot:
         entry_strategy: str | None = None,
         exit_strategy: str | None = None,
         allow_short: bool = False,
+        execution_model: ExecutionModel | None = None,
     ):
         self.sig_gen = SignalGenerator(swing_lb, entry_strategy=entry_strategy, exit_strategy=exit_strategy)
         self.pos_sizer = PositionSizer(capital, risk_pct)
@@ -75,6 +81,7 @@ class MarketStructureBot:
         self.swing_lb = swing_lb
         self.trailing_stop = trailing_stop
         self.allow_short = allow_short
+        self.execution_model = execution_model or ExecutionModel()
         self.position: Position | None = None
         self.trades: list[Trade] = []
         self.equity: list[float] = []
@@ -201,7 +208,10 @@ class MarketStructureBot:
     def _close(self, price: float, idx: int, time: datetime, reason: ExitReason) -> None:
         assert self.position is not None
         p: Position = self.position
-        pnl: float = (price - p.entry_price) * p.size if p.direction == "LONG" else (p.entry_price - price) * p.size
+
+        # Calculate gross and net P&L using execution model
+        gross_pnl, net_pnl = self.execution_model.calculate_net_pnl(p.entry_price, price, p.size, p.direction)
+        costs = self.execution_model.calculate_costs(p.entry_price, price, p.size, p.direction)
 
         self.trades.append(
             Trade(
@@ -213,16 +223,18 @@ class MarketStructureBot:
                 p.entry_index,
                 p.direction,
                 p.size,
-                pnl,
-                pnl / self.pos_sizer.capital,
+                net_pnl,  # Use net P&L as the primary pnl
+                net_pnl / self.pos_sizer.capital,
                 reason,
                 idx - p.entry_index,
+                gross_pnl=gross_pnl,
+                execution_costs=costs.total,
             )
         )
-        self.pos_sizer.capital += pnl
+        self.pos_sizer.capital += net_pnl
 
         if self.callbacks and self.callbacks._on_trade_closed:
-            self.callbacks._on_trade_closed(p.direction, self.symbol, p.entry_price, price, pnl, reason)
+            self.callbacks._on_trade_closed(p.direction, self.symbol, p.entry_price, price, net_pnl, reason)
 
         self.position = None
 
@@ -230,9 +242,14 @@ class MarketStructureBot:
         if not self.trades:
             return {"error": "No trades"}
 
+        # Net P&L (after costs)
         pnls: list[float] = [t.pnl for t in self.trades]
         wins: list[float] = [p for p in pnls if p > 0]
         losses: list[float] = [p for p in pnls if p < 0]
+
+        # Gross P&L and costs
+        gross_pnls: list[float] = [t.gross_pnl if t.gross_pnl is not None else t.pnl for t in self.trades]
+        total_costs = sum(t.execution_costs or 0 for t in self.trades)
 
         equity: pl.Series = pl.Series(self.equity, dtype=pl.Float64)
         peak: pl.Series = equity.cum_max()
@@ -254,6 +271,10 @@ class MarketStructureBot:
             "max_drawdown": f"{100 * max_dd_val:.2f}%",
             "final_capital": f"${self.pos_sizer.capital:,.2f}",
             "avg_holding_period": f"{mean([t.holding_period for t in self.trades]):.1f} bars",
+            # Execution cost breakdown
+            "gross_pnl": f"${sum(gross_pnls):,.2f}",
+            "gross_return": f"{100 * sum(gross_pnls) / self.pos_sizer.initial:.2f}%",
+            "total_costs": f"${total_costs:,.2f}",
         }
 
     def plot_results(self, df: pl.DataFrame, results: pl.DataFrame) -> None:

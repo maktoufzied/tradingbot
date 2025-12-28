@@ -10,6 +10,7 @@ from tradingbot.config import get_bot_config, get_strategy_config
 from tradingbot.types import Position, Signal
 
 from .bot import BacktestCallbacks, MarketStructureBot, Stats
+from .execution import ExecutionModel
 from .feeds import DataFeed
 
 
@@ -25,6 +26,11 @@ class BacktestParams(TypedDict, total=False):
     refresh: bool
     verbose: bool
     speed: float
+    # Execution cost parameters
+    no_costs: bool
+    slippage_bps: float
+    spread_bps: float
+    commission: float
 
 
 console = Console()
@@ -79,6 +85,10 @@ def run_single_backtest(
     refresh: bool = False,
     verbose: bool = False,
     speed: float = 0,
+    no_costs: bool = False,
+    slippage_bps: float | None = None,
+    spread_bps: float | None = None,
+    commission: float | None = None,
 ) -> tuple[MarketStructureBot, pl.DataFrame]:
     bot_cfg = get_bot_config()
     strategy_cfg = get_strategy_config()
@@ -99,6 +109,16 @@ def run_single_backtest(
     exit_strategy = preset_obj.exit if preset_obj else None
     allow_short = strategy_cfg.allow_short
 
+    # Build execution model
+    if no_costs:
+        execution_model = ExecutionModel.zero()
+    else:
+        execution_model = ExecutionModel(
+            slippage_bps=slippage_bps if slippage_bps is not None else 5.0,
+            spread_bps=spread_bps if spread_bps is not None else 2.0,
+            commission_per_share=commission if commission is not None else 0.005,
+        )
+
     console.print()
     console.rule(f"[bold yellow]BACKTEST: {symbol}[/bold yellow]", style="cyan")
 
@@ -109,6 +129,11 @@ def run_single_backtest(
     exit_name = exit_strategy or "swing"
     preset_info = f"[cyan]{preset}[/cyan] | " if preset else ""
     short_info = "long+short" if allow_short else "long only"
+    costs_info = (
+        "[dim]no costs[/dim]"
+        if no_costs
+        else f"[dim]costs: {execution_model.slippage_bps + execution_model.spread_bps}bps + ${execution_model.commission_per_share}/sh[/dim]"
+    )
     console.print(
         f"  {preset_info}"
         f"[dim]{period} {interval}[/dim] | "
@@ -117,6 +142,7 @@ def run_single_backtest(
         f"risk=[cyan]{risk_pct * 100:.1f}%[/cyan] rr=[cyan]{rr_ratio}:1[/cyan] | "
         f"[dim]{short_info}[/dim]"
     )
+    console.print(f"  {costs_info}")
     if verbose and speed > 0:
         console.print(f"  [dim]Speed: {speed} bars/sec[/dim]")
     console.print()
@@ -129,6 +155,7 @@ def run_single_backtest(
         entry_strategy=entry_strategy,
         exit_strategy=exit_strategy,
         allow_short=allow_short,
+        execution_model=execution_model,
     )
 
     callbacks = make_verbose_callbacks() if verbose else None
