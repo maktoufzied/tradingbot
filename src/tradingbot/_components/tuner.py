@@ -36,6 +36,10 @@ class TunerConfig:
     rr_ratio_min: float = 1.0
     rr_ratio_max: float = 3.0
 
+    # Strategy settings (from config if not specified)
+    entry_strategy: str | None = None
+    exit_strategy: str | None = None
+
     # Optimization settings
     n_trials: int = 100
     timeout: int | None = None  # seconds
@@ -44,9 +48,14 @@ class TunerConfig:
 
     @classmethod
     def default(cls) -> TunerConfig:
+        from .presets import get_strategy_defaults
+
+        defaults = get_strategy_defaults()
         return cls(
             intervals=["1h"],
             periods=["1y"],
+            entry_strategy=defaults.get("entry_strategy"),
+            exit_strategy=defaults.get("exit_strategy"),
         )
 
 
@@ -96,6 +105,8 @@ class OptunaTuner:
             risk_pct=risk_pct,
             rr_ratio=rr_ratio,
             swing_lb=swing_lb,
+            entry_strategy=self.config.entry_strategy,
+            exit_strategy=self.config.exit_strategy,
         )
         bot.backtest(df, self.symbol)
 
@@ -350,6 +361,8 @@ def tune(
     objective: Literal["return", "calmar", "profit_factor", "multi"] = "calmar",
     capital: float = 100000,
     seed: int | None = None,
+    entry_strategy: str | None = None,
+    exit_strategy: str | None = None,
 ) -> OptunaTuner:
     """Convenience function to run Optuna tuning.
 
@@ -365,13 +378,22 @@ def tune(
             - "multi": Multi-objective (maximize return, minimize drawdown)
         capital: Starting capital
         seed: Random seed for reproducibility (None = random each run)
+        entry_strategy: Entry strategy to use (default: from config)
+        exit_strategy: Exit strategy to use (default: from config)
     """
+    # Get defaults from config if not specified
+    from .presets import get_strategy_defaults
+
+    defaults = get_strategy_defaults()
+
     config = TunerConfig(
         intervals=intervals or ["1h"],
         periods=periods or ["1y"],
         n_trials=n_trials,
         objective=objective,
         seed=seed,
+        entry_strategy=entry_strategy or defaults.get("entry_strategy"),
+        exit_strategy=exit_strategy or defaults.get("exit_strategy"),
     )
 
     tuner = OptunaTuner(symbol, capital, config)

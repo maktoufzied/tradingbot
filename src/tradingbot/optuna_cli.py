@@ -18,6 +18,10 @@ Examples:
   tradingbot-optuna AAPL
   tradingbot-optuna AAPL --trials 200
 
+  # Different strategies (default: from config)
+  tradingbot-optuna AAPL -s vwap_reversion      # Use VWAP reversion strategy
+  tradingbot-optuna AAPL -s rsi_divergence      # Use RSI divergence strategy
+
   # Different objectives
   tradingbot-optuna AAPL --objective return     # Maximize total return
   tradingbot-optuna AAPL --objective calmar     # Maximize return/drawdown (default)
@@ -56,6 +60,17 @@ Examples:
         type=int,
         default=None,
         help="Random seed for reproducible results",
+    )
+
+    # Strategy options
+    parser.add_argument(
+        "--strategy",
+        "-s",
+        help="Entry strategy to use (default: from config)",
+    )
+    parser.add_argument(
+        "--exit-strategy",
+        help="Exit strategy to use (default: from config)",
     )
 
     # Walk-forward options
@@ -115,6 +130,8 @@ Examples:
         objective=args.objective,
         capital=args.capital,
         seed=args.seed,
+        entry_strategy=args.strategy,
+        exit_strategy=args.exit_strategy,
     )
 
     # Save preset if requested
