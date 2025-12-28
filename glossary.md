@@ -272,30 +272,47 @@ swing_lb=7: -3% return
 
 ---
 
-### Walk-Forward Testing
+### Walk-Forward Validation
 
-**Definition:** A validation method that splits historical data into training and testing periods.
+**Definition:** A robust validation method that uses multiple sequential train/test windows to detect overfitting. Unlike simple train/test splits, walk-forward uses rolling windows for more reliable estimates.
 
 ```
-┌─────────────────────────────────────────────────┐
-│ Historical Data (e.g., 2 years)                 │
-├─────────────────────────────────────────────────┤
-│ [Training: 70%]              [Test: 30%]        │
-│  Find best parameters         Validate results  │
-└─────────────────────────────────────────────────┘
+Full Walk-Forward Analysis (5 folds, 70% train):
+┌──────────────────────────────────────────────────────┐
+│ Fold 1: [====Train====][Test]                         │
+│ Fold 2:    [====Train====][Test]                      │
+│ Fold 3:       [====Train====][Test]                   │
+│ Fold 4:          [====Train====][Test]                │
+│ Fold 5:             [====Train====][Test]             │
+└──────────────────────────────────────────────────────┘
 ```
 
 **Process:**
-1. Optimize parameters on training data only
-2. Apply those parameters to test data (unseen)
-3. Compare training vs test performance
+1. Split data into N sequential folds
+2. For each fold: optimize on training, test on out-of-sample
+3. Aggregate out-of-sample results across all folds
+4. Compare average in-sample vs out-of-sample performance
 
-**Interpretation:**
-| Scenario | Meaning |
-|----------|---------|
-| Train +20%, Test +18% | Robust strategy |
-| Train +30%, Test +5% | Likely overfitting |
-| Train +15%, Test +20% | Strategy may be improving (or lucky) |
+**Key Metrics:**
+| Metric | Description |
+|--------|-------------|
+| `avg_train_return` | Average in-sample return across folds |
+| `avg_test_return` | Average out-of-sample return across folds |
+| `return_degradation` | Train - Test (lower is better) |
+| `consistency` | % of folds with positive OOS returns |
+
+**Risk Assessment:**
+| Condition | Interpretation |
+|-----------|----------------|
+| Degradation > 50% | HIGH RISK - strategy is overfit |
+| Degradation 25-50% | MODERATE RISK - needs more validation |
+| Degradation < 25%, positive OOS | LOW RISK - appears robust |
+
+**Usage:**
+```bash
+tradingbot-optimize AAPL --walk-forward
+tradingbot-optimize AAPL --walk-forward --folds 7 --train-ratio 0.8
+```
 
 ---
 

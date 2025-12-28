@@ -20,6 +20,7 @@ src/tradingbot/
     ├── bot.py               # MarketStructureBot (backtesting)
     ├── runner.py            # Backtest orchestration
     ├── optimizer.py         # Parameter optimization
+    ├── walk_forward.py      # Walk-forward validation
     ├── execution.py         # ExecutionModel (slippage, spread, commission)
     ├── signals.py           # SignalGenerator
     ├── swing.py             # Swing point detection
@@ -48,6 +49,7 @@ Defined in `types.py`:
 | `Trade` | Closed trade record with P&L (gross, net, costs) |
 | `Signal` | BUY / SELL / HOLD decision |
 | `ExecutionModel` | Slippage, spread, commission modeling |
+| `WalkForwardValidator` | Walk-forward overfitting analysis |
 | `SwingPoint` | Local high/low for structure analysis |
 | `Order` | Broker order request |
 | `Trend` | BULLISH / BEARISH / NEUTRAL |
@@ -531,6 +533,62 @@ tradingbot-backtest AAPL --spread 5           # Custom spread (bps)
 tradingbot-backtest AAPL --commission 0.01    # Custom commission ($/share)
 ```
 
+### Walk-Forward Validation
+
+The `WalkForwardValidator` prevents overfitting by testing parameters on unseen data:
+
+```mermaid
+flowchart LR
+    subgraph Fold1[Fold 1]
+        T1[Train] --> Test1[Test]
+    end
+
+    subgraph Fold2[Fold 2]
+        T2[Train] --> Test2[Test]
+    end
+
+    subgraph Fold3[Fold 3]
+        T3[Train] --> Test3[Test]
+    end
+
+    Test1 --> Agg[Aggregate OOS Results]
+    Test2 --> Agg
+    Test3 --> Agg
+
+    Agg --> Report[Overfitting Assessment]
+```
+
+**Process:**
+1. Split data into sequential train/test windows (folds)
+2. Optimize parameters on each training window
+3. Test best params on following out-of-sample period
+4. Aggregate results to show true expected performance
+
+**Key Metrics:**
+
+| Metric | Description |
+|--------|-------------|
+| `avg_train_return` | Average return on training (in-sample) data |
+| `avg_test_return` | Average return on test (out-of-sample) data |
+| `return_degradation` | Train return - Test return (lower is better) |
+| `consistency` | % of folds with positive OOS returns |
+
+**Overfitting Risk Assessment:**
+
+| Condition | Risk Level |
+|-----------|------------|
+| Degradation > 50% OR consistency < 40% | HIGH - likely overfit |
+| Degradation > 25% OR consistency < 60% | MODERATE - needs validation |
+| Positive OOS returns, low degradation | LOW - appears robust |
+
+**CLI Usage:**
+
+```bash
+tradingbot-optimize AAPL --walk-forward              # Default: 5 folds, 70% train
+tradingbot-optimize AAPL --walk-forward --folds 7    # More folds
+tradingbot-optimize AAPL --walk-forward --train-ratio 0.8  # 80% train data
+```
+
 **Retention Policy:**
 | Interval | Default Retention |
 |----------|-------------------|
@@ -656,6 +714,7 @@ tests/
 ├── test_indicators.py    # Indicator calculations
 ├── test_risk.py          # Position sizing, risk
 ├── test_execution.py     # Execution cost modeling
+├── test_walk_forward.py  # Walk-forward validation
 ├── test_alpaca_broker.py # Broker integration
 ├── test_alpaca_feed.py   # Feed integration
 └── test_models.py        # Data models

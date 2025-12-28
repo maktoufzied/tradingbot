@@ -26,6 +26,7 @@ from ._components.strategies import Entry, Exit, get_entry_registry, get_exit_re
 from ._components.swing import analyze_structure, find_swing_points
 from ._components.tui_legacy import TradingTUI
 from ._components.tuner import OptunaTuner, TunerConfig, tune
+from ._components.walk_forward import WalkForwardResult, WalkForwardValidator, walk_forward
 
 __all__ = [
     "BarEvent",
@@ -66,4 +67,7 @@ __all__ = [
     "run_multi_backtest",
     "run_single_backtest",
     "tune",
+    "walk_forward",
+    "WalkForwardResult",
+    "WalkForwardValidator",
 ]

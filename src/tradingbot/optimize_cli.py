@@ -2,7 +2,8 @@
 
 import argparse
 
-from tradingbot import ParameterRanges, optimize, tune
+from tradingbot import ParameterRanges, optimize, tune, walk_forward
+from tradingbot._components.feeds import DataFeed
 from tradingbot._components.presets import save_preset
 
 
@@ -26,6 +27,10 @@ Examples:
 
   # Save best parameters as preset
   tradingbot-optimize AAPL --optuna --save-preset aapl_optimized
+
+  # Walk-forward validation (prevents overfitting)
+  tradingbot-optimize AAPL --walk-forward
+  tradingbot-optimize AAPL --walk-forward --folds 7 --train-ratio 0.8
         """,
     )
 
@@ -75,6 +80,25 @@ Examples:
         help="Run backtests sequentially (grid search only)",
     )
 
+    # Walk-forward options
+    parser.add_argument(
+        "--walk-forward",
+        action="store_true",
+        help="Run walk-forward validation to detect overfitting",
+    )
+    parser.add_argument(
+        "--folds",
+        type=int,
+        default=5,
+        help="Number of walk-forward folds (default: 5)",
+    )
+    parser.add_argument(
+        "--train-ratio",
+        type=float,
+        default=0.7,
+        help="Training data ratio per fold (default: 0.7)",
+    )
+
     args = parser.parse_args()
 
     # Resolve interval/period: CLI > config > defaults
@@ -85,6 +109,25 @@ Examples:
     # Parse comma-separated values or use defaults
     intervals = [x.strip() for x in args.interval.split(",")] if args.interval else [defaults["interval"]]
     periods = [x.strip() for x in args.period.split(",")] if args.period else [defaults["period"]]
+
+    # Walk-forward validation
+    if args.walk_forward:
+        # Use first interval/period for walk-forward
+        interval = intervals[0]
+        period = periods[0]
+
+        df = DataFeed.history(args.symbol, period=period, interval=interval)
+
+        walk_forward(
+            symbol=args.symbol,
+            df=df,
+            interval=interval,
+            period=period,
+            n_folds=args.folds,
+            train_ratio=args.train_ratio,
+            capital=args.capital,
+        )
+        return
 
     if args.optuna:
         # Use Optuna-based optimization

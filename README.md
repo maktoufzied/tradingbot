@@ -156,6 +156,14 @@ uv run tradingbot-optimize <SYMBOL> [OPTIONS]
 | `--risk` | Risk percentages (comma-separated) | `0.005,0.01,0.015,0.02` |
 | `--rr` | Reward/risk ratios (comma-separated) | `1.5,2.0,2.5,3.0` |
 
+**Walk-Forward Validation** (prevents overfitting):
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--walk-forward` | Run walk-forward validation | - |
+| `--folds` | Number of walk-forward folds | `5` |
+| `--train-ratio` | Training data ratio per fold | `0.7` |
+
 ### `tradingbot-live`
 
 Run live trading (paper trading by default).
