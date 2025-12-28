@@ -93,6 +93,9 @@ class WalkForwardValidator:
         n_folds: int = 5,
         train_ratio: float = 0.7,
         execution_model: ExecutionModel | None = None,
+        swing_lb_range: list[int] | None = None,
+        risk_pct_range: list[float] | None = None,
+        rr_ratio_range: list[float] | None = None,
     ):
         """Initialize walk-forward validator.
 
@@ -102,6 +105,9 @@ class WalkForwardValidator:
             n_folds: Number of walk-forward folds (default: 5)
             train_ratio: Ratio of data for training in each fold (default: 0.7)
             execution_model: Execution cost model (default: standard costs)
+            swing_lb_range: Swing lookback values to test (default: [3,4,5,6,7])
+            risk_pct_range: Risk percent values to test (default: [0.01,0.015,0.02])
+            rr_ratio_range: Risk/reward ratios to test (default: [1.5,2.0,2.5])
         """
         self.symbol = symbol
         self.capital = capital
@@ -109,10 +115,10 @@ class WalkForwardValidator:
         self.train_ratio = train_ratio
         self.execution_model = execution_model or ExecutionModel()
 
-        # Parameter search space (minimal for speed)
-        self.swing_lb_range = [5, 6, 7]
-        self.risk_pct_range = [0.01, 0.015]
-        self.rr_ratio_range = [1.5, 2.0]
+        # Parameter search space (configurable, defaults cover more market conditions)
+        self.swing_lb_range = swing_lb_range or [3, 4, 5, 6, 7]
+        self.risk_pct_range = risk_pct_range or [0.01, 0.015, 0.02]
+        self.rr_ratio_range = rr_ratio_range or [1.5, 2.0, 2.5]
 
     def validate(
         self,
@@ -437,6 +443,9 @@ def walk_forward(
     capital: float = 100000,
     execution_model: ExecutionModel | None = None,
     verbose: bool = True,
+    swing_lb_range: list[int] | None = None,
+    risk_pct_range: list[float] | None = None,
+    rr_ratio_range: list[float] | None = None,
 ) -> WalkForwardResult:
     """Convenience function to run walk-forward validation.
 
@@ -450,6 +459,9 @@ def walk_forward(
         capital: Starting capital
         execution_model: Execution cost model
         verbose: Print progress and results
+        swing_lb_range: Swing lookback values to test
+        risk_pct_range: Risk percent values to test
+        rr_ratio_range: Risk/reward ratios to test
     """
     validator = WalkForwardValidator(
         symbol=symbol,
@@ -457,5 +469,8 @@ def walk_forward(
         n_folds=n_folds,
         train_ratio=train_ratio,
         execution_model=execution_model,
+        swing_lb_range=swing_lb_range,
+        risk_pct_range=risk_pct_range,
+        rr_ratio_range=rr_ratio_range,
     )
     return validator.validate(df, interval, period, verbose)

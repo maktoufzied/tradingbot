@@ -7,6 +7,11 @@ import pytest
 
 from tradingbot import ExecutionModel, WalkForwardResult, WalkForwardValidator, walk_forward
 
+# Small parameter ranges for faster tests
+FAST_SWING_LB = [5, 6, 7]
+FAST_RISK_PCT = [0.01, 0.015]
+FAST_RR_RATIO = [1.5, 2.0]
+
 
 def make_test_df(n_bars: int, trend: str = "up", volatility: float = 0.05) -> pl.DataFrame:
     """Create synthetic price data for testing with clear swing patterns.
@@ -131,7 +136,13 @@ class TestWalkForwardValidation:
     def test_validate_with_uptrend_data(self) -> None:
         """Test validation with trending data produces results."""
         df = make_test_df(2000, trend="up")  # More data for reliable trades
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -143,7 +154,13 @@ class TestWalkForwardValidation:
     def test_validate_with_downtrend_data(self) -> None:
         """Test validation with downtrend data."""
         df = make_test_df(2000, trend="down")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -154,7 +171,13 @@ class TestWalkForwardValidation:
     def test_validate_with_sideways_data(self) -> None:
         """Test validation with sideways data."""
         df = make_test_df(2000, trend="sideways")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -173,7 +196,13 @@ class TestWalkForwardValidation:
         df = make_test_df(2400, trend="up")
 
         for n_folds in [3, 5]:
-            validator = WalkForwardValidator(symbol="TEST", n_folds=n_folds)
+            validator = WalkForwardValidator(
+                symbol="TEST",
+                n_folds=n_folds,
+                swing_lb_range=FAST_SWING_LB,
+                risk_pct_range=FAST_RISK_PCT,
+                rr_ratio_range=FAST_RR_RATIO,
+            )
             result = validator.validate(df, verbose=False)
 
             # May have fewer folds if some failed, but never more
@@ -184,8 +213,22 @@ class TestWalkForwardValidation:
         df = make_test_df(2400, trend="up")
 
         # Higher train ratio = more training data per fold
-        validator_70 = WalkForwardValidator(symbol="TEST", n_folds=2, train_ratio=0.7)
-        validator_80 = WalkForwardValidator(symbol="TEST", n_folds=2, train_ratio=0.8)
+        validator_70 = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            train_ratio=0.7,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
+        validator_80 = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            train_ratio=0.8,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result_70 = validator_70.validate(df, verbose=False)
         result_80 = validator_80.validate(df, verbose=False)
@@ -204,7 +247,13 @@ class TestFoldResults:
     def test_fold_result_has_required_fields(self) -> None:
         """Test that fold results have all required fields."""
         df = make_test_df(2000, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -230,7 +279,13 @@ class TestFoldResults:
     def test_fold_dates_are_sequential(self) -> None:
         """Test that fold dates don't overlap incorrectly."""
         df = make_test_df(2000, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -245,7 +300,13 @@ class TestFoldResults:
     def test_fold_params_are_valid(self) -> None:
         """Test that found parameters are within valid ranges."""
         df = make_test_df(2000, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -261,7 +322,13 @@ class TestAggregatedResults:
     def test_aggregated_metrics_computed(self) -> None:
         """Test that aggregated metrics are computed correctly."""
         df = make_test_df(2000, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -277,7 +344,13 @@ class TestAggregatedResults:
     def test_avg_return_is_average_of_folds(self) -> None:
         """Test that average return is correctly computed."""
         df = make_test_df(2000, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -291,7 +364,13 @@ class TestAggregatedResults:
     def test_total_trades_is_sum_of_folds(self) -> None:
         """Test that total trades is sum of all folds."""
         df = make_test_df(2000, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -305,7 +384,13 @@ class TestAggregatedResults:
     def test_degradation_calculation(self) -> None:
         """Test degradation is correctly calculated."""
         df = make_test_df(2000, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -315,7 +400,13 @@ class TestAggregatedResults:
     def test_consistency_is_percentage(self) -> None:
         """Test consistency is between 0 and 100."""
         df = make_test_df(2000, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -333,11 +424,17 @@ class TestExecutionCostIntegration:
             symbol="TEST",
             n_folds=2,
             execution_model=ExecutionModel.zero(),
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
         )
         validator_default = WalkForwardValidator(
             symbol="TEST",
             n_folds=2,
             execution_model=ExecutionModel(),
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
         )
 
         result_zero = validator_zero.validate(df, verbose=False)
@@ -356,11 +453,17 @@ class TestExecutionCostIntegration:
             symbol="TEST",
             n_folds=2,
             execution_model=ExecutionModel(slippage_bps=1, spread_bps=1, commission_per_share=0.001),
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
         )
         validator_high = WalkForwardValidator(
             symbol="TEST",
             n_folds=2,
             execution_model=ExecutionModel(slippage_bps=20, spread_bps=10, commission_per_share=0.05),
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
         )
 
         result_low = validator_low.validate(df, verbose=False)
@@ -385,6 +488,9 @@ class TestConvenienceFunction:
             period="1y",
             n_folds=2,
             verbose=False,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
         )
 
         assert isinstance(result, WalkForwardResult)
@@ -406,6 +512,9 @@ class TestConvenienceFunction:
             capital=50000,
             execution_model=ExecutionModel.zero(),
             verbose=False,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
         )
 
         assert result.symbol == "AAPL"
@@ -421,7 +530,13 @@ class TestOverfittingDetection:
     def test_high_degradation_indicates_overfitting(self) -> None:
         """Test that high train/test degradation is captured."""
         df = make_test_df(2000, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -432,7 +547,13 @@ class TestOverfittingDetection:
     def test_consistency_captures_profitable_folds(self) -> None:
         """Test that consistency metric captures profitable folds."""
         df = make_test_df(2000, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=5)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=5,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -450,7 +571,13 @@ class TestEdgeCases:
     def test_single_fold(self) -> None:
         """Test with single fold (minimum)."""
         df = make_test_df(300, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=1)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=1,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -459,7 +586,13 @@ class TestEdgeCases:
     def test_many_folds(self) -> None:
         """Test with many folds."""
         df = make_test_df(2000, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=10)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=10,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -468,7 +601,14 @@ class TestEdgeCases:
     def test_high_train_ratio(self) -> None:
         """Test with high train ratio."""
         df = make_test_df(2000, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2, train_ratio=0.9)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            train_ratio=0.9,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -477,7 +617,14 @@ class TestEdgeCases:
     def test_low_train_ratio(self) -> None:
         """Test with low train ratio."""
         df = make_test_df(2000, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2, train_ratio=0.5)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            train_ratio=0.5,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
@@ -488,7 +635,13 @@ class TestEdgeCases:
         df = make_test_df(2000, trend="up")
 
         for symbol in ["AAPL", "MSFT", "GOOGL"]:
-            validator = WalkForwardValidator(symbol=symbol, n_folds=2)
+            validator = WalkForwardValidator(
+                symbol=symbol,
+                n_folds=2,
+                swing_lb_range=FAST_SWING_LB,
+                risk_pct_range=FAST_RISK_PCT,
+                rr_ratio_range=FAST_RR_RATIO,
+            )
             result = validator.validate(df, verbose=False)
 
             assert result.symbol == symbol
@@ -500,7 +653,13 @@ class TestVerboseOutput:
     def test_verbose_true_no_error(self) -> None:
         """Test that verbose=True runs without error."""
         df = make_test_df(2000, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         # Should not raise
         result = validator.validate(df, verbose=True)
@@ -510,7 +669,13 @@ class TestVerboseOutput:
     def test_verbose_false_no_error(self) -> None:
         """Test that verbose=False runs without error."""
         df = make_test_df(2000, trend="up")
-        validator = WalkForwardValidator(symbol="TEST", n_folds=2)
+        validator = WalkForwardValidator(
+            symbol="TEST",
+            n_folds=2,
+            swing_lb_range=FAST_SWING_LB,
+            risk_pct_range=FAST_RISK_PCT,
+            rr_ratio_range=FAST_RR_RATIO,
+        )
 
         result = validator.validate(df, verbose=False)
 
