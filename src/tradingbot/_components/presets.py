@@ -206,11 +206,16 @@ def list_presets() -> list[str]:
 
 
 def get_strategy_defaults() -> dict[str, str]:
-    """Load interval/period defaults from config file."""
+    """Load strategy defaults from config file."""
     import tomllib
     from pathlib import Path
 
-    defaults = {"interval": "1h", "period": "1y"}
+    defaults: dict[str, str] = {
+        "interval": "1h",
+        "period": "1y",
+        "entry_strategy": "swing_break",
+        "exit_strategy": "swing",
+    }
 
     config_path = Path.cwd() / "tradingbot.toml"
     if not config_path.exists():
@@ -224,6 +229,10 @@ def get_strategy_defaults() -> dict[str, str]:
         defaults["interval"] = strategy["interval"]
     if "period" in strategy:
         defaults["period"] = strategy["period"]
+    if "entry" in strategy:
+        defaults["entry_strategy"] = strategy["entry"]
+    if "exit" in strategy:
+        defaults["exit_strategy"] = strategy["exit"]
 
     return defaults
 
