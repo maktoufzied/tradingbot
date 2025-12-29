@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
+from tradingbot.types import PartialExitLevel
+
 CONFIG_FILE: Final = "tradingbot.toml"
 
 _config: Config | None = None
@@ -102,6 +104,9 @@ class StrategyConfig:
     risk_pct: float = 0.01  # Risk per trade (1% = 0.01)
     rr_ratio: float = 1.5  # Reward/risk ratio
     allow_short: bool = False  # Allow short selling
+    atr_sizing: bool = False  # Volatility-adjusted position sizing
+    # Partial exits: list of {r_multiple, exit_pct} levels (empty = all-or-nothing)
+    partial_exit_levels: tuple[PartialExitLevel, ...] = ()
     # Time-based exits
     eod_exit: bool = True  # Close positions before market close
     time_exit_minutes: int = 0  # Close after N minutes (0 = disabled)
@@ -225,6 +230,18 @@ def _parse_config(data: dict[str, Any]) -> Config:
         macd=macd_config,
     )
 
+    # Parse partial exit levels (validation in PartialExitLevel.__post_init__)
+    partial_levels_data = strategy_data.get("partial_exit_levels", [])
+    partial_exit_levels: list[PartialExitLevel] = []
+    seen_r_multiples: set[float] = set()
+
+    for level in partial_levels_data:
+        r_mult = level["r_multiple"]
+        if r_mult in seen_r_multiples:
+            raise ValueError(f"partial_exit_levels: duplicate r_multiple {r_mult}")
+        seen_r_multiples.add(r_mult)
+        partial_exit_levels.append(PartialExitLevel(r_multiple=r_mult, exit_pct=level["exit_pct"]))
+
     strategy = StrategyConfig(
         preset=strategy_data.get("preset"),
         entry=strategy_data.get("entry", "swing_break"),
@@ -233,6 +250,8 @@ def _parse_config(data: dict[str, Any]) -> Config:
         risk_pct=strategy_data.get("risk_pct", 0.01),
         rr_ratio=strategy_data.get("rr_ratio", 1.5),
         allow_short=strategy_data.get("allow_short", False),
+        atr_sizing=strategy_data.get("atr_sizing", False),
+        partial_exit_levels=tuple(partial_exit_levels),
         eod_exit=strategy_data.get("eod_exit", True),
         time_exit_minutes=strategy_data.get("time_exit_minutes", 0),
         eod_exit_minutes_before=strategy_data.get("eod_exit_minutes_before", 15),

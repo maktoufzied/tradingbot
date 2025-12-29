@@ -543,6 +543,7 @@ Examples:
   tradingbot-live AAPL QQQ --dry-run
   tradingbot-live AAPL --tui
   tradingbot-live AAPL -p conservative --tui
+  tradingbot-live AAPL --atr-sizing       # Volatility-adjusted sizing
         """,
     )
 
@@ -565,6 +566,16 @@ Examples:
     parser.add_argument("--no-ws", action="store_true", help="Disable WebSocket server")
     parser.add_argument("--web", action="store_true", help="Serve web interface (on ws-port - 1)")
     parser.add_argument("--web-port", type=int, help="Web interface port (default: ws-port - 1)")
+    parser.add_argument(
+        "--atr-sizing",
+        action="store_true",
+        help="Enable ATR-based volatility-adjusted position sizing",
+    )
+    parser.add_argument(
+        "--partial-exits",
+        action="store_true",
+        help="Enable partial profit taking (backtest mode via preset/config)",
+    )
     args = parser.parse_args()
 
     symbols: list[str] = []
@@ -588,8 +599,11 @@ Examples:
     indicators = preset.indicators if preset else []
     preset_name = preset.name if preset else "custom"
 
+    # Use config if --atr-sizing not explicitly passed
+    use_atr = args.atr_sizing if args.atr_sizing else strategy_cfg.atr_sizing
+
     signal_generator = SignalGenerator(strategy_cfg.swing_lb, entry_strategy=entry_strategy)
-    position_sizer = PositionSizer(bot_cfg.capital, risk_pct)
+    position_sizer = PositionSizer(bot_cfg.capital, risk_pct, use_atr_sizing=use_atr)
 
     # For replay mode, disable trading hours restriction since we're replaying historical data
     risk_config = engine_cfg.risk

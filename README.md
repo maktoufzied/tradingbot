@@ -98,6 +98,8 @@ uv run tradingbot-backtest <SYMBOLS> [OPTIONS]
 | `--slippage BPS` | Slippage in basis points | `5` |
 | `--spread BPS` | Bid-ask spread in basis points | `2` |
 | `--commission USD` | Commission per share | `0.005` |
+| `--atr-sizing` | Volatility-adjusted position sizing (reduces size in high volatility) | - |
+| `--partial-exits` | Enable partial profit taking (exit 50% at 1R, move stop to breakeven) | - |
 
 **Examples:**
 
@@ -113,6 +115,8 @@ task backtest -- SPY --list-presets              # Show available presets
 task backtest -- SPY --list-strategies           # Show available strategies
 task backtest -- SPY --verbose                   # See each bar
 task backtest -- SPY --speed 10                  # Simulate 10 bars/sec
+task backtest -- SPY --atr-sizing                # Volatility-adjusted sizing
+task backtest -- SPY --partial-exits             # Take 50% profit at 1R
 ```
 
 ### `tradingbot-optuna`
@@ -220,6 +224,7 @@ task live -- SPY --tui
 |------|-------------|---------|
 | `--dry-run` | Log signals without executing trades | - |
 | `--tui` | Interactive terminal UI dashboard | - |
+| `--atr-sizing` | Volatility-adjusted position sizing | - |
 
 **Risk Controls (configured in `tradingbot.toml`):**
 
@@ -340,6 +345,12 @@ swing_lb = 5       # Swing lookback period (in bars)
 risk_pct = 0.01    # Risk per trade (1% = 0.01)
 rr_ratio = 1.5     # Reward/risk ratio (1.5:1 for day trading)
 allow_short = false
+atr_sizing = false           # Volatility-adjusted position sizing
+# Partial profit taking (empty = all-or-nothing)
+# partial_exit_levels = [
+#     {r_multiple = 1.0, exit_pct = 0.5},   # Exit 50% at 1R
+#     {r_multiple = 2.0, exit_pct = 0.25},  # Exit 25% at 2R
+# ]
 # Time-based exits (day trading)
 eod_exit = true              # Close all positions before market close
 eod_exit_minutes_before = 15 # Minutes before close

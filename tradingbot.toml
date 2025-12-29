@@ -24,6 +24,13 @@ swing_lb = 5                 # Swing lookback period (bars)
 risk_pct = 0.01              # Risk per trade (1% = 0.01)
 rr_ratio = 1.5               # Reward/risk ratio (1.5:1 requires ~55% win rate)
 allow_short = false          # Allow short selling
+atr_sizing = false           # Volatility-adjusted position sizing
+
+# Partial exits: take profits at intermediate R-multiples (empty = all-or-nothing)
+# partial_exit_levels = [
+#     {r_multiple = 1.0, exit_pct = 0.5},   # Exit 50% at 1R
+#     {r_multiple = 2.0, exit_pct = 0.25},  # Exit 25% at 2R
+# ]
 
 # Time-based exits (for day trading)
 eod_exit = true              # Close all positions before market close
@@ -104,52 +111,7 @@ paper = true                 # Use paper trading endpoint
 # filter_mode = "all"        # Filter mode
 # eod_exit = true            # EOD exit
 # time_exit_minutes = 0      # Time-based exit
-
-[tradingbot.presets.safe]
-description = "Ultra conservative, tiny risk"
-entry = "swing_break"
-exit = "swing"
-risk_pct = 0.005
-rr_ratio = 1.5
-indicators = ["rsi", "macd"]
-filter_mode = "all"
-
-[tradingbot.presets.apld_optimized]
-description = "Optimized for APLD, return=+29.5%, DD=4.3%"
-interval = "1h"
-period = "1y"
-swing_lb = 3
-risk_pct = 0.01799264218662403
-rr_ratio = 2.2
-
-[tradingbot.presets.msft_optimized]
-description = "Optimized for MSFT, return=+22.7%, DD=1.8%"
-interval = "1h"
-period = "1y"
-swing_lb = 4
-risk_pct = 0.0199
-rr_ratio = 1.7
-
-[tradingbot.presets.msft_optimized_5m]
-description = "Optimized for MSFT, return=-1.4%, DD=6.2%"
-interval = "5m"
-period = "3mo"
-swing_lb = 4
-risk_pct = 0.0077
-rr_ratio = 2.3
-
-[tradingbot.presets.msft_optimized_15m]
-description = "Optimized for MSFT, return=+1.7%, DD=3.0%"
-interval = "15m"
-period = "3mo"
-swing_lb = 5
-risk_pct = 0.0104
-rr_ratio = 1.3
-
-[tradingbot.presets.test]
-description = "Optimized for MSFT, return=+12.3%, DD=3.0%"
-interval = "1h"
-period = "1y"
-swing_lb = 3
-risk_pct = 0.012
-rr_ratio = 1.2
+# partial_exit_levels = [    # Partial exits
+#     {r_multiple = 1.0, exit_pct = 0.5},
+#     {r_multiple = 2.0, exit_pct = 0.3},
+# ]

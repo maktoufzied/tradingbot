@@ -3,6 +3,10 @@
 import argparse
 
 from tradingbot import run_multi_backtest, run_single_backtest
+from tradingbot.types import PartialExitLevel
+
+# Default partial exit levels when --partial-exits is enabled
+DEFAULT_PARTIAL_EXITS = (PartialExitLevel(r_multiple=1.0, exit_pct=0.5),)  # 50% at 1R
 
 
 def main() -> None:
@@ -20,6 +24,8 @@ Examples:
   tradingbot AAPL --strategy vwap
   tradingbot AAPL -s orb --verbose
   tradingbot AAPL --speed 10
+  tradingbot AAPL --atr-sizing         # Volatility-adjusted position sizing
+  tradingbot AAPL --partial-exits      # Exit 50%% at 1R, move stop to breakeven
         """,
     )
 
@@ -63,6 +69,20 @@ Examples:
         type=float,
         metavar="USD",
         help="Commission per share in USD (default: 0.005)",
+    )
+
+    # Position sizing options
+    parser.add_argument(
+        "--atr-sizing",
+        action="store_true",
+        help="Enable ATR-based volatility-adjusted position sizing (reduces size in high volatility)",
+    )
+
+    # Partial exit options
+    parser.add_argument(
+        "--partial-exits",
+        action="store_true",
+        help="Enable partial profit taking: exit 50%% at 1R, move stop to breakeven",
     )
 
     args = parser.parse_args()
@@ -133,6 +153,9 @@ Examples:
     if args.period:
         period = args.period
 
+    # Resolve partial exit levels
+    partial_levels = DEFAULT_PARTIAL_EXITS if args.partial_exits else None
+
     try:
         if len(args.symbols) == 1:
             run_single_backtest(
@@ -152,6 +175,8 @@ Examples:
                 slippage_bps=args.slippage,
                 spread_bps=args.spread,
                 commission=args.commission,
+                use_atr_sizing=args.atr_sizing,
+                partial_exit_levels=partial_levels,
             )
         else:
             run_multi_backtest(
@@ -171,6 +196,8 @@ Examples:
                 slippage_bps=args.slippage,
                 spread_bps=args.spread,
                 commission=args.commission,
+                use_atr_sizing=args.atr_sizing,
+                partial_exit_levels=partial_levels,
             )
     except ValueError as e:
         import sys

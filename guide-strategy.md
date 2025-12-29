@@ -198,6 +198,59 @@ Position Size = $1,000 / $2.00 = 500 shares
 | Max daily loss | 5% of capital |
 | Max drawdown limit | 15% |
 
+### Volatility-Adjusted Position Sizing
+
+Enable `--atr-sizing` to automatically adjust position size based on current market volatility:
+
+```
+Adjusted Size = Base Size × (Baseline ATR / Current ATR)
+```
+
+- **High volatility** (ATR > baseline): Smaller positions (scale 0.25-1.0x)
+- **Low volatility** (ATR < baseline): Larger positions (capped at 1.5x)
+- Baseline ATR uses 50-period lookback vs 14-period current ATR
+
+**When to use:**
+- Volatile markets (earnings, news events)
+- Smaller accounts where drawdown control is critical
+- Mean-reversion strategies where volatility spikes are temporary
+
+```bash
+task backtest -- SPY --atr-sizing    # Enable volatility adjustment
+```
+
+### Partial Profit Taking
+
+Take profits at intermediate R-multiples instead of waiting for full target:
+
+```toml
+[tradingbot.strategy]
+partial_exit_levels = [
+    {r_multiple = 1.0, exit_pct = 0.5},   # Exit 50% at 1R
+    {r_multiple = 2.0, exit_pct = 0.25},  # Exit 25% at 2R
+    # Remaining 25% runs to final TP
+]
+```
+
+**Behavior:**
+1. When price reaches each R-multiple, exit the specified percentage
+2. Stop loss moves to breakeven after first partial exit
+3. Remaining position runs to final take profit or trailing stop
+4. Empty list `[]` = all-or-nothing (current behavior)
+
+**Predefined patterns:**
+
+| Style | Configuration | Use Case |
+|-------|---------------|----------|
+| Conservative | `[{r=1.0, pct=0.5}]` | Lock in 50% at 1R |
+| Scaled | `[{r=1.0, pct=0.33}, {r=2.0, pct=0.33}]` | Scale out evenly |
+| Runner | `[{r=1.0, pct=0.25}]` | Let 75% run for trend |
+| All-or-nothing | `[]` | Full position to TP |
+
+```bash
+task backtest -- SPY --partial-exits  # Enable default (50% at 1R)
+```
+
 ---
 
 ## 6. Indicator Selection

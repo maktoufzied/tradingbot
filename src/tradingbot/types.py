@@ -17,9 +17,34 @@ class Signal(Enum):
 
 
 Direction = Literal["LONG", "SHORT"]
-ExitReason = Literal["STOP_LOSS", "TAKE_PROFIT", "TIME_EXIT", "EOD_EXIT"]
+ExitReason = Literal["STOP_LOSS", "TAKE_PROFIT", "PARTIAL_EXIT", "TIME_EXIT", "EOD_EXIT"]
 OrderType = Literal["MARKET", "LIMIT", "STOP"]
 OrderStatus = Literal["FILLED", "PARTIAL", "PENDING", "REJECTED", "CANCELLED"]
+
+
+@dataclass(frozen=True)
+class PartialExitLevel:
+    """Defines a partial exit level at a specific R-multiple."""
+
+    r_multiple: float  # Exit at this R-multiple (e.g., 1.0 = 1R profit)
+    exit_pct: float  # Percentage of remaining position to exit (0.0-1.0)
+
+    def __post_init__(self) -> None:
+        if self.r_multiple <= 0:
+            raise ValueError(f"r_multiple must be positive, got {self.r_multiple}")
+        if not (0 < self.exit_pct <= 1.0):
+            raise ValueError(f"exit_pct must be in (0.0, 1.0], got {self.exit_pct}")
+
+
+@dataclass
+class PartialExit:
+    """Records an executed partial exit."""
+
+    r_multiple: float
+    exit_price: float
+    exit_size: float
+    pnl: float
+    exit_time: datetime
 
 
 @dataclass
@@ -40,6 +65,13 @@ class Position:
     stop_loss: float
     take_profit: float
     initial_stop_loss: float | None = None  # For trailing stop calculation
+    remaining_size: float | None = None  # Tracks size after partial exits (None = full size)
+    partial_exits: list[PartialExit] | None = None  # Executed partial exits
+    triggered_levels: set[float] | None = None  # R-multiples already triggered
+
+    def get_remaining_size(self) -> float:
+        """Get remaining position size (accounts for partial exits)."""
+        return self.remaining_size if self.remaining_size is not None else self.size
 
 
 @dataclass
@@ -58,6 +90,7 @@ class Trade:
     holding_period: int
     gross_pnl: float | None = None  # P&L before costs (None for backward compat)
     execution_costs: float | None = None  # Total execution costs
+    partial_exits: list[PartialExit] | None = None  # Partial exits taken during trade
 
 
 # Live trading models

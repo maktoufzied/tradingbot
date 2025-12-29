@@ -8,7 +8,7 @@ I reviewed Cursor's analysis against the actual code. Here's my assessment:
 |-------|----------------|-----------|-------|
 | 1. No slippage/commission | Critical | ✅ YES | `bot.py:204` has no costs |
 | 2. Lookahead bias | High risk | ❌ NO | Code uses `df.head(idx+1)` correctly |
-| 3. Position sizing | Oversimplified | ✅ YES | `risk.py` is 23 lines, no ATR |
+| 3. Position sizing | Oversimplified | ✅ FIXED | Phase 3 complete: ATR-based sizing |
 | 4. No partial exits | Missing | ✅ YES | `_check_exit()` is all-or-nothing |
 | 5. Limited trailing | Only breakeven | ✅ YES | `_trail_stop()` only moves to entry |
 | 6. Optimization | Overfitting risk | ⚠️ PARTIAL | `check_overfitting()` exists but is basic |
@@ -103,7 +103,7 @@ Add proper walk-forward analysis:
 
 ---
 
-## Phase 3: Volatility-Adjusted Position Sizing
+## Phase 3: Volatility-Adjusted Position Sizing ✅ COMPLETE
 
 ### GitHub Issue
 
@@ -123,21 +123,36 @@ size = risk_amt / risk_per_unit
 **Solution:**
 Add volatility-aware position sizing:
 1. Calculate ATR at entry time
-2. Adjust risk if stop is too tight (< 0.5 ATR) or too wide (> 3 ATR)
-3. Optionally reduce size during drawdowns (Kelly-style)
+2. Compare current ATR to baseline ATR (50-period average)
+3. Scale position size inversely with volatility (high vol → smaller positions)
+4. Clamp scaling factor between 0.25x and 1.5x for safety
 
 **Acceptance Criteria:**
-- [ ] Add `use_atr_adjustment` option to `PositionSizer`
-- [ ] Calculate ATR and adjust position size accordingly
-- [ ] Add drawdown-based size reduction option
-- [ ] Add `--atr-sizing` flag to CLI
-- [ ] Update docs: guide-strategy.md (position sizing section)
+- [x] Add `use_atr_sizing` option to `PositionSizer`
+- [x] Calculate ATR and adjust position size accordingly
+- [x] Add volatility-based size scaling (baseline ATR / current ATR)
+- [x] Add `--atr-sizing` flag to backtest and live CLI
+- [x] Add `atr_sizing` config option in `tradingbot.toml`
+- [x] Add `atr_sizing` to preset system (`Preset` dataclass)
+- [x] Add `atr_sizing` as optimizable parameter in Optuna
+- [x] Update docs: guide-strategy.md (position sizing section)
+- [x] Update docs: README.md (CLI flags, config)
+- [x] Add 11 tests for ATR sizing in `test_risk.py`
 
-**Files to modify:**
-- `src/tradingbot/_components/risk.py`
-- `src/tradingbot/_components/bot.py`
-- `src/tradingbot/backtest_cli.py`
+**Files modified:**
+- `src/tradingbot/_components/risk.py` - Core ATR sizing logic
+- `src/tradingbot/_components/bot.py` - Pass DataFrame to calc_size()
+- `src/tradingbot/_components/runner.py` - Backtest params, preset support
+- `src/tradingbot/_components/presets.py` - Preset dataclass, save_preset()
+- `src/tradingbot/_components/tuner.py` - Optuna optimization
+- `src/tradingbot/backtest_cli.py` - CLI flag
+- `src/tradingbot/cli.py` - Live CLI flag
+- `src/tradingbot/optuna_cli.py` - Save preset with atr_sizing
+- `src/tradingbot/config.py` - Config support
+- `tradingbot.toml` - Config example
 - `guide-strategy.md`
+- `README.md`
+- `tests/test_risk.py` - 11 new tests
 
 ---
 
@@ -159,24 +174,53 @@ if bar["high"] >= p.take_profit:
 ```
 
 **Solution:**
-Add partial exit support:
-1. Exit 50% at 1R profit
-2. Move stop to breakeven on remaining 50%
-3. Exit remaining at original target or trailing stop
+Add configurable partial exit levels as a list of {r_multiple, exit_pct} pairs:
+
+```toml
+[tradingbot.strategy]
+partial_exit_levels = [
+    {r_multiple = 1.0, exit_pct = 0.5},   # Exit 50% at 1R
+    {r_multiple = 2.0, exit_pct = 0.25},  # Exit 25% at 2R
+    # Remaining 25% runs to final TP or trailing stop
+]
+```
+
+**Example strategies:**
+| Style | Configuration |
+|-------|---------------|
+| Conservative | `[{r=1.0, pct=0.5}]` - 50% at 1R, rest to TP |
+| Scaled | `[{r=1.0, pct=0.33}, {r=2.0, pct=0.33}]` - 33% at each R |
+| Runner | `[{r=1.0, pct=0.25}]` - 25% at 1R, let 75% run |
+| All-or-nothing | `[]` - empty list = current behavior |
+
+**Behavior:**
+1. At each r_multiple level, exit the specified percentage
+2. Move stop to breakeven after first partial exit
+3. Remaining position runs to final TP or trailing stop
+4. Empty list = current all-or-nothing behavior
 
 **Acceptance Criteria:**
-- [ ] Add `partial_exits` tracking to `Position`
-- [ ] Implement 50% exit at 1R
-- [ ] Track remaining position size
-- [ ] Report partial exits in trade log
-- [ ] Add `--partial-exits` flag to CLI
-- [ ] Update docs: guide-strategy.md (exit strategies)
+- [ ] Add `PartialExitLevel` dataclass with `r_multiple` and `exit_pct`
+- [ ] Add `partial_exit_levels` to `StrategyConfig` (list of levels)
+- [ ] Add `partial_exit_levels` to `Preset` dataclass
+- [ ] Update `Position` to track `remaining_size` and `partial_exits` list
+- [ ] Implement partial exit logic in `_check_exit()`
+- [ ] Move stop to breakeven after first partial exit
+- [ ] Track partial exits in trade log with P&L per exit
+- [ ] Add `--partial-exits` CLI flag (uses default levels: 50% at 1R)
+- [ ] Add Optuna optimization (empty vs predefined patterns)
+- [ ] Update docs: guide-strategy.md (exit strategies), README.md (config)
 
 **Files to modify:**
-- `src/tradingbot/types.py` (Position dataclass)
-- `src/tradingbot/_components/bot.py`
+- `src/tradingbot/types.py` (Position dataclass, PartialExitLevel)
+- `src/tradingbot/config.py` (StrategyConfig)
+- `src/tradingbot/_components/presets.py` (Preset dataclass)
+- `src/tradingbot/_components/bot.py` (exit logic)
+- `src/tradingbot/_components/tuner.py` (Optuna)
 - `src/tradingbot/backtest_cli.py`
+- `src/tradingbot/cli.py` (live)
 - `guide-strategy.md`
+- `README.md`
 
 ---
 
@@ -247,14 +291,14 @@ Move magic numbers to strategy config or make them class parameters.
 
 ## Implementation Order
 
-| Phase | Priority | Effort | Impact |
-|-------|----------|--------|--------|
-| 1. Execution costs | 🔴 Critical | Medium | High - all backtests affected |
-| 2. Walk-forward | 🟡 High | Medium | High - prevents overfitting |
-| 3. ATR sizing | 🟡 High | Low | Medium - better risk mgmt |
-| 4. Partial exits | 🟡 Medium | Medium | Medium - better profit capture |
-| 5. ATR trailing | 🟡 Medium | Low | Medium - better exit mgmt |
-| 6. Magic numbers | 🟢 Low | Low | Low - code quality |
+| Phase | Priority | Effort | Impact | Status |
+|-------|----------|--------|--------|--------|
+| 1. Execution costs | 🔴 Critical | Medium | High - all backtests affected | ⏳ Pending |
+| 2. Walk-forward | 🟡 High | Medium | High - prevents overfitting | ⏳ Pending |
+| 3. ATR sizing | 🟡 High | Low | Medium - better risk mgmt | ✅ Complete |
+| 4. Partial exits | 🟡 Medium | Medium | Medium - better profit capture | ⏳ Pending |
+| 5. ATR trailing | 🟡 Medium | Low | Medium - better exit mgmt | ⏳ Pending |
+| 6. Magic numbers | 🟢 Low | Low | Low - code quality | ⏳ Pending |
 
 ---
 
@@ -279,14 +323,14 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 ## Documentation Updates Per Phase
 
-| Phase | README.md | ARCHITECTURE.md | guide-strategy.md | glossary.md |
-|-------|-----------|-----------------|-------------------|-------------|
-| 1 | CLI flags | ExecutionModel | - | Slippage, Commission |
-| 2 | CLI flags | WalkForward | Optimization section | Walk-Forward |
-| 3 | CLI flags | - | Position sizing | ATR Sizing |
-| 4 | CLI flags | - | Exit strategies | Partial Exit |
-| 5 | CLI flags | - | Trailing stops | ATR Trail |
-| 6 | - | - | Strategy params | - |
+| Phase | README.md | ARCHITECTURE.md | guide-strategy.md | glossary.md | Status |
+|-------|-----------|-----------------|-------------------|-------------|--------|
+| 1 | CLI flags | ExecutionModel | - | Slippage, Commission | ⏳ |
+| 2 | CLI flags | WalkForward | Optimization section | Walk-Forward | ⏳ |
+| 3 | CLI flags, config | - | Position sizing | ATR Sizing | ✅ |
+| 4 | CLI flags | - | Exit strategies | Partial Exit | ⏳ |
+| 5 | CLI flags | - | Trailing stops | ATR Trail | ⏳ |
+| 6 | - | - | Strategy params | - | ⏳ |
 
 ---
 

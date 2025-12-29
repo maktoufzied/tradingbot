@@ -1,9 +1,12 @@
 """Tests for position sizing and exit strategies."""
 
+from datetime import datetime, timedelta
+
 import polars as pl
 import pytest
 
 from tradingbot import PositionSizer, SwingPoint, get_exit_registry
+from tradingbot._components.risk import compute_atr, compute_baseline_atr
 
 
 @pytest.fixture
@@ -67,6 +70,179 @@ class TestCalcSize:
         size = ps.calc_size(entry=100.0, stop=98.0)
         # Risk $1000 (2% of 50k), stop is $2 away = 500 units
         assert size == 500.0
+
+
+class TestComputeATR:
+    """Tests for ATR computation."""
+
+    def test_compute_atr_basic(self) -> None:
+        """Test basic ATR calculation with known values."""
+        # Create data where True Range = high - low = 5.0 consistently
+        df = pl.DataFrame(
+            {
+                "datetime": [datetime(2024, 1, i + 1) for i in range(20)],
+                "open": [100.0] * 20,
+                "high": [105.0] * 20,
+                "low": [100.0] * 20,
+                "close": [102.0] * 20,
+            }
+        )
+        atr = compute_atr(df, period=14)
+        assert atr is not None
+        assert atr == pytest.approx(5.0, rel=0.01)
+
+    def test_compute_atr_insufficient_data(self) -> None:
+        """Test ATR returns None with insufficient data."""
+        df = pl.DataFrame(
+            {
+                "datetime": [datetime(2024, 1, i + 1) for i in range(5)],
+                "open": [100.0] * 5,
+                "high": [105.0] * 5,
+                "low": [100.0] * 5,
+                "close": [102.0] * 5,
+            }
+        )
+        atr = compute_atr(df, period=14)
+        assert atr is None
+
+    def test_compute_baseline_atr(self) -> None:
+        """Test baseline ATR with longer period."""
+        df = pl.DataFrame(
+            {
+                "datetime": [datetime(2024, 1, 1) + timedelta(hours=i) for i in range(60)],
+                "open": [100.0] * 60,
+                "high": [108.0] * 60,
+                "low": [100.0] * 60,
+                "close": [104.0] * 60,
+            }
+        )
+        baseline = compute_baseline_atr(df, period=50)
+        assert baseline is not None
+        assert baseline == pytest.approx(8.0, rel=0.01)
+
+
+class TestATRBasedPositionSizing:
+    """Tests for ATR-based volatility-adjusted position sizing."""
+
+    @pytest.fixture
+    def stable_volatility_df(self) -> pl.DataFrame:
+        """Create DataFrame with stable volatility (ATR ~= baseline ATR)."""
+        return pl.DataFrame(
+            {
+                "datetime": [datetime(2024, 1, 1) + timedelta(hours=i) for i in range(60)],
+                "open": [100.0] * 60,
+                "high": [105.0] * 60,
+                "low": [100.0] * 60,
+                "close": [102.0] * 60,
+            }
+        )
+
+    @pytest.fixture
+    def high_volatility_df(self) -> pl.DataFrame:
+        """Create DataFrame where recent volatility is higher than baseline."""
+        # First 45 bars: low volatility (TR = 3)
+        # Last 15 bars: high volatility (TR = 10)
+        high_vals = [103.0] * 45 + [110.0] * 15
+        low_vals = [100.0] * 45 + [100.0] * 15
+        return pl.DataFrame(
+            {
+                "datetime": [datetime(2024, 1, 1) + timedelta(hours=i) for i in range(60)],
+                "open": [100.0] * 60,
+                "high": high_vals,
+                "low": low_vals,
+                "close": [102.0] * 60,
+            }
+        )
+
+    @pytest.fixture
+    def low_volatility_df(self) -> pl.DataFrame:
+        """Create DataFrame where recent volatility is lower than baseline."""
+        # First 45 bars: high volatility (TR = 10)
+        # Last 15 bars: low volatility (TR = 2)
+        high_vals = [110.0] * 45 + [102.0] * 15
+        low_vals = [100.0] * 45 + [100.0] * 15
+        return pl.DataFrame(
+            {
+                "datetime": [datetime(2024, 1, 1) + timedelta(hours=i) for i in range(60)],
+                "open": [100.0] * 60,
+                "high": high_vals,
+                "low": low_vals,
+                "close": [102.0] * 60,
+            }
+        )
+
+    def test_atr_sizing_disabled_by_default(self, stable_volatility_df: pl.DataFrame) -> None:
+        """Test that ATR sizing is disabled by default."""
+        ps = PositionSizer(capital=100000, risk_pct=0.01)
+        assert ps.use_atr_sizing is False
+
+    def test_atr_sizing_enabled(self, stable_volatility_df: pl.DataFrame) -> None:
+        """Test that ATR sizing can be enabled."""
+        ps = PositionSizer(capital=100000, risk_pct=0.01, use_atr_sizing=True)
+        assert ps.use_atr_sizing is True
+
+    def test_stable_volatility_no_adjustment(self, stable_volatility_df: pl.DataFrame) -> None:
+        """Test position size unchanged when current ATR ≈ baseline ATR."""
+        ps = PositionSizer(capital=100000, risk_pct=0.01, use_atr_sizing=True)
+        # Without ATR: 1000 / 2 = 500 shares
+        size = ps.calc_size(entry=100.0, stop=98.0, df=stable_volatility_df)
+        # Scale should be ~1.0, so size ~500
+        assert size == pytest.approx(500, abs=50)
+
+    def test_high_volatility_reduces_position(self, high_volatility_df: pl.DataFrame) -> None:
+        """Test position size reduced when current ATR > baseline ATR."""
+        ps_no_atr = PositionSizer(capital=100000, risk_pct=0.01, use_atr_sizing=False)
+        ps_with_atr = PositionSizer(capital=100000, risk_pct=0.01, use_atr_sizing=True)
+
+        base_size = ps_no_atr.calc_size(entry=100.0, stop=98.0)
+        atr_size = ps_with_atr.calc_size(entry=100.0, stop=98.0, df=high_volatility_df)
+
+        # High volatility should reduce position size
+        assert atr_size < base_size
+
+    def test_low_volatility_increases_position(self, low_volatility_df: pl.DataFrame) -> None:
+        """Test position size increased when current ATR < baseline ATR."""
+        ps_no_atr = PositionSizer(capital=100000, risk_pct=0.01, use_atr_sizing=False)
+        ps_with_atr = PositionSizer(capital=100000, risk_pct=0.01, use_atr_sizing=True)
+
+        base_size = ps_no_atr.calc_size(entry=100.0, stop=98.0)
+        atr_size = ps_with_atr.calc_size(entry=100.0, stop=98.0, df=low_volatility_df)
+
+        # Low volatility should increase position size (up to cap)
+        assert atr_size >= base_size
+
+    def test_no_df_provided_no_adjustment(self) -> None:
+        """Test no adjustment when DataFrame not provided."""
+        ps = PositionSizer(capital=100000, risk_pct=0.01, use_atr_sizing=True)
+        size = ps.calc_size(entry=100.0, stop=98.0, df=None)
+        # Should be base size without adjustment
+        assert size == 500.0
+
+    def test_scale_factor_capped_at_max(self, low_volatility_df: pl.DataFrame) -> None:
+        """Test scale factor is capped at 1.5x maximum."""
+        ps = PositionSizer(capital=100000, risk_pct=0.01, use_atr_sizing=True)
+        atr_size = ps.calc_size(entry=100.0, stop=98.0, df=low_volatility_df)
+        # Maximum increase is 1.5x base (500 * 1.5 = 750)
+        assert atr_size <= 750
+
+    def test_scale_factor_floored_at_min(self) -> None:
+        """Test scale factor is floored at 0.25x minimum."""
+        # Create extremely high volatility scenario
+        high_vals = [100.0] * 45 + [200.0] * 15  # TR = 100 recent vs 0 baseline
+        low_vals = [100.0] * 60
+        extreme_df = pl.DataFrame(
+            {
+                "datetime": [datetime(2024, 1, 1) + timedelta(hours=i) for i in range(60)],
+                "open": [100.0] * 60,
+                "high": high_vals,
+                "low": low_vals,
+                "close": [100.0] * 60,
+            }
+        )
+        ps = PositionSizer(capital=100000, risk_pct=0.01, use_atr_sizing=True)
+        atr_size = ps.calc_size(entry=100.0, stop=98.0, df=extreme_df)
+        # Minimum is 0.25x base (500 * 0.25 = 125)
+        assert atr_size >= 125
 
 
 class TestExitStrategy:

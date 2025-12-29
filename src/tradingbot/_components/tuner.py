@@ -10,8 +10,13 @@ from optuna.trial import Trial
 from rich.console import Console
 from rich.table import Table
 
+from tradingbot.types import PartialExitLevel
+
 from .bot import MarketStructureBot
 from .feeds import DataFeed
+
+# Default partial exit levels when enabled: 50% at 1R
+DEFAULT_PARTIAL_EXITS = (PartialExitLevel(r_multiple=1.0, exit_pct=0.5),)
 
 console = Console()
 
@@ -39,6 +44,12 @@ class TunerConfig:
     # Strategy settings (from config if not specified)
     entry_strategy: str | None = None
     exit_strategy: str | None = None
+
+    # Position sizing
+    optimize_atr_sizing: bool = True  # Include atr_sizing in optimization
+
+    # Partial exits
+    optimize_partial_exits: bool = True  # Include partial_exits in optimization
 
     # Optimization settings
     n_trials: int = 100
@@ -97,6 +108,19 @@ class OptunaTuner:
         risk_pct = trial.suggest_float("risk_pct", self.config.risk_pct_min, self.config.risk_pct_max, step=0.001)
         rr_ratio = trial.suggest_float("rr_ratio", self.config.rr_ratio_min, self.config.rr_ratio_max, step=0.1)
 
+        # ATR sizing (categorical: True/False)
+        if self.config.optimize_atr_sizing:
+            atr_sizing = trial.suggest_categorical("atr_sizing", [True, False])
+        else:
+            atr_sizing = False
+
+        # Partial exits (categorical: True/False - True uses default levels)
+        if self.config.optimize_partial_exits:
+            use_partial_exits = trial.suggest_categorical("partial_exits", [True, False])
+        else:
+            use_partial_exits = False
+        partial_exit_levels = DEFAULT_PARTIAL_EXITS if use_partial_exits else ()
+
         # Get data and run backtest
         df = self._get_data(interval, period)
 
@@ -107,6 +131,8 @@ class OptunaTuner:
             swing_lb=swing_lb,
             entry_strategy=self.config.entry_strategy,
             exit_strategy=self.config.exit_strategy,
+            use_atr_sizing=atr_sizing,
+            partial_exit_levels=partial_exit_levels,
         )
         bot.backtest(df, self.symbol)
 
@@ -134,6 +160,8 @@ class OptunaTuner:
         trial.set_user_attr("total_return", total_return)
         trial.set_user_attr("max_drawdown", max_dd)
         trial.set_user_attr("profit_factor", profit_factor)
+        trial.set_user_attr("atr_sizing", atr_sizing)
+        trial.set_user_attr("partial_exits", use_partial_exits)
 
         # Return objective value based on config
         if self.config.objective == "return":
@@ -225,6 +253,12 @@ class OptunaTuner:
         table.add_row("swing_lb", str(best.params["swing_lb"]))
         table.add_row("risk_pct", f"{best.params['risk_pct'] * 100:.2f}%")
         table.add_row("rr_ratio", f"{best.params['rr_ratio']:.1f}")
+        if "atr_sizing" in best.params:
+            atr_val = "Yes" if best.params["atr_sizing"] else "No"
+            table.add_row("atr_sizing", atr_val)
+        if "partial_exits" in best.params:
+            partial_val = "Yes" if best.params["partial_exits"] else "No"
+            table.add_row("partial_exits", partial_val)
         table.add_row("", "")
         table.add_row("Total Trades", str(best.user_attrs.get("total_trades", "N/A")))
         table.add_row("Win Rate", f"{best.user_attrs.get('win_rate', 0):.1f}%")
@@ -255,6 +289,8 @@ class OptunaTuner:
             table.add_column("Swing", justify="center")
             table.add_column("Risk", justify="center")
             table.add_column("R:R", justify="center")
+            table.add_column("ATR", justify="center")
+            table.add_column("Part", justify="center")
             table.add_column("Return", justify="right")
             table.add_column("DD", justify="center")
             table.add_column("PF", justify="center")
@@ -262,6 +298,8 @@ class OptunaTuner:
             for i, t in enumerate(sorted_trials, 1):
                 ret = t.user_attrs.get("total_return", 0)
                 ret_style = "green" if ret > 0 else "red"
+                atr_str = "Y" if t.params.get("atr_sizing") else "N"
+                partial_str = "Y" if t.params.get("partial_exits") else "N"
                 table.add_row(
                     str(i),
                     t.params["interval"],
@@ -269,6 +307,8 @@ class OptunaTuner:
                     str(t.params["swing_lb"]),
                     f"{t.params['risk_pct'] * 100:.1f}%",
                     f"{t.params['rr_ratio']:.1f}",
+                    atr_str,
+                    partial_str,
                     f"[{ret_style}]{ret:+.2f}%[/{ret_style}]",
                     f"{t.user_attrs.get('max_drawdown', 0):.2f}%",
                     f"{t.user_attrs.get('profit_factor', 0):.2f}",
@@ -298,6 +338,8 @@ class OptunaTuner:
         table.add_column("Swing", justify="center")
         table.add_column("Risk", justify="center")
         table.add_column("R:R", justify="center")
+        table.add_column("ATR", justify="center")
+        table.add_column("Part", justify="center")
         table.add_column("Return", justify="right")
         table.add_column("Drawdown", justify="center")
         table.add_column("Trades", justify="center")
@@ -309,6 +351,8 @@ class OptunaTuner:
             ret = t.values[0]
             dd = t.values[1]
             ret_style = "green" if ret > 0 else "red"
+            atr_str = "Y" if t.params.get("atr_sizing") else "N"
+            partial_str = "Y" if t.params.get("partial_exits") else "N"
             table.add_row(
                 str(i),
                 t.params["interval"],
@@ -316,6 +360,8 @@ class OptunaTuner:
                 str(t.params["swing_lb"]),
                 f"{t.params['risk_pct'] * 100:.1f}%",
                 f"{t.params['rr_ratio']:.1f}",
+                atr_str,
+                partial_str,
                 f"[{ret_style}]{ret:+.2f}%[/{ret_style}]",
                 f"{dd:.2f}%",
                 str(t.user_attrs.get("total_trades", "N/A")),

@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Final
 
+from tradingbot.types import PartialExitLevel
+
 
 @dataclass(frozen=True)
 class Preset:
@@ -19,6 +21,9 @@ class Preset:
     # Risk
     risk_pct: float = 0.01
     rr_ratio: float = 1.5
+    atr_sizing: bool = False
+    # Partial exits: list of {r_multiple, exit_pct} levels (empty = all-or-nothing)
+    partial_exit_levels: tuple[PartialExitLevel, ...] = ()
     # Indicators
     indicators: list[str] = field(default_factory=list)
     filter_mode: str = "all"  # "all", "any", "none"
@@ -169,6 +174,18 @@ def _load_custom_presets() -> dict[str, Preset]:
     presets_data = data.get("tradingbot", {}).get("presets", {})
 
     for name, preset_data in presets_data.items():
+        # Parse partial exit levels (validation in PartialExitLevel.__post_init__)
+        partial_levels_data = preset_data.get("partial_exit_levels", [])
+        partial_exit_levels: list[PartialExitLevel] = []
+        seen_r_multiples: set[float] = set()
+
+        for level in partial_levels_data:
+            r_mult = level["r_multiple"]
+            if r_mult in seen_r_multiples:
+                raise ValueError(f"preset '{name}': duplicate r_multiple {r_mult}")
+            seen_r_multiples.add(r_mult)
+            partial_exit_levels.append(PartialExitLevel(r_multiple=r_mult, exit_pct=level["exit_pct"]))
+
         custom_presets[name] = Preset(
             name=name,
             description=preset_data.get("description", f"Custom preset: {name}"),
@@ -178,6 +195,8 @@ def _load_custom_presets() -> dict[str, Preset]:
             exit=preset_data.get("exit", "swing"),
             risk_pct=preset_data.get("risk_pct", 0.01),
             rr_ratio=preset_data.get("rr_ratio", 1.5),
+            atr_sizing=preset_data.get("atr_sizing", False),
+            partial_exit_levels=tuple(partial_exit_levels),
             indicators=preset_data.get("indicators", []),
             filter_mode=preset_data.get("filter_mode", "all"),
             eod_exit=preset_data.get("eod_exit", True),
@@ -250,6 +269,8 @@ def save_preset(
     max_drawdown: float | None = None,
     entry_strategy: str | None = None,
     exit_strategy: str | None = None,
+    atr_sizing: bool | None = None,
+    partial_exit_levels: tuple[PartialExitLevel, ...] | None = None,
 ) -> None:
     """Save optimization results as a custom preset to tradingbot.toml.
 
@@ -265,6 +286,8 @@ def save_preset(
         max_drawdown: Optional max drawdown for description
         entry_strategy: Entry strategy used (optional)
         exit_strategy: Exit strategy used (optional)
+        atr_sizing: ATR-based position sizing (optional)
+        partial_exit_levels: Partial exit levels (optional)
     """
     from pathlib import Path
 
@@ -305,6 +328,16 @@ def save_preset(
         preset.add("entry", entry_strategy)
     if exit_strategy:
         preset.add("exit", exit_strategy)
+    if atr_sizing is not None:
+        preset.add("atr_sizing", atr_sizing)
+    if partial_exit_levels:
+        levels_array = tomlkit.array()
+        for level in partial_exit_levels:
+            level_table = tomlkit.inline_table()
+            level_table.append("r_multiple", level.r_multiple)
+            level_table.append("exit_pct", level.exit_pct)
+            levels_array.append(level_table)
+        preset.add("partial_exit_levels", levels_array)
 
     doc["tradingbot"]["presets"].add(name, preset)  # type: ignore[union-attr,index]
 

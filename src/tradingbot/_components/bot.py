@@ -7,7 +7,7 @@ from typing import Any, TypedDict
 import plotext as plt
 import polars as pl
 
-from tradingbot.types import Direction, ExitReason, Position, Signal, SwingPoint, Trade
+from tradingbot.types import Direction, ExitReason, PartialExit, PartialExitLevel, Position, Signal, SwingPoint, Trade
 
 from .execution import ExecutionModel
 from .risk import PositionSizer
@@ -74,14 +74,17 @@ class MarketStructureBot:
         exit_strategy: str | None = None,
         allow_short: bool = False,
         execution_model: ExecutionModel | None = None,
+        use_atr_sizing: bool = False,
+        partial_exit_levels: tuple[PartialExitLevel, ...] = (),
     ):
         self.sig_gen = SignalGenerator(swing_lb, entry_strategy=entry_strategy, exit_strategy=exit_strategy)
-        self.pos_sizer = PositionSizer(capital, risk_pct)
+        self.pos_sizer = PositionSizer(capital, risk_pct, use_atr_sizing=use_atr_sizing)
         self.rr_ratio = rr_ratio
         self.swing_lb = swing_lb
         self.trailing_stop = trailing_stop
         self.allow_short = allow_short
         self.execution_model = execution_model or ExecutionModel()
+        self.partial_exit_levels = partial_exit_levels
         self.position: Position | None = None
         self.trades: list[Trade] = []
         self.equity: list[float] = []
@@ -113,6 +116,9 @@ class MarketStructureBot:
             if self.position:
                 if self.trailing_stop:
                     self._trail_stop(bar)
+                # Check for partial exits first (if configured)
+                self._process_partial_exits(bar, bar_time)
+                # Then check for full exit
                 exit_reason: ExitReason | None = self._check_exit(bar)
                 if exit_reason:
                     self._close(price, i, bar_time, exit_reason)
@@ -169,6 +175,79 @@ class MarketStructureBot:
                 return "TAKE_PROFIT"
         return None
 
+    def _process_partial_exits(self, bar: dict[str, Any], bar_time: datetime) -> None:
+        """Check and execute any triggered partial exit levels."""
+        if not self.partial_exit_levels or not self.position:
+            return
+
+        p = self.position
+        if p.initial_stop_loss is None:
+            return
+
+        risk = abs(p.entry_price - p.initial_stop_loss)
+        if risk == 0:
+            return
+
+        # Initialize tracking on first call
+        if p.triggered_levels is None:
+            p.triggered_levels = set()
+        if p.partial_exits is None:
+            p.partial_exits = []
+        if p.remaining_size is None:
+            p.remaining_size = p.size
+
+        # Calculate current profit in R-multiples
+        if p.direction == "LONG":
+            current_price = bar["high"]  # Use high for profit check
+            profit = current_price - p.entry_price
+        else:
+            current_price = bar["low"]  # Use low for short profit check
+            profit = p.entry_price - current_price
+
+        current_r = profit / risk
+
+        # Check each level (sorted by r_multiple ascending)
+        for level in sorted(self.partial_exit_levels, key=lambda x: x.r_multiple):
+            if level.r_multiple in p.triggered_levels:
+                continue  # Already triggered
+
+            if current_r >= level.r_multiple:
+                # Trigger this level
+                p.triggered_levels.add(level.r_multiple)
+
+                # Calculate exit size
+                exit_size = p.remaining_size * level.exit_pct
+                if exit_size <= 0:
+                    continue
+
+                # Calculate P&L for this partial exit
+                exit_price = (
+                    p.entry_price + (level.r_multiple * risk)
+                    if p.direction == "LONG"
+                    else p.entry_price - (level.r_multiple * risk)
+                )
+                gross_pnl, net_pnl = self.execution_model.calculate_net_pnl(
+                    p.entry_price, exit_price, exit_size, p.direction
+                )
+
+                # Record partial exit
+                partial_exit = PartialExit(
+                    r_multiple=level.r_multiple,
+                    exit_price=exit_price,
+                    exit_size=exit_size,
+                    pnl=net_pnl,
+                    exit_time=bar_time,
+                )
+                p.partial_exits.append(partial_exit)
+
+                # Update remaining size and capital
+                p.remaining_size -= exit_size
+                self.pos_sizer.capital += net_pnl
+
+                # Move stop to breakeven after first partial exit
+                if len(p.partial_exits) == 1:
+                    p.stop_loss = p.entry_price
+
     def _trail_stop(self, bar: dict[str, Any]) -> None:
         """Move stop to breakeven after 1R profit."""
         assert self.position is not None
@@ -194,8 +273,9 @@ class MarketStructureBot:
         time: datetime,
         df: pl.DataFrame,
     ) -> None:
-        exit_params = self.sig_gen.calc_exit(direction, price, df.head(idx + 1), self.rr_ratio)
-        size = self.pos_sizer.calc_size(price, exit_params.stop_loss)
+        history = df.head(idx + 1)
+        exit_params = self.sig_gen.calc_exit(direction, price, history, self.rr_ratio)
+        size = self.pos_sizer.calc_size(price, exit_params.stop_loss, history)
         self.position = Position(
             price, idx, time, direction, size, exit_params.stop_loss, exit_params.take_profit, exit_params.stop_loss
         )
@@ -209,9 +289,17 @@ class MarketStructureBot:
         assert self.position is not None
         p: Position = self.position
 
-        # Calculate gross and net P&L using execution model
-        gross_pnl, net_pnl = self.execution_model.calculate_net_pnl(p.entry_price, price, p.size, p.direction)
-        costs = self.execution_model.calculate_costs(p.entry_price, price, p.size, p.direction)
+        # Use remaining size (accounts for partial exits)
+        remaining_size = p.get_remaining_size()
+
+        # Calculate gross and net P&L for remaining position
+        gross_pnl, net_pnl = self.execution_model.calculate_net_pnl(p.entry_price, price, remaining_size, p.direction)
+        costs = self.execution_model.calculate_costs(p.entry_price, price, remaining_size, p.direction)
+
+        # Include P&L from partial exits in totals
+        partial_exits_pnl = sum(pe.pnl for pe in (p.partial_exits or []))
+        total_net_pnl = net_pnl + partial_exits_pnl
+        total_gross_pnl = gross_pnl + sum(pe.pnl for pe in (p.partial_exits or []))  # Approximate
 
         self.trades.append(
             Trade(
@@ -222,19 +310,20 @@ class MarketStructureBot:
                 time,
                 p.entry_index,
                 p.direction,
-                p.size,
-                net_pnl,  # Use net P&L as the primary pnl
-                net_pnl / self.pos_sizer.capital,
+                p.size,  # Original full size
+                total_net_pnl,  # Total P&L including partial exits
+                total_net_pnl / self.pos_sizer.capital,
                 reason,
                 idx - p.entry_index,
-                gross_pnl=gross_pnl,
+                gross_pnl=total_gross_pnl,
                 execution_costs=costs.total,
+                partial_exits=p.partial_exits,
             )
         )
-        self.pos_sizer.capital += net_pnl
+        self.pos_sizer.capital += net_pnl  # Only add remaining position P&L (partial exits already added)
 
         if self.callbacks and self.callbacks._on_trade_closed:
-            self.callbacks._on_trade_closed(p.direction, self.symbol, p.entry_price, price, net_pnl, reason)
+            self.callbacks._on_trade_closed(p.direction, self.symbol, p.entry_price, price, total_net_pnl, reason)
 
         self.position = None
 
