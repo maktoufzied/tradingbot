@@ -39,6 +39,8 @@ Quick reference for trading and technical terms used in this project.
 | **Risk per Trade** | The maximum amount (or percentage of capital) you're willing to lose on a single trade. Typically 1-2%. |
 | **Reward/Risk Ratio (R:R)** | The ratio of potential profit to potential loss. A 2:1 R:R means you aim to make $2 for every $1 risked. |
 | **Trailing Stop** | A stop loss that moves in the direction of profit, locking in gains as the trade moves favorably. |
+| **ATR Trail** | A trailing stop based on ATR (Average True Range). Stop is set at `High_Water_Mark - (N × ATR)` where N is the multiplier (default 2.0). Adapts to market volatility. |
+| **High-Water Mark** | The highest price reached since position entry (for longs). Used as the reference point for ATR trailing stops. |
 
 ### Execution Costs
 

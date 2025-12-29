@@ -105,6 +105,9 @@ class StrategyConfig:
     rr_ratio: float = 1.5  # Reward/risk ratio
     allow_short: bool = False  # Allow short selling
     atr_sizing: bool = False  # Volatility-adjusted position sizing
+    # Trailing stops
+    atr_trail: bool = False  # ATR-based trailing stop
+    atr_trail_multiplier: float = 2.0  # Trail at high_water - (N × ATR)
     # Partial exits: list of {r_multiple, exit_pct} levels (empty = all-or-nothing)
     partial_exit_levels: tuple[PartialExitLevel, ...] = ()
     # Time-based exits
@@ -251,6 +254,8 @@ def _parse_config(data: dict[str, Any]) -> Config:
         rr_ratio=strategy_data.get("rr_ratio", 1.5),
         allow_short=strategy_data.get("allow_short", False),
         atr_sizing=strategy_data.get("atr_sizing", False),
+        atr_trail=strategy_data.get("atr_trail", False),
+        atr_trail_multiplier=strategy_data.get("atr_trail_multiplier", 2.0),
         partial_exit_levels=tuple(partial_exit_levels),
         eod_exit=strategy_data.get("eod_exit", True),
         time_exit_minutes=strategy_data.get("time_exit_minutes", 0),

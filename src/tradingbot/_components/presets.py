@@ -22,6 +22,9 @@ class Preset:
     risk_pct: float = 0.01
     rr_ratio: float = 1.5
     atr_sizing: bool = False
+    # Trailing stops
+    atr_trail: bool = False
+    atr_trail_multiplier: float = 2.0
     # Partial exits: list of {r_multiple, exit_pct} levels (empty = all-or-nothing)
     partial_exit_levels: tuple[PartialExitLevel, ...] = ()
     # Indicators
@@ -196,6 +199,8 @@ def _load_custom_presets() -> dict[str, Preset]:
             risk_pct=preset_data.get("risk_pct", 0.01),
             rr_ratio=preset_data.get("rr_ratio", 1.5),
             atr_sizing=preset_data.get("atr_sizing", False),
+            atr_trail=preset_data.get("atr_trail", False),
+            atr_trail_multiplier=preset_data.get("atr_trail_multiplier", 2.0),
             partial_exit_levels=tuple(partial_exit_levels),
             indicators=preset_data.get("indicators", []),
             filter_mode=preset_data.get("filter_mode", "all"),
@@ -270,6 +275,8 @@ def save_preset(
     entry_strategy: str | None = None,
     exit_strategy: str | None = None,
     atr_sizing: bool | None = None,
+    atr_trail: bool | None = None,
+    atr_trail_multiplier: float | None = None,
     partial_exit_levels: tuple[PartialExitLevel, ...] | None = None,
 ) -> None:
     """Save optimization results as a custom preset to tradingbot.toml.
@@ -287,6 +294,8 @@ def save_preset(
         entry_strategy: Entry strategy used (optional)
         exit_strategy: Exit strategy used (optional)
         atr_sizing: ATR-based position sizing (optional)
+        atr_trail: ATR-based trailing stop (optional)
+        atr_trail_multiplier: ATR trail multiplier (optional)
         partial_exit_levels: Partial exit levels (optional)
     """
     from pathlib import Path
@@ -330,6 +339,10 @@ def save_preset(
         preset.add("exit", exit_strategy)
     if atr_sizing is not None:
         preset.add("atr_sizing", atr_sizing)
+    if atr_trail is not None:
+        preset.add("atr_trail", atr_trail)
+    if atr_trail_multiplier is not None:
+        preset.add("atr_trail_multiplier", atr_trail_multiplier)
     if partial_exit_levels:
         levels_array = tomlkit.array()
         for level in partial_exit_levels:

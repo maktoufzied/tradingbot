@@ -251,6 +251,54 @@ partial_exit_levels = [
 task backtest -- SPY --partial-exits  # Enable default (50% at 1R)
 ```
 
+### ATR-Based Trailing Stops
+
+Continuously trail stop loss based on ATR distance from the high-water mark:
+
+```
+Stop = High_Water_Mark - (N × ATR)
+```
+
+Where:
+- **High-water mark**: Highest price since entry (for LONG)
+- **N**: ATR multiplier (default 2.0)
+- **ATR**: 14-period Average True Range at entry time
+
+**Behavior:**
+1. Track highest price reached since entry
+2. Trail stop at `high_water - (N × ATR)`
+3. Stop only moves up, never down (protects gains)
+4. Tighter multiplier (2×) = earlier exits, less profit capture
+5. Looser multiplier (3×) = more room to run, larger drawdowns
+
+**Visualization (LONG position):**
+```
+Price:    $50 → $55 → $52 → $58 → $54
+           ↑entry  ↑new HW        ↑new HW
+
+ATR = $2, Multiplier = 2.0
+
+Stop:     $46 → $51 → $51 → $54 → $54
+           ↑     ↑trails  ↑holds  ↑trails
+```
+
+**When to use:**
+- Trending markets where you want to let winners run
+- Momentum strategies that benefit from trailing
+- When fixed targets leave money on the table
+
+**Configuration:**
+```toml
+[tradingbot.strategy]
+atr_trail = true           # Enable ATR trailing
+atr_trail_multiplier = 2.0 # Trail at 2× ATR distance
+```
+
+```bash
+task backtest -- SPY --atr-trail              # Enable with default 2× ATR
+task backtest -- SPY --atr-trail --atr-trail-mult 3  # Use 3× ATR
+```
+
 ---
 
 ## 6. Indicator Selection

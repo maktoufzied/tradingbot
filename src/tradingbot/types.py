@@ -68,6 +68,7 @@ class Position:
     remaining_size: float | None = None  # Tracks size after partial exits (None = full size)
     partial_exits: list[PartialExit] | None = None  # Executed partial exits
     triggered_levels: set[float] | None = None  # R-multiples already triggered
+    high_water_mark: float | None = None  # Highest (LONG) or lowest (SHORT) price since entry
 
     def get_remaining_size(self) -> float:
         """Get remaining position size (accounts for partial exits)."""

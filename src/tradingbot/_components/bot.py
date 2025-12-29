@@ -70,6 +70,8 @@ class MarketStructureBot:
         rr_ratio: float = 2.0,
         swing_lb: int = 5,
         trailing_stop: bool = False,
+        atr_trail: bool = False,
+        atr_trail_multiplier: float = 2.0,
         entry_strategy: str | None = None,
         exit_strategy: str | None = None,
         allow_short: bool = False,
@@ -82,6 +84,8 @@ class MarketStructureBot:
         self.rr_ratio = rr_ratio
         self.swing_lb = swing_lb
         self.trailing_stop = trailing_stop
+        self.atr_trail = atr_trail
+        self.atr_trail_multiplier = atr_trail_multiplier
         self.allow_short = allow_short
         self.execution_model = execution_model or ExecutionModel()
         self.partial_exit_levels = partial_exit_levels
@@ -91,6 +95,7 @@ class MarketStructureBot:
         self.symbol = ""
         self.callbacks: BacktestCallbacks | None = None
         self.speed: float = 0  # bars per second, 0 = instant
+        self._current_atr: float = 0.0  # Cached ATR at position entry
 
     def backtest(
         self,
@@ -114,7 +119,7 @@ class MarketStructureBot:
             bar_time: datetime = bar["datetime"]
 
             if self.position:
-                if self.trailing_stop:
+                if self.trailing_stop or self.atr_trail:
                     self._trail_stop(bar)
                 # Check for partial exits first (if configured)
                 self._process_partial_exits(bar, bar_time)
@@ -248,22 +253,74 @@ class MarketStructureBot:
                 if len(p.partial_exits) == 1:
                     p.stop_loss = p.entry_price
 
+    def _calc_atr(self, df: pl.DataFrame, period: int = 14) -> float:
+        """Calculate ATR for trailing stop distance."""
+        if len(df) < period + 1:
+            return 0.0
+
+        high = df["high"].to_list()
+        low = df["low"].to_list()
+        close = df["close"].to_list()
+
+        true_ranges: list[float] = []
+        for i in range(1, len(df)):
+            tr = max(
+                high[i] - low[i],
+                abs(high[i] - close[i - 1]),
+                abs(low[i] - close[i - 1]),
+            )
+            true_ranges.append(tr)
+
+        if len(true_ranges) < period:
+            return mean(true_ranges) if true_ranges else 0.0
+
+        return mean(true_ranges[-period:])
+
     def _trail_stop(self, bar: dict[str, Any]) -> None:
-        """Move stop to breakeven after 1R profit."""
+        """Trail stop loss based on configured method.
+
+        - trailing_stop=True: Move to breakeven after 1R profit
+        - atr_trail=True: Continuously trail at high_water - (N × ATR)
+        """
         assert self.position is not None
         p: Position = self.position
         if p.initial_stop_loss is None:
             return
 
-        risk: float = abs(p.entry_price - p.initial_stop_loss)
+        # Update high-water mark
         if p.direction == "LONG":
-            # If price reached 1R profit, move stop to entry
-            if bar["high"] >= p.entry_price + risk and p.stop_loss < p.entry_price:
-                p.stop_loss = p.entry_price
+            current_high = bar["high"]
+            if p.high_water_mark is None or current_high > p.high_water_mark:
+                p.high_water_mark = current_high
         else:
-            # SHORT: if price dropped 1R, move stop to entry
-            if bar["low"] <= p.entry_price - risk and p.stop_loss > p.entry_price:
-                p.stop_loss = p.entry_price
+            current_low = bar["low"]
+            if p.high_water_mark is None or current_low < p.high_water_mark:
+                p.high_water_mark = current_low
+
+        # ATR-based trailing (continuous)
+        if self.atr_trail and self._current_atr > 0:
+            trail_distance = self.atr_trail_multiplier * self._current_atr
+            if p.direction == "LONG":
+                new_stop = p.high_water_mark - trail_distance
+                # Only move stop up, never down
+                if new_stop > p.stop_loss:
+                    p.stop_loss = new_stop
+            else:
+                new_stop = p.high_water_mark + trail_distance
+                # Only move stop down, never up (for shorts)
+                if new_stop < p.stop_loss:
+                    p.stop_loss = new_stop
+            return
+
+        # Breakeven trailing (move to entry after 1R)
+        if self.trailing_stop:
+            risk: float = abs(p.entry_price - p.initial_stop_loss)
+            if p.direction == "LONG":
+                if bar["high"] >= p.entry_price + risk and p.stop_loss < p.entry_price:
+                    p.stop_loss = p.entry_price
+            else:
+                if bar["low"] <= p.entry_price - risk and p.stop_loss > p.entry_price:
+                    p.stop_loss = p.entry_price
 
     def _open(
         self,
@@ -276,8 +333,21 @@ class MarketStructureBot:
         history = df.head(idx + 1)
         exit_params = self.sig_gen.calc_exit(direction, price, history, self.rr_ratio)
         size = self.pos_sizer.calc_size(price, exit_params.stop_loss, history)
+
+        # Cache ATR at entry for trailing stop
+        if self.atr_trail:
+            self._current_atr = self._calc_atr(history)
+
         self.position = Position(
-            price, idx, time, direction, size, exit_params.stop_loss, exit_params.take_profit, exit_params.stop_loss
+            price,
+            idx,
+            time,
+            direction,
+            size,
+            exit_params.stop_loss,
+            exit_params.take_profit,
+            exit_params.stop_loss,
+            high_water_mark=price,  # Initialize at entry price
         )
 
         if self.callbacks and self.callbacks._on_signal:

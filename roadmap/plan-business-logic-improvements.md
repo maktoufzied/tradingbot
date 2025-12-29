@@ -156,7 +156,7 @@ Add volatility-aware position sizing:
 
 ---
 
-## Phase 4: Partial Profit Taking
+## Phase 4: Partial Profit Taking ✅ COMPLETE
 
 ### GitHub Issue
 
@@ -200,16 +200,18 @@ partial_exit_levels = [
 4. Empty list = current all-or-nothing behavior
 
 **Acceptance Criteria:**
-- [ ] Add `PartialExitLevel` dataclass with `r_multiple` and `exit_pct`
-- [ ] Add `partial_exit_levels` to `StrategyConfig` (list of levels)
-- [ ] Add `partial_exit_levels` to `Preset` dataclass
-- [ ] Update `Position` to track `remaining_size` and `partial_exits` list
-- [ ] Implement partial exit logic in `_check_exit()`
-- [ ] Move stop to breakeven after first partial exit
-- [ ] Track partial exits in trade log with P&L per exit
-- [ ] Add `--partial-exits` CLI flag (uses default levels: 50% at 1R)
-- [ ] Add Optuna optimization (empty vs predefined patterns)
-- [ ] Update docs: guide-strategy.md (exit strategies), README.md (config)
+- [x] Add `PartialExitLevel` dataclass with `r_multiple` and `exit_pct`
+- [x] Add `partial_exit_levels` to `StrategyConfig` (list of levels)
+- [x] Add `partial_exit_levels` to `Preset` dataclass
+- [x] Update `Position` to track `remaining_size` and `partial_exits` list
+- [x] Implement partial exit logic in `_process_partial_exits()`
+- [x] Move stop to breakeven after first partial exit
+- [x] Track partial exits in trade log with P&L per exit
+- [x] Add `--partial-exits` CLI flag (uses default levels: 50% at 1R)
+- [x] Add Optuna optimization (empty vs predefined patterns)
+- [x] Update docs: guide-strategy.md (exit strategies), README.md (config)
+- [x] Add `__post_init__` validation in dataclass (r_multiple > 0, exit_pct in (0,1])
+- [x] Add 15 tests for partial exits in `test_bot.py`
 
 **Files to modify:**
 - `src/tradingbot/types.py` (Position dataclass, PartialExitLevel)
@@ -224,7 +226,7 @@ partial_exit_levels = [
 
 ---
 
-## Phase 5: ATR-Based Trailing Stops
+## Phase 5: ATR-Based Trailing Stops ✅ COMPLETE
 
 ### GitHub Issue
 
@@ -248,17 +250,25 @@ Add ATR-based trailing:
 3. Only move stop up, never down
 
 **Acceptance Criteria:**
-- [ ] Calculate ATR for trailing distance
-- [ ] Track high-water mark per position
-- [ ] Trail stop progressively as price moves
-- [ ] Make trailing multiplier configurable
-- [ ] Add `--atr-trail` flag to CLI
-- [ ] Update docs: guide-strategy.md (trailing stops)
+- [x] Calculate ATR for trailing distance
+- [x] Track high-water mark per position
+- [x] Trail stop progressively as price moves
+- [x] Make trailing multiplier configurable
+- [x] Add `--atr-trail` flag to CLI
+- [x] Update docs: guide-strategy.md (trailing stops)
+- [x] Add 8 tests for ATR trailing in `test_bot.py`
 
-**Files to modify:**
-- `src/tradingbot/_components/bot.py`
-- `src/tradingbot/backtest_cli.py`
-- `guide-strategy.md`
+**Files modified:**
+- `src/tradingbot/types.py` - Added `high_water_mark` field to Position
+- `src/tradingbot/_components/bot.py` - Added `_calc_atr()` and updated `_trail_stop()`
+- `src/tradingbot/_components/runner.py` - Added `atr_trail` support
+- `src/tradingbot/_components/presets.py` - Added `atr_trail` to Preset dataclass
+- `src/tradingbot/config.py` - Added `atr_trail` and `atr_trail_multiplier`
+- `src/tradingbot/backtest_cli.py` - Added `--atr-trail` and `--atr-trail-mult` flags
+- `guide-strategy.md` - Added ATR trailing documentation
+- `README.md` - Added CLI flags documentation
+- `glossary.md` - Added ATR Trail and High-Water Mark definitions
+- `tests/test_bot.py` - Added 8 tests for ATR trailing
 
 ---
 
@@ -293,11 +303,11 @@ Move magic numbers to strategy config or make them class parameters.
 
 | Phase | Priority | Effort | Impact | Status |
 |-------|----------|--------|--------|--------|
-| 1. Execution costs | 🔴 Critical | Medium | High - all backtests affected | ⏳ Pending |
-| 2. Walk-forward | 🟡 High | Medium | High - prevents overfitting | ⏳ Pending |
+| 1. Execution costs | 🔴 Critical | Medium | High - all backtests affected | ✅ Complete |
+| 2. Walk-forward | 🟡 High | Medium | High - prevents overfitting | ✅ Complete |
 | 3. ATR sizing | 🟡 High | Low | Medium - better risk mgmt | ✅ Complete |
-| 4. Partial exits | 🟡 Medium | Medium | Medium - better profit capture | ⏳ Pending |
-| 5. ATR trailing | 🟡 Medium | Low | Medium - better exit mgmt | ⏳ Pending |
+| 4. Partial exits | 🟡 Medium | Medium | Medium - better profit capture | ✅ Complete |
+| 5. ATR trailing | 🟡 Medium | Low | Medium - better exit mgmt | ✅ Complete |
 | 6. Magic numbers | 🟢 Low | Low | Low - code quality | ⏳ Pending |
 
 ---
@@ -325,11 +335,11 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 | Phase | README.md | ARCHITECTURE.md | guide-strategy.md | glossary.md | Status |
 |-------|-----------|-----------------|-------------------|-------------|--------|
-| 1 | CLI flags | ExecutionModel | - | Slippage, Commission | ⏳ |
-| 2 | CLI flags | WalkForward | Optimization section | Walk-Forward | ⏳ |
+| 1 | CLI flags | ExecutionModel | - | Slippage, Commission | ✅ |
+| 2 | CLI flags | WalkForward | Optimization section | Walk-Forward | ✅ |
 | 3 | CLI flags, config | - | Position sizing | ATR Sizing | ✅ |
-| 4 | CLI flags | - | Exit strategies | Partial Exit | ⏳ |
-| 5 | CLI flags | - | Trailing stops | ATR Trail | ⏳ |
+| 4 | CLI flags, config | - | Exit strategies | Partial Exit | ✅ |
+| 5 | CLI flags | - | Trailing stops | ATR Trail | ✅ |
 | 6 | - | - | Strategy params | - | ⏳ |
 
 ---

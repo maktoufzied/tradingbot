@@ -99,6 +99,8 @@ uv run tradingbot-backtest <SYMBOLS> [OPTIONS]
 | `--spread BPS` | Bid-ask spread in basis points | `2` |
 | `--commission USD` | Commission per share | `0.005` |
 | `--atr-sizing` | Volatility-adjusted position sizing (reduces size in high volatility) | - |
+| `--atr-trail` | ATR-based trailing stop (trails at high_water - N×ATR) | - |
+| `--atr-trail-mult N` | ATR trail multiplier (requires `--atr-trail`) | `2.0` |
 | `--partial-exits` | Enable partial profit taking (exit 50% at 1R, move stop to breakeven) | - |
 
 **Examples:**
@@ -116,6 +118,8 @@ task backtest -- SPY --list-strategies           # Show available strategies
 task backtest -- SPY --verbose                   # See each bar
 task backtest -- SPY --speed 10                  # Simulate 10 bars/sec
 task backtest -- SPY --atr-sizing                # Volatility-adjusted sizing
+task backtest -- SPY --atr-trail                 # ATR trailing stop (2× ATR)
+task backtest -- SPY --atr-trail --atr-trail-mult 3  # Trail at 3× ATR
 task backtest -- SPY --partial-exits             # Take 50% profit at 1R
 ```
 
@@ -225,6 +229,7 @@ task live -- SPY --tui
 | `--dry-run` | Log signals without executing trades | - |
 | `--tui` | Interactive terminal UI dashboard | - |
 | `--atr-sizing` | Volatility-adjusted position sizing | - |
+| `--atr-trail` | ATR-based trailing stop | - |
 
 **Risk Controls (configured in `tradingbot.toml`):**
 

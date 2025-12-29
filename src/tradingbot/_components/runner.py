@@ -33,6 +33,9 @@ class BacktestParams(TypedDict, total=False):
     commission: float
     # Position sizing
     use_atr_sizing: bool
+    # Trailing stops
+    atr_trail: bool
+    atr_trail_multiplier: float
     # Partial exits (None = use preset/config default)
     partial_exit_levels: tuple[PartialExitLevel, ...] | None
 
@@ -94,6 +97,8 @@ def run_single_backtest(
     spread_bps: float | None = None,
     commission: float | None = None,
     use_atr_sizing: bool = False,
+    atr_trail: bool = False,
+    atr_trail_multiplier: float | None = None,
     partial_exit_levels: tuple[PartialExitLevel, ...] | None = None,
 ) -> tuple[MarketStructureBot, pl.DataFrame]:
     bot_cfg = get_bot_config()
@@ -116,6 +121,13 @@ def run_single_backtest(
     allow_short = strategy_cfg.allow_short
     # Priority: CLI flag > preset > config
     use_atr = use_atr_sizing if use_atr_sizing else (preset_obj.atr_sizing if preset_obj else strategy_cfg.atr_sizing)
+    # ATR trailing: CLI flag > preset > config
+    use_atr_trail = atr_trail if atr_trail else (preset_obj.atr_trail if preset_obj else strategy_cfg.atr_trail)
+    trail_multiplier = (
+        atr_trail_multiplier
+        if atr_trail_multiplier is not None
+        else (preset_obj.atr_trail_multiplier if preset_obj else strategy_cfg.atr_trail_multiplier)
+    )
     # Priority: CLI arg > preset > config (empty tuple = all-or-nothing)
     partial_levels = (
         partial_exit_levels
@@ -149,6 +161,7 @@ def run_single_backtest(
         else f"[dim]costs: {execution_model.slippage_bps + execution_model.spread_bps}bps + ${execution_model.commission_per_share}/sh[/dim]"
     )
     atr_info = "[cyan]ATR-sized[/cyan]" if use_atr else ""
+    trail_info = f"[cyan]ATR-trail ({trail_multiplier}×)[/cyan]" if use_atr_trail else ""
     partial_info = f"[cyan]partial: {len(partial_levels)} levels[/cyan]" if partial_levels else ""
     console.print(
         f"  {preset_info}"
@@ -158,6 +171,7 @@ def run_single_backtest(
         f"risk=[cyan]{risk_pct * 100:.1f}%[/cyan] rr=[cyan]{rr_ratio}:1[/cyan] | "
         f"[dim]{short_info}[/dim]"
         f"{' | ' + atr_info if atr_info else ''}"
+        f"{' | ' + trail_info if trail_info else ''}"
         f"{' | ' + partial_info if partial_info else ''}"
     )
     console.print(f"  {costs_info}")
@@ -175,6 +189,8 @@ def run_single_backtest(
         allow_short=allow_short,
         execution_model=execution_model,
         use_atr_sizing=use_atr,
+        atr_trail=use_atr_trail,
+        atr_trail_multiplier=trail_multiplier,
         partial_exit_levels=partial_levels,
     )
 
@@ -194,7 +210,7 @@ def run_single_backtest(
         bar_time: datetime = bar["datetime"]
 
         if bot.position:
-            if bot.trailing_stop:
+            if bot.trailing_stop or bot.atr_trail:
                 bot._trail_stop(bar)
             # Check for partial exits first (if configured)
             bot._process_partial_exits(bar, bar_time)

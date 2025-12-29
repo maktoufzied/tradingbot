@@ -25,6 +25,8 @@ Examples:
   tradingbot AAPL -s orb --verbose
   tradingbot AAPL --speed 10
   tradingbot AAPL --atr-sizing         # Volatility-adjusted position sizing
+  tradingbot AAPL --atr-trail          # ATR-based trailing stop (2x ATR)
+  tradingbot AAPL --atr-trail --atr-trail-mult 3  # ATR trail with 3x multiplier
   tradingbot AAPL --partial-exits      # Exit 50%% at 1R, move stop to breakeven
         """,
     )
@@ -76,6 +78,19 @@ Examples:
         "--atr-sizing",
         action="store_true",
         help="Enable ATR-based volatility-adjusted position sizing (reduces size in high volatility)",
+    )
+
+    # Trailing stop options
+    parser.add_argument(
+        "--atr-trail",
+        action="store_true",
+        help="Enable ATR-based trailing stop (trails at high_water - N×ATR, default 2×)",
+    )
+    parser.add_argument(
+        "--atr-trail-mult",
+        type=float,
+        metavar="N",
+        help="ATR trail multiplier (default: 2.0, requires --atr-trail)",
     )
 
     # Partial exit options
@@ -176,6 +191,8 @@ Examples:
                 spread_bps=args.spread,
                 commission=args.commission,
                 use_atr_sizing=args.atr_sizing,
+                atr_trail=args.atr_trail,
+                atr_trail_multiplier=args.atr_trail_mult,
                 partial_exit_levels=partial_levels,
             )
         else:
@@ -197,6 +214,8 @@ Examples:
                 spread_bps=args.spread,
                 commission=args.commission,
                 use_atr_sizing=args.atr_sizing,
+                atr_trail=args.atr_trail,
+                atr_trail_multiplier=args.atr_trail_mult,
                 partial_exit_levels=partial_levels,
             )
     except ValueError as e:
