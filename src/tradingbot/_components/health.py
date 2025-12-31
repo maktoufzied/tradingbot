@@ -85,9 +85,16 @@ class HealthChecker:
         """Emit health metrics."""
         now = datetime.now(UTC)
 
-        # Connection status (default False for safety if attribute missing)
-        feed_connected = getattr(self._feed, "is_connected", False)
-        broker_connected = getattr(self._broker, "is_connected", False)
+        # Connection status (default False if property raises or missing)
+        try:
+            feed_connected = self._feed.is_connected
+        except Exception:
+            feed_connected = False
+
+        try:
+            broker_connected = self._broker.is_connected
+        except Exception:
+            broker_connected = False
 
         # Last bar age
         last_bar_time = self._get_last_bar_time()

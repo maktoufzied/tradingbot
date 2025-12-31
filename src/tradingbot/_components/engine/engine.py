@@ -7,7 +7,7 @@ from typing import Final
 
 import polars as pl
 
-from tradingbot.config import HealthConfig, get_engine_config, get_health_config, get_strategy_config
+from tradingbot.config import get_engine_config, get_health_config, get_strategy_config
 from tradingbot.interfaces import BrokerProtocol, DataFeedProtocol
 from tradingbot.types import Bar, BarOrigin, Direction, Order, PendingOrder, Position, Signal
 
@@ -73,9 +73,8 @@ class TradingEngine:
         self._last_bar_time: datetime | None = None
 
         # Health checker
-        health_cfg = get_health_config()
         self._health_checker = HealthChecker(
-            config=HealthConfig(enabled=health_cfg.enabled, interval_minutes=health_cfg.interval_minutes),
+            config=get_health_config(),
             broker=broker,
             feed=feed,
             risk_manager=live_risk_manager,
