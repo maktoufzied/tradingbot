@@ -10,6 +10,7 @@ import type {
   RiskStatus,
   SystemStatus,
   ChartUpdate,
+  LogEntry,
 } from '../types/api';
 
 interface UseWebSocketOptions {
@@ -71,6 +72,9 @@ export function useWebSocket({ url, autoConnect = true }: UseWebSocketOptions) {
             break;
           case 'chart':
             actions.updateChart(message.data as ChartUpdate);
+            break;
+          case 'log':
+            actions.addLog(message.data as LogEntry);
             break;
         }
       }

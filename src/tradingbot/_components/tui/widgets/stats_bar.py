@@ -96,8 +96,12 @@ class SessionPanel(Widget):
         win_color = THEME.positive if stats.win_rate >= 50 else THEME.text
         metrics_text.append(f"{stats.win_rate:.0f}%", style=win_color)
         metrics_text.append("  PF ", style=THEME.text_dim)
-        pf_color = THEME.positive if stats.profit_factor >= 1.5 else THEME.text
-        metrics_text.append(f"{stats.profit_factor:.1f}", style=pf_color)
+        # PF < 0 is sentinel for "not applicable" (no losses yet)
+        if stats.profit_factor < 0:
+            metrics_text.append("-", style=THEME.text_dim)
+        else:
+            pf_color = THEME.positive if stats.profit_factor >= 1.5 else THEME.text
+            metrics_text.append(f"{stats.profit_factor:.1f}", style=pf_color)
         metrics_line.update(metrics_text)
 
         # Streak line with visual indicator
@@ -230,17 +234,20 @@ class RiskPanel(Widget):
             status_line.update("")
             return
 
-        # Daily loss meter
+        # Daily loss limit meter
         daily_text = Text()
-        daily_text.append("Daily ", style=THEME.text_dim)
+        daily_text.append("Limit ", style=THEME.text_dim)
 
-        # Loss percentage with color
-        loss_color = THEME.negative if risk.daily_loss_pct < 0 else THEME.positive
-        daily_text.append(f"{risk.daily_loss_pct:.1f}%", style=loss_color)
-
-        # Progress bar (values already in percentage from adapter)
+        # Only actual losses count toward the limit (negative = loss)
+        actual_loss = max(0.0, -risk.daily_loss_pct)
         max_pct = risk.max_daily_loss_pct if risk.max_daily_loss_pct > 0 else 5.0
-        pct_used = abs(risk.daily_loss_pct) / max_pct
+
+        # Show loss toward limit
+        daily_text.append(f"{actual_loss:.1f}%", style=THEME.text)
+        daily_text.append(f"/{max_pct:.0f}%", style=THEME.text_dim)
+
+        # Progress bar
+        pct_used = actual_loss / max_pct
         pct_used = min(1.0, pct_used)
         filled = int(pct_used * 8)
         empty = 8 - filled
@@ -248,7 +255,6 @@ class RiskPanel(Widget):
         daily_text.append(" ")
         daily_text.append("\u2588" * filled, style=bar_color)
         daily_text.append("\u2591" * empty, style=THEME.text_muted)
-        daily_text.append(f" {max_pct:.0f}%", style=THEME.text_dim)
         daily_line.update(daily_text)
 
         # Positions

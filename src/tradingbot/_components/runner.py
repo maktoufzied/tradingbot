@@ -6,7 +6,7 @@ import polars as pl
 from rich.console import Console
 from rich.table import Table
 
-from tradingbot.config import get_bot_config, get_strategy_config
+from tradingbot.config import get_bot_config, get_provider_config, get_strategy_config
 from tradingbot.types import PartialExitLevel, Position, Signal
 
 from .bot import BacktestCallbacks, MarketStructureBot, Stats
@@ -36,6 +36,7 @@ class BacktestParams(TypedDict, total=False):
     # Trailing stops
     atr_trail: bool
     atr_trail_multiplier: float
+    atr_trail_activation_r: float
     # Partial exits (None = use preset/config default)
     partial_exit_levels: tuple[PartialExitLevel, ...] | None
 
@@ -99,6 +100,7 @@ def run_single_backtest(
     use_atr_sizing: bool = False,
     atr_trail: bool = False,
     atr_trail_multiplier: float | None = None,
+    atr_trail_activation_r: float | None = None,
     partial_exit_levels: tuple[PartialExitLevel, ...] | None = None,
 ) -> tuple[MarketStructureBot, pl.DataFrame]:
     bot_cfg = get_bot_config()
@@ -115,6 +117,7 @@ def run_single_backtest(
     capital_val = capital if capital is not None else bot_cfg.capital
     risk_pct = risk if risk is not None else (preset_obj.risk_pct if preset_obj else strategy_cfg.risk_pct)
     rr_ratio = rr if rr is not None else (preset_obj.rr_ratio if preset_obj else strategy_cfg.rr_ratio)
+    stop_pct = preset_obj.stop_pct if preset_obj else 0.01
     swing_lb_val = swing_lb if swing_lb is not None else strategy_cfg.swing_lb
     entry_strategy = strategy if strategy is not None else (preset_obj.entry if preset_obj else None)
     exit_strategy = preset_obj.exit if preset_obj else None
@@ -128,21 +131,30 @@ def run_single_backtest(
         if atr_trail_multiplier is not None
         else (preset_obj.atr_trail_multiplier if preset_obj else strategy_cfg.atr_trail_multiplier)
     )
+    trail_activation = (
+        atr_trail_activation_r
+        if atr_trail_activation_r is not None
+        else (preset_obj.atr_trail_activation_r if preset_obj else strategy_cfg.atr_trail_activation_r)
+    )
     # Priority: CLI arg > preset > config (empty tuple = all-or-nothing)
     partial_levels = (
         partial_exit_levels
         if partial_exit_levels is not None
         else (preset_obj.partial_exit_levels if preset_obj else strategy_cfg.partial_exit_levels)
     )
+    # EOD exit: preset > config (typically True for day trading presets)
+    use_eod_exit = preset_obj.eod_exit if preset_obj else strategy_cfg.eod_exit
+    eod_minutes = strategy_cfg.eod_exit_minutes_before
 
-    # Build execution model
+    # Build execution model: CLI args > provider config > defaults (zero)
+    provider_cfg = get_provider_config()
     if no_costs:
         execution_model = ExecutionModel.zero()
     else:
         execution_model = ExecutionModel(
-            slippage_bps=slippage_bps if slippage_bps is not None else 5.0,
-            spread_bps=spread_bps if spread_bps is not None else 2.0,
-            commission_per_share=commission if commission is not None else 0.005,
+            slippage_bps=slippage_bps if slippage_bps is not None else provider_cfg.slippage_bps,
+            spread_bps=spread_bps if spread_bps is not None else provider_cfg.spread_bps,
+            commission_per_share=commission if commission is not None else provider_cfg.commission_per_share,
         )
 
     console.print()
@@ -155,13 +167,21 @@ def run_single_backtest(
     exit_name = exit_strategy or "swing"
     preset_info = f"[cyan]{preset}[/cyan] | " if preset else ""
     short_info = "long+short" if allow_short else "long only"
+    total_bps = execution_model.slippage_bps + execution_model.spread_bps
+    has_costs = total_bps > 0 or execution_model.commission_per_share > 0
     costs_info = (
-        "[dim]no costs[/dim]"
-        if no_costs
-        else f"[dim]costs: {execution_model.slippage_bps + execution_model.spread_bps}bps + ${execution_model.commission_per_share}/sh[/dim]"
+        f"[dim]costs: {total_bps}bps + ${execution_model.commission_per_share}/sh[/dim]"
+        if has_costs
+        else "[dim]no costs[/dim]"
     )
     atr_info = "[cyan]ATR-sized[/cyan]" if use_atr else ""
-    trail_info = f"[cyan]ATR-trail ({trail_multiplier}×)[/cyan]" if use_atr_trail else ""
+    trail_info = (
+        f"[cyan]ATR-trail ({trail_multiplier}× @ {trail_activation}R)[/cyan]"
+        if use_atr_trail and trail_activation > 0
+        else f"[cyan]ATR-trail ({trail_multiplier}×)[/cyan]"
+        if use_atr_trail
+        else ""
+    )
     partial_info = f"[cyan]partial: {len(partial_levels)} levels[/cyan]" if partial_levels else ""
     console.print(
         f"  {preset_info}"
@@ -183,6 +203,7 @@ def run_single_backtest(
         capital=capital_val,
         risk_pct=risk_pct,
         rr_ratio=rr_ratio,
+        stop_pct=stop_pct,
         swing_lb=swing_lb_val,
         entry_strategy=entry_strategy,
         exit_strategy=exit_strategy,
@@ -191,7 +212,10 @@ def run_single_backtest(
         use_atr_sizing=use_atr,
         atr_trail=use_atr_trail,
         atr_trail_multiplier=trail_multiplier,
+        atr_trail_activation_r=trail_activation,
         partial_exit_levels=partial_levels,
+        eod_exit=use_eod_exit,
+        eod_exit_minutes_before=eod_minutes,
     )
 
     callbacks = make_verbose_callbacks() if verbose else None
@@ -282,15 +306,20 @@ def run_single_backtest(
         trades_table.add_column("Exit", justify="right")
         trades_table.add_column("P&L", justify="right")
         trades_table.add_column("Hold", justify="right")
-        trades_table.add_column("Result", justify="center")
+        trades_table.add_column("Reason", justify="center")
+
+        # Short labels for exit reasons
+        exit_labels = {
+            "STOP_LOSS": "[red]SL[/red]",
+            "TAKE_PROFIT": "[green]TP[/green]",
+            "EOD_EXIT": "[yellow]EOD[/yellow]",
+            "PARTIAL_EXIT": "[cyan]PART[/cyan]",
+            "TIME_EXIT": "[dim]TIME[/dim]",
+        }
 
         for t in bot.trades[-10:]:
-            if t.pnl > 0:
-                result = "[green]WIN[/green]"
-                pnl_style = "green"
-            else:
-                result = "[red]LOSS[/red]"
-                pnl_style = "red"
+            pnl_style = "green" if t.pnl > 0 else "red"
+            reason = exit_labels.get(t.exit_reason, t.exit_reason)
 
             trades_table.add_row(
                 t.entry_time.strftime("%Y-%m-%d"),
@@ -298,8 +327,8 @@ def run_single_backtest(
                 f"${t.entry_price:.2f}",
                 f"${t.exit_price:.2f}",
                 f"[{pnl_style}]${t.pnl:+,.2f}[/{pnl_style}]",
-                f"{t.holding_period}d",
-                result,
+                f"{t.holding_period}",  # bars
+                reason,
             )
 
         console.print(trades_table)

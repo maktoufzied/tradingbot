@@ -127,6 +127,7 @@ class SignalGenerator:
         entry_price: float,
         df: pl.DataFrame,
         rr_ratio: float,
+        stop_pct: float = 0.01,
     ) -> Exit:
         """Calculate exit parameters (SL/TP) for a position.
 
@@ -135,12 +136,13 @@ class SignalGenerator:
             entry_price: Entry price
             df: OHLCV DataFrame
             rr_ratio: Risk/reward ratio
+            stop_pct: Stop loss percentage (for fixed exit strategy)
 
         Returns:
             Exit with stop_loss and take_profit prices
         """
         swings: list[SwingPoint] = find_swing_points(df, self.swing_lookback)
-        return self._exit.calc(direction, entry_price, df, swings, rr_ratio)  # type: ignore[arg-type]
+        return self._exit.calc(direction, entry_price, df, swings, rr_ratio, stop_pct)  # type: ignore[arg-type]
 
     @property
     def entry_name(self) -> str:

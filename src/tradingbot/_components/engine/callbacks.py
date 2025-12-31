@@ -8,6 +8,7 @@ from typing import TypeVar
 from .events import (
     AccountEvent,
     BarEvent,
+    ClockEvent,
     EngineStartedEvent,
     EngineStoppedEvent,
     MessageEvent,
@@ -50,6 +51,7 @@ class EngineCallbacks:
     _on_stats_updated: list[EventCallback[StatsUpdatedEvent]] = field(default_factory=list)
     _on_account: list[EventCallback[AccountEvent]] = field(default_factory=list)
     _on_risk: list[EventCallback[RiskEvent]] = field(default_factory=list)
+    _on_clock: list[EventCallback[ClockEvent]] = field(default_factory=list)
 
     def on_started[C: EventCallback[EngineStartedEvent]](self, cb: C) -> C:
         self._on_started.append(cb)
@@ -87,6 +89,10 @@ class EngineCallbacks:
         self._on_risk.append(cb)
         return cb
 
+    def on_clock[C: EventCallback[ClockEvent]](self, cb: C) -> C:
+        self._on_clock.append(cb)
+        return cb
+
     async def emit_started(self, event: EngineStartedEvent) -> None:
         await self._emit(self._on_started, event)
 
@@ -113,6 +119,9 @@ class EngineCallbacks:
 
     async def emit_risk(self, event: RiskEvent) -> None:
         await self._emit(self._on_risk, event)
+
+    async def emit_clock(self, event: ClockEvent) -> None:
+        await self._emit(self._on_clock, event)
 
     async def _emit[E](self, callbacks: list[EventCallback[E]], event: E) -> None:
         """Emit an event to all registered callbacks."""

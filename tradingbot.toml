@@ -60,11 +60,10 @@ signal_period = 9
 capital = 100000             # Starting capital ($)
 
 # =============================================================================
-# CACHE - Local market data storage
+# CACHE - Local market data storage (source derived from engine.provider)
 # =============================================================================
 [tradingbot.cache]
 enabled = true
-source = "alpaca"             # Data source for cache: yahoo, alpaca
 path = "~/.cache/tradingbot/tradingbot.duckdb"
 
 # Retention policy: days to keep data per interval (-1 = forever)
@@ -76,11 +75,10 @@ path = "~/.cache/tradingbot/tradingbot.duckdb"
 "1d" = -1
 
 # =============================================================================
-# ENGINE - Live trading configuration
+# ENGINE - Trading provider configuration
 # =============================================================================
 [tradingbot.engine]
-broker = "alpaca"            # Broker: paper, alpaca
-feed = "alpaca"              # Feed: yahoo (backtest only), alpaca (live)
+provider = "alpaca"          # Provider: alpaca, paper
 bar_interval = "5m"          # Bar interval: 1m, 5m, 15m
 
 [tradingbot.engine.risk]
@@ -95,6 +93,16 @@ trading_hours_only = true    # Only trade 9:30 AM - 4:00 PM ET
 #   export ALPACA_API_KEY="your-api-key"
 #   export ALPACA_SECRET_KEY="your-secret-key"
 paper = true                 # Use paper trading endpoint
+# Execution costs (Alpaca has zero commission)
+# spread_bps = 0.0
+# slippage_bps = 0.0
+# commission_per_share = 0.0
+
+[tradingbot.engine.paper]
+# Execution costs for paper/backtest (default: zero)
+# spread_bps = 2.0
+# slippage_bps = 5.0
+# commission_per_share = 0.005
 
 # =============================================================================
 # CUSTOM PRESETS - Define your own trading configurations
@@ -115,3 +123,22 @@ paper = true                 # Use paper trading endpoint
 #     {r_multiple = 1.0, exit_pct = 0.5},
 #     {r_multiple = 2.0, exit_pct = 0.3},
 # ]
+
+# APLD preset - optimized 2025-12-29 with walk-forward validation
+# ⚠ Warning: High overfitting risk detected (75% degradation)
+# Using conservative risk (1%) instead of optimized (2%)
+[tradingbot.presets.apld]
+description = "APLD conservative - swing_lb=3, Alpaca zero-commission"
+interval = "1h"
+period = "1y"
+entry = "swing_break"
+exit = "swing"
+swing_lb = 3                 # Consensus across all folds
+risk_pct = 0.01              # Conservative (optimized was 2%, but high degradation)
+rr_ratio = 2.0               # Consensus from folds 2 & 3
+eod_exit = false
+indicators = ["adx"]         # Only trade when trending (ADX > 25)
+filter_mode = "all"
+partial_exit_levels = [
+    {r_multiple = 1.0, exit_pct = 0.5},  # Exit 50% at 1R, move stop to breakeven
+]

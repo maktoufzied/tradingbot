@@ -54,7 +54,9 @@ export function StatsPanel() {
 
         <div className="flex justify-between items-center">
           <span className="text-text-secondary text-sm">Profit Factor</span>
-          <span className="mono text-sm">{stats.profit_factor.toFixed(2)}</span>
+          <span className="mono text-sm">
+            {stats.profit_factor < 0 ? '-' : stats.profit_factor.toFixed(2)}
+          </span>
         </div>
 
         <div className="h-px bg-border my-2" />
@@ -62,14 +64,14 @@ export function StatsPanel() {
         <div className="flex justify-between items-center">
           <span className="text-text-secondary text-sm">Largest Win</span>
           <span className="mono text-sm text-positive">
-            +${stats.largest_win.toFixed(2)}
+            {stats.largest_win > 0 ? `+$${stats.largest_win.toFixed(2)}` : '-'}
           </span>
         </div>
 
         <div className="flex justify-between items-center">
           <span className="text-text-secondary text-sm">Largest Loss</span>
           <span className="mono text-sm text-negative">
-            ${stats.largest_loss.toFixed(2)}
+            {stats.largest_loss < 0 ? `$${stats.largest_loss.toFixed(2)}` : '-'}
           </span>
         </div>
 

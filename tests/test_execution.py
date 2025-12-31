@@ -313,7 +313,7 @@ class TestEdgeCases:
 
     def test_very_small_trade(self) -> None:
         """Small trades still calculate correctly."""
-        model = ExecutionModel()
+        model = ExecutionModel(spread_bps=2, slippage_bps=5, commission_per_share=0.005)
 
         gross, net = model.calculate_net_pnl(
             entry_signal=10.0,
@@ -356,7 +356,7 @@ class TestEdgeCases:
 
     def test_breakeven_trade_becomes_loss(self) -> None:
         """A breakeven trade (gross) becomes a loss after costs."""
-        model = ExecutionModel()
+        model = ExecutionModel(spread_bps=2, slippage_bps=5, commission_per_share=0.005)
 
         gross, net = model.calculate_net_pnl(
             entry_signal=100.0,
@@ -494,7 +494,7 @@ class TestRealisticScenarios:
 
     def test_scalping_unprofitable_with_costs(self) -> None:
         """Scalping small moves is unprofitable after costs."""
-        model = ExecutionModel()
+        model = ExecutionModel(spread_bps=2, slippage_bps=5, commission_per_share=0.005)
 
         # Scalping: buy at 100, sell at 100.20 (0.2% gain)
         # On 100 shares: $20 gross profit
@@ -506,7 +506,7 @@ class TestRealisticScenarios:
 
     def test_swing_trade_profitable_with_costs(self) -> None:
         """Swing trades with larger moves remain profitable."""
-        model = ExecutionModel()
+        model = ExecutionModel(spread_bps=2, slippage_bps=5, commission_per_share=0.005)
 
         # Swing trade: buy at 100, sell at 108 (8% gain)
         gross, net = model.calculate_net_pnl(100.0, 108.0, 100, "LONG")
@@ -517,7 +517,7 @@ class TestRealisticScenarios:
 
     def test_cost_impact_on_strategy_edge(self) -> None:
         """Costs can eliminate a marginal strategy edge."""
-        model = ExecutionModel()
+        model = ExecutionModel(spread_bps=2, slippage_bps=5, commission_per_share=0.005)
 
         # Strategy with 51% win rate, 1:1 R:R
         # Wins: $2/share, Losses: $2/share

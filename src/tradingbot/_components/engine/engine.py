@@ -9,7 +9,7 @@ import polars as pl
 
 from tradingbot.config import get_engine_config, get_strategy_config
 from tradingbot.interfaces import BrokerProtocol, DataFeedProtocol
-from tradingbot.types import Bar, Direction, Order, PendingOrder, Position, Signal
+from tradingbot.types import Bar, BarOrigin, Direction, Order, PendingOrder, Position, Signal
 
 from .. import sounds
 from ..brokers.plugins.paper import PaperBroker
@@ -21,6 +21,7 @@ from .callbacks import EngineCallbacks
 from .events import (
     AccountEvent,
     BarEvent,
+    ClockEvent,
     EngineStartedEvent,
     EngineStoppedEvent,
     MessageEvent,
@@ -115,6 +116,17 @@ class TradingEngine:
             )
         )
 
+    async def _emit_clock(self) -> None:
+        clock = self._broker.get_clock()
+        if clock:
+            await self._cb.emit_clock(
+                ClockEvent(
+                    is_open=clock.is_open,
+                    next_open=clock.next_open,
+                    next_close=clock.next_close,
+                )
+            )
+
     async def start(self) -> None:
         """Start live trading."""
         await self._cb.emit_started(
@@ -125,6 +137,9 @@ class TradingEngine:
                 dry_run=self._dry_run,
             )
         )
+
+        # Emit initial clock status
+        await self._emit_clock()
 
         # Check if market is open
         clock = self._broker.get_clock()
@@ -145,11 +160,41 @@ class TradingEngine:
         account = self._broker.get_account()
         self._live_risk.reset_daily(account.equity)
 
+        # Sync today's trades from broker (if available)
+        if hasattr(self._broker, "get_today_trades"):
+            trades = self._broker.get_today_trades()
+            for trade in trades:
+                # Record trade stats
+                self._live_risk.record_trade_pnl(trade.pnl)
+                # Emit trade event to TUI
+                await self._cb.emit_trade_closed(
+                    TradeClosedEvent(
+                        direction=trade.direction,
+                        symbol=trade.symbol,
+                        entry=trade.entry_price,
+                        exit_price=trade.exit_price,
+                        size=trade.size,
+                        pnl=trade.pnl,
+                        reason="SYNCED",
+                    )
+                )
+            if trades:
+                total_pnl = sum(t.pnl for t in trades)
+                await self._emit_message(
+                    f"Synced {len(trades)} trade(s) from today, P&L: ${total_pnl:+.2f}",
+                    MessageLevel.INFO,
+                )
+
         # Load historical data to bootstrap
         await self._load_history()
 
         # Sync existing positions from broker
         await self._sync_broker_positions()
+
+        # Emit initial account/stats/risk to TUI
+        await self._emit_account()
+        await self._emit_stats()
+        await self._emit_risk()
 
         # Subscribe to feed
         await self._feed.subscribe(self._symbols, self._on_bar)
@@ -193,6 +238,19 @@ class TradingEngine:
                     self._bars[symbol].append(bar)
 
                 await self._emit_message(f"✓ {symbol}: {len(self._bars[symbol])} bars loaded", MessageLevel.SUCCESS)
+
+                # Emit recent bars to populate TUI sparkline immediately (last 60 bars)
+                if self._bars[symbol] and len(self._bars[symbol]) >= MIN_BARS_REQUIRED:
+                    hist_df = self._bars_to_df(symbol)
+                    bars_to_emit = list(self._bars[symbol])[-60:]
+                    for bar in bars_to_emit:
+                        # Use HOLD signal for historical bars (avoid triggering trades)
+                        await self._cb.emit_bar(BarEvent(bar=bar, signal=Signal.HOLD, trend="NEUTRAL", position=None))
+                    # Emit final bar with actual signal/trend
+                    last_bar = bars_to_emit[-1]
+                    signal, details = self._sig_gen.generate(hist_df, len(hist_df) - 1, False)
+                    trend = str(details.get("trend", "NEUTRAL"))
+                    await self._cb.emit_bar(BarEvent(bar=last_bar, signal=signal, trend=trend, position=None))
             except Exception as e:
                 await self._emit_message(f"✗ {symbol}: {e}", MessageLevel.ERROR)
 
@@ -235,6 +293,12 @@ class TradingEngine:
     async def _on_bar(self, bar: Bar) -> None:
         """Process new bar - main trading logic."""
         if not self._running:
+            return
+
+        # REALTIME bars are for chart updates only - emit and skip strategy
+        if bar.origin == BarOrigin.REALTIME:
+            current_pos = self._positions.get(bar.symbol)
+            await self._cb.emit_bar(BarEvent(bar=bar, signal=Signal.HOLD, trend="", position=current_pos))
             return
 
         # Validate symbol - only process bars for symbols we're configured to trade
@@ -288,6 +352,7 @@ class TradingEngine:
         await self._emit_stats()
         await self._emit_account()
         await self._emit_risk()
+        await self._emit_clock()
 
     def _bars_to_df(self, symbol: str) -> pl.DataFrame:
         """Convert bar deque to DataFrame."""
@@ -350,7 +415,15 @@ class TradingEngine:
             self._live_risk.update_position_count(len(self._positions))
             return
 
-        order = Order(symbol=bar.symbol, direction=direction, size=size, order_type="MARKET")
+        # Use bracket order with SL/TP so Alpaca manages exits
+        order = Order(
+            symbol=bar.symbol,
+            direction=direction,
+            size=size,
+            order_type="MARKET",
+            stop_loss=stop,
+            take_profit=tp,
+        )
         result = self._broker.submit_order(order)
 
         if result.status == "FILLED":
@@ -417,20 +490,37 @@ class TradingEngine:
         if bar.symbol in self._pending_closes:
             return
 
+        # Sync with broker - check if position was closed by bracket order (SL/TP on Alpaca)
+        broker_pos = self._broker.get_position(bar.symbol)
+        if broker_pos is None:
+            # Position closed by Alpaca (bracket order SL/TP triggered)
+            # Determine exit reason based on price action
+            if position.direction == "LONG":
+                exit_reason = "STOP_LOSS" if bar.low <= position.stop_loss else "TAKE_PROFIT"
+            else:
+                exit_reason = "STOP_LOSS" if bar.high >= position.stop_loss else "TAKE_PROFIT"
+
+            # Calculate P&L and record trade
+            exit_price = position.stop_loss if exit_reason == "STOP_LOSS" else position.take_profit
+            pnl = (exit_price - position.entry_price) * position.size
+            if position.direction == "SHORT":
+                pnl = -pnl
+
+            del self._positions[bar.symbol]
+            self._live_risk.update_position_count(len(self._positions))
+            self._live_risk.record_trade_pnl(pnl)
+            await self._emit_message(
+                f"✓ Position closed by Alpaca ({exit_reason}) at ${exit_price:.2f}, P&L: ${pnl:+.2f}",
+                MessageLevel.SUCCESS if pnl > 0 else MessageLevel.WARNING,
+            )
+            sounds.play(sounds.PROFIT if pnl > 0 else sounds.LOSS)
+            return
+
         should_exit = False
         exit_reason = ""
 
-        # Check stop-loss and take-profit first
-        if position.direction == "LONG":
-            if bar.low <= position.stop_loss:
-                should_exit, exit_reason = True, "STOP_LOSS"
-            elif bar.high >= position.take_profit:
-                should_exit, exit_reason = True, "TAKE_PROFIT"
-        else:
-            if bar.high >= position.stop_loss:
-                should_exit, exit_reason = True, "STOP_LOSS"
-            elif bar.low <= position.take_profit:
-                should_exit, exit_reason = True, "TAKE_PROFIT"
+        # Skip internal SL/TP monitoring - Alpaca bracket order handles it
+        # Only check time-based exits here
 
         # Check time-based exits if no SL/TP triggered
         if not should_exit:

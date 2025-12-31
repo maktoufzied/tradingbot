@@ -13,10 +13,10 @@ from typing import Final
 
 from tradingbot.types import Direction
 
-# Default costs based on typical US equity trading
-DEFAULT_SPREAD_BPS: Final = 2.0  # 2 basis points bid-ask spread
-DEFAULT_SLIPPAGE_BPS: Final = 5.0  # 5 basis points slippage
-DEFAULT_COMMISSION_PER_SHARE: Final = 0.005  # $0.005 per share (typical for Alpaca)
+# Default costs: zero (configure in tradingbot.toml if needed)
+DEFAULT_SPREAD_BPS: Final = 0.0
+DEFAULT_SLIPPAGE_BPS: Final = 0.0
+DEFAULT_COMMISSION_PER_SHARE: Final = 0.0
 
 
 @dataclass(frozen=True)

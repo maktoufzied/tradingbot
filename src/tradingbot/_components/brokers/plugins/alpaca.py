@@ -1,17 +1,39 @@
 """Alpaca broker implementation for paper and live trading."""
 
 import os
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
 
 from alpaca.common.exceptions import APIError
 from alpaca.trading.client import TradingClient
-from alpaca.trading.enums import OrderSide, TimeInForce
-from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.enums import OrderClass, OrderSide, QueryOrderStatus, TimeInForce
+from alpaca.trading.requests import (
+    GetOrdersRequest,
+    GetPortfolioHistoryRequest,
+    MarketOrderRequest,
+    StopLossRequest,
+    TakeProfitRequest,
+)
 
 from tradingbot.config import get_engine_config
 from tradingbot.interfaces import BrokerProtocol
 from tradingbot.types import AccountInfo, BrokerPosition, Direction, MarketClock, Order, OrderResult, OrderStatus
+
+
+@dataclass
+class ClosedTrade:
+    """A closed trade (entry + exit) from broker history."""
+
+    symbol: str
+    direction: Direction
+    size: float
+    entry_price: float
+    exit_price: float
+    pnl: float
+    entry_time: datetime
+    exit_time: datetime
+
 
 ALPACA_API_KEY_ENV: Final = "ALPACA_API_KEY"
 ALPACA_SECRET_KEY_ENV: Final = "ALPACA_SECRET_KEY"
@@ -53,17 +75,35 @@ class AlpacaBroker(BrokerProtocol):
         return "alpaca"
 
     def submit_order(self, order: Order) -> OrderResult:
-        """Submit a market order to Alpaca."""
+        """Submit an order to Alpaca.
+
+        If stop_loss and take_profit are provided, submits a bracket order (OCO).
+        Otherwise submits a simple market order.
+        """
         try:
             side = OrderSide.BUY if order.direction == "LONG" else OrderSide.SELL
 
-            order_request = MarketOrderRequest(
-                symbol=order.symbol,
-                qty=order.size,
-                side=side,
-                time_in_force=TimeInForce.DAY,
-                client_order_id=order.client_id,
-            )
+            # Use bracket order if SL/TP provided
+            if order.stop_loss is not None and order.take_profit is not None:
+                order_request = MarketOrderRequest(
+                    symbol=order.symbol,
+                    qty=order.size,
+                    side=side,
+                    time_in_force=TimeInForce.GTC,  # Good-til-canceled for bracket
+                    client_order_id=order.client_id,
+                    order_class=OrderClass.BRACKET,
+                    stop_loss=StopLossRequest(stop_price=order.stop_loss),
+                    take_profit=TakeProfitRequest(limit_price=order.take_profit),
+                )
+            else:
+                # Simple market order
+                order_request = MarketOrderRequest(
+                    symbol=order.symbol,
+                    qty=order.size,
+                    side=side,
+                    time_in_force=TimeInForce.DAY,
+                    client_order_id=order.client_id,
+                )
 
             alpaca_order: Any = self._get_client().submit_order(order_data=order_request)
 
@@ -194,3 +234,75 @@ class AlpacaBroker(BrokerProtocol):
             market_value=float(alpaca_pos.market_value),
             unrealized_pnl=float(alpaca_pos.unrealized_pl),
         )
+
+    def get_today_pnl(self) -> float:
+        """Get today's realized P&L from portfolio history.
+
+        Returns the total P&L for today (intraday).
+        """
+        try:
+            req = GetPortfolioHistoryRequest(period="1D", timeframe="1Min", intraday_reporting="market_hours")
+            history: Any = self._get_client().get_portfolio_history(req)
+
+            # profit_loss is a list of P&L values, last value is current
+            if history.profit_loss and len(history.profit_loss) > 0:
+                # Return the latest P&L value (total for today)
+                return float(history.profit_loss[-1]) if history.profit_loss[-1] is not None else 0.0
+            return 0.0
+        except APIError:
+            return 0.0
+
+    def get_today_trades(self) -> list[ClosedTrade]:
+        """Get today's closed trades (matched buy/sell pairs).
+
+        Returns list of ClosedTrade objects representing completed round-trips.
+        """
+        try:
+            today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+            req = GetOrdersRequest(status=QueryOrderStatus.CLOSED, after=today, limit=100)
+            orders: Any = self._get_client().get_orders(req)
+
+            # Filter to filled orders only and sort by fill time
+            filled: list[Any] = [o for o in orders if o.status.value == "filled" and o.filled_avg_price and o.filled_at]
+            filled.sort(key=lambda o: o.filled_at)
+
+            # Match buy/sell pairs by symbol to create trades
+            trades: list[ClosedTrade] = []
+            pending_entries: dict[str, Any] = {}  # symbol -> entry order
+
+            for order in filled:
+                symbol = str(order.symbol)
+                qty = float(order.filled_qty)
+                price = float(order.filled_avg_price)
+                fill_time: datetime = order.filled_at
+
+                if symbol not in pending_entries:
+                    # First order for this symbol = entry
+                    pending_entries[symbol] = order
+                else:
+                    # Second order = exit, create trade
+                    entry = pending_entries.pop(symbol)
+                    entry_side = entry.side.value
+                    entry_price = float(entry.filled_avg_price)
+                    entry_time: datetime = entry.filled_at
+
+                    # Determine direction and P&L
+                    direction: Direction = "LONG" if entry_side == "buy" else "SHORT"
+                    pnl = (price - entry_price) * qty if direction == "LONG" else (entry_price - price) * qty
+
+                    trades.append(
+                        ClosedTrade(
+                            symbol=symbol,
+                            direction=direction,
+                            size=qty,
+                            entry_price=entry_price,
+                            exit_price=price,
+                            pnl=pnl,
+                            entry_time=entry_time,
+                            exit_time=fill_time,
+                        )
+                    )
+
+            return trades
+        except APIError:
+            return []

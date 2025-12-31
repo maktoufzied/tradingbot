@@ -72,7 +72,9 @@ class EventHub:
 
     def on(self, channel: UIChannel, callback: Callback) -> Unsubscribe:
         """Register callback for a channel. Returns unsubscribe function."""
-        self._callbacks[channel].append(callback)
+        # Prevent duplicate callbacks
+        if callback not in self._callbacks[channel]:
+            self._callbacks[channel].append(callback)
 
         def unsubscribe() -> None:
             with contextlib.suppress(ValueError):
@@ -111,6 +113,10 @@ class EventHub:
     def on_chart(self, callback: Callback) -> Unsubscribe:
         """Register callback for chart data updates."""
         return self.on(UIChannel.CHART, callback)
+
+    def on_log(self, callback: Callback) -> Unsubscribe:
+        """Register callback for log messages."""
+        return self.on(UIChannel.LOG, callback)
 
     # --- State Access ---
 
@@ -203,6 +209,20 @@ class EventHub:
         self._charts[chart.symbol] = chart
         await self._broadcast(UIChannel.CHART, chart)
 
+    async def broadcast_log(self, log_entry: dict[str, str]) -> None:
+        """Broadcast a log entry to all clients (callbacks + WebSocket)."""
+        # Invoke callbacks (for TUI)
+        for cb in self._callbacks[UIChannel.LOG]:
+            try:
+                result = cb(log_entry)
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception as e:
+                logger.warning(f"Callback error on log: {e}")
+
+        # Send to WebSocket clients (for web UI)
+        await self._broadcast_raw(UIChannel.LOG, log_entry)
+
     # --- WebSocket Client Management ---
 
     def add_websocket(self, ws: Any) -> None:
@@ -232,12 +252,16 @@ class EventHub:
                 logger.warning(f"Callback error on {channel.value}: {e}")
 
         # Send to WebSocket clients
+        await self._broadcast_raw(channel, data.to_dict() if hasattr(data, "to_dict") else data)
+
+    async def _broadcast_raw(self, channel: UIChannel, data: Any) -> None:
+        """Broadcast raw data to WebSocket clients (no callback invocation)."""
         if not self._websockets:
             return
 
         message = {
             "channel": channel.value,
-            "data": data.to_dict() if hasattr(data, "to_dict") else data,
+            "data": data,
         }
         json_msg = json.dumps(message)
 

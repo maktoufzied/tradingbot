@@ -21,6 +21,7 @@ class UIChannel(Enum):
     RISK = "risk"
     STATUS = "status"
     CHART = "chart"
+    LOG = "log"
 
 
 @dataclass(slots=True)
@@ -236,19 +237,25 @@ class SystemStatus:
 
 @dataclass(slots=True)
 class ChartUpdate:
-    """Price history for sparkline charts."""
+    """OHLC candle data for charts."""
 
     symbol: str
-    prices: list[float]
     timestamps: list[datetime]
+    opens: list[float]
+    highs: list[float]
+    lows: list[float]
+    closes: list[float]
     swing_highs: list[float]
     swing_lows: list[float]
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "symbol": self.symbol,
-            "prices": self.prices,
             "timestamps": [t.isoformat() for t in self.timestamps],
+            "opens": self.opens,
+            "highs": self.highs,
+            "lows": self.lows,
+            "closes": self.closes,
             "swing_highs": self.swing_highs,
             "swing_lows": self.swing_lows,
         }

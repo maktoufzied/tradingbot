@@ -16,9 +16,6 @@ from ..registry import register_exit
 # Maximum allowed stop distance from entry price
 MAX_STOP_DISTANCE_PCT: Final[float] = 0.05  # 5%
 
-# Maximum allowed take-profit distance
-MAX_TP_DISTANCE_PCT: Final[float] = 0.015  # 1.5%
-
 
 class ATRExitStrategy:
     """Exit strategy using ATR for SL/TP placement."""
@@ -61,28 +58,30 @@ class ATRExitStrategy:
         df: pl.DataFrame,
         swings: list[SwingPoint],
         rr_ratio: float,
+        stop_pct: float = 0.01,
     ) -> Exit:
         """Calculate ATR-based stop-loss and take-profit."""
+        _ = swings  # Not used by ATR strategy
         atr = self._compute_atr(df)
 
         # Fallback to percentage-based if ATR unavailable
         if atr is None:
-            stop_distance = entry * 0.02
-            tp_distance = min(stop_distance * rr_ratio, entry * MAX_TP_DISTANCE_PCT)
+            stop_distance = entry * stop_pct
         else:
             stop_distance = atr * self._stop_atr_mult
             # Cap stop distance
             max_stop = entry * MAX_STOP_DISTANCE_PCT
             stop_distance = min(stop_distance, max_stop)
-            # TP based on RR, capped
-            tp_distance = min(stop_distance * rr_ratio, entry * MAX_TP_DISTANCE_PCT)
+
+        # TP based on RR ratio (no cap - honor the configured ratio)
+        tp_distance = stop_distance * rr_ratio
 
         if direction == "LONG":
-            stop = entry - stop_distance
-            tp = entry + tp_distance
+            stop = round(entry - stop_distance, 2)
+            tp = round(entry + tp_distance, 2)
         else:
-            stop = entry + stop_distance
-            tp = entry - tp_distance
+            stop = round(entry + stop_distance, 2)
+            tp = round(entry - tp_distance, 2)
 
         return Exit(stop_loss=stop, take_profit=tp)
 

@@ -1,6 +1,7 @@
 """Event types for the trading engine."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 
 from tradingbot.types import Bar, Direction, Position, Signal
@@ -94,3 +95,10 @@ class RiskEvent:
     circuit_breaker_active: bool
     can_trade: bool
     blocked_reason: str | None
+
+
+@dataclass
+class ClockEvent:
+    is_open: bool
+    next_open: datetime | None
+    next_close: datetime | None

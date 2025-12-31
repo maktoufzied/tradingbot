@@ -27,6 +27,7 @@ Examples:
   tradingbot AAPL --atr-sizing         # Volatility-adjusted position sizing
   tradingbot AAPL --atr-trail          # ATR-based trailing stop (2x ATR)
   tradingbot AAPL --atr-trail --atr-trail-mult 3  # ATR trail with 3x multiplier
+  tradingbot AAPL --atr-trail --atr-trail-start 1  # Start trailing after 1R profit
   tradingbot AAPL --partial-exits      # Exit 50%% at 1R, move stop to breakeven
         """,
     )
@@ -91,6 +92,12 @@ Examples:
         type=float,
         metavar="N",
         help="ATR trail multiplier (default: 2.0, requires --atr-trail)",
+    )
+    parser.add_argument(
+        "--atr-trail-start",
+        type=float,
+        metavar="R",
+        help="Start ATR trailing after this R-multiple profit (default: 0 = immediate)",
     )
 
     # Partial exit options
@@ -193,6 +200,7 @@ Examples:
                 use_atr_sizing=args.atr_sizing,
                 atr_trail=args.atr_trail,
                 atr_trail_multiplier=args.atr_trail_mult,
+                atr_trail_activation_r=args.atr_trail_start,
                 partial_exit_levels=partial_levels,
             )
         else:
@@ -216,6 +224,7 @@ Examples:
                 use_atr_sizing=args.atr_sizing,
                 atr_trail=args.atr_trail,
                 atr_trail_multiplier=args.atr_trail_mult,
+                atr_trail_activation_r=args.atr_trail_start,
                 partial_exit_levels=partial_levels,
             )
     except ValueError as e:

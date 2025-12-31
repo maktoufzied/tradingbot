@@ -100,6 +100,38 @@ uv run tradingbot-cache maintain     # Run cache maintenance
 4. New component → Update ARCHITECTURE.md (directory structure, data flow)
 5. Cache changes → Update README.md (cache commands), ARCHITECTURE.md (cache section)
 
+## Sub-Agents
+
+This project has specialized sub-agents for specific tasks. Use them proactively:
+
+### day-trader-validator
+
+**ALWAYS call this agent after modifying any functional trading code.** This includes:
+
+- Entry/exit strategy logic (`strategies/entry/`, `strategies/exit/`)
+- Signal generation (`signals.py`, `bot.py`)
+- Position sizing and risk management (`sizing.py`, `live_risk.py`)
+- Stop loss, take profit, or trailing stop logic
+- Indicator implementations (`indicators/`)
+- Order execution logic (`execution.py`, `brokers/`)
+- Backtest engine logic (`runner.py`, `bot.py`)
+
+The agent validates correctness, day trading appropriateness, and risk management.
+
+### backtest
+
+Use this agent when:
+- User asks to test a strategy or configuration
+- Validating code changes with historical data
+- Comparing different parameter combinations
+
+### optimize
+
+Use this agent when:
+- User wants to find optimal parameters for a strategy
+- Searching for best risk/reward configurations
+- Running Optuna-based hyperparameter tuning
+
 ## Key Concepts
 
 - Swing points: Local highs/lows used to identify market structure

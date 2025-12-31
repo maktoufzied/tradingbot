@@ -101,6 +101,7 @@ uv run tradingbot-backtest <SYMBOLS> [OPTIONS]
 | `--atr-sizing` | Volatility-adjusted position sizing (reduces size in high volatility) | - |
 | `--atr-trail` | ATR-based trailing stop (trails at high_water - N×ATR) | - |
 | `--atr-trail-mult N` | ATR trail multiplier (requires `--atr-trail`) | `2.0` |
+| `--atr-trail-start R` | Start ATR trailing after R-multiple profit (0 = immediate) | `0` |
 | `--partial-exits` | Enable partial profit taking (exit 50% at 1R, move stop to breakeven) | - |
 
 **Examples:**
@@ -120,6 +121,7 @@ task backtest -- SPY --speed 10                  # Simulate 10 bars/sec
 task backtest -- SPY --atr-sizing                # Volatility-adjusted sizing
 task backtest -- SPY --atr-trail                 # ATR trailing stop (2× ATR)
 task backtest -- SPY --atr-trail --atr-trail-mult 3  # Trail at 3× ATR
+task backtest -- SPY --atr-trail --atr-trail-start 1 # Start trailing after 1R profit
 task backtest -- SPY --partial-exits             # Take 50% profit at 1R
 ```
 
@@ -153,11 +155,14 @@ uv run tradingbot-optuna <SYMBOL> [OPTIONS]
 
 ```bash
 task optuna -- SPY                              # Default: 100 trials, calmar objective
+task optuna -- SPY --seed 42                    # Reproducible results (recommended)
 task optuna -- AAPL --trials 200                # More trials for better results
 task optuna -- MSFT --objective multi           # Pareto optimization
 task optuna -- AAPL --save-preset aapl_best     # Save best params
 task optuna -- SPY --walk-forward               # Validate with walk-forward
 ```
+
+**Note:** Without `--seed`, Optuna's TPE sampler will explore different parameter combinations each run, leading to different "best" results. Use `--seed` for reproducible optimization.
 
 ### `tradingbot-optimize`
 

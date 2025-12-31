@@ -76,6 +76,7 @@ class ExitStrategy(Protocol):
         df: pl.DataFrame,
         swings: list[SwingPoint],
         rr_ratio: float,
+        stop_pct: float = 0.01,
     ) -> Exit:
         """Calculate exit parameters for a position.
 
@@ -85,6 +86,7 @@ class ExitStrategy(Protocol):
             df: OHLCV DataFrame
             swings: Recent swing points
             rr_ratio: Risk/reward ratio for RR-based TP
+            stop_pct: Stop loss percentage (for fixed exit strategy)
 
         Returns:
             Exit with stop_loss and take_profit prices

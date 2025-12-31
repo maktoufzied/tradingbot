@@ -16,6 +16,11 @@ class Signal(Enum):
     HOLD = "HOLD"
 
 
+class BarOrigin(Enum):
+    REALTIME = "realtime"  # Raw 1m bar from feed
+    AGGREGATED = "aggregated"  # Aggregated to strategy interval (e.g., 5m)
+
+
 Direction = Literal["LONG", "SHORT"]
 ExitReason = Literal["STOP_LOSS", "TAKE_PROFIT", "PARTIAL_EXIT", "TIME_EXIT", "EOD_EXIT"]
 OrderType = Literal["MARKET", "LIMIT", "STOP"]
@@ -108,11 +113,16 @@ class Bar:
     low: float
     close: float
     volume: int
+    origin: BarOrigin = BarOrigin.AGGREGATED  # Default for backward compat
 
 
 @dataclass
 class Order:
-    """Order to submit to broker."""
+    """Order to submit to broker.
+
+    For bracket orders (entry + SL + TP), provide stop_loss and take_profit.
+    The broker will place all three orders atomically.
+    """
 
     symbol: str
     direction: Direction
@@ -121,6 +131,9 @@ class Order:
     limit_price: float | None = None
     stop_price: float | None = None
     client_id: str | None = None
+    # Bracket order fields (SL/TP placed as OCO orders)
+    stop_loss: float | None = None
+    take_profit: float | None = None
 
 
 @dataclass

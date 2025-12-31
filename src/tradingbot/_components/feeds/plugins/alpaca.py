@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import logging
 import os
 from collections.abc import Awaitable, Callable, Collection
 from datetime import datetime, timedelta
@@ -17,9 +18,11 @@ from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 from tradingbot.config import get_cache_config, get_engine_config
 from tradingbot.interfaces import DataFeedProtocol
-from tradingbot.types import Bar
+from tradingbot.types import Bar, BarOrigin
 
 from ...cache.db import insert_bars
+
+logger = logging.getLogger("tradingbot.feed")
 
 ALPACA_API_KEY_ENV: Final = "ALPACA_API_KEY"
 ALPACA_SECRET_KEY_ENV: Final = "ALPACA_SECRET_KEY"
@@ -34,16 +37,13 @@ class AlpacaFeed(DataFeedProtocol):
     (e.g., 5m), we aggregate 1m bars into the configured interval.
     """
 
-    # Callback type for raw bar progress: (symbol, price, collected, target)
-    RawBarCallback = Callable[[str, float, int, int], None]
-
     def __init__(self) -> None:
         self._api_key: str | None = None
         self._secret_key: str | None = None
+        self._data_feed: DataFeed | None = None
         self._stream: StockDataStream | None = None
         self._symbols: list[str] = []
         self._callback: Callable[[Bar], Awaitable[None] | None] | None = None
-        self._raw_bar_callback: AlpacaFeed.RawBarCallback | None = None
         self._running = False
         self._task: asyncio.Task[None] | None = None
         self._reconnect_attempts = 0
@@ -51,10 +51,6 @@ class AlpacaFeed(DataFeedProtocol):
         self._pending_bars: dict[str, list[Bar]] = {}
         self._bars_needed: dict[str, int] = {}  # Target bars for current interval per symbol
         self._bar_interval_minutes = self._parse_interval_minutes()
-
-    def set_raw_bar_callback(self, callback: Callable[[str, float, int, int], None] | None) -> None:
-        """Set callback for raw 1m bar progress updates."""
-        self._raw_bar_callback = callback
 
     def _parse_interval_minutes(self) -> int:
         """Parse bar_interval config into minutes."""
@@ -65,10 +61,10 @@ class AlpacaFeed(DataFeedProtocol):
             return int(interval[:-1]) * 60
         return 1  # Default to 1 minute
 
-    def _ensure_credentials(self) -> tuple[str, str]:
-        """Get credentials, raising if not available (lazy initialization)."""
-        if self._api_key is not None and self._secret_key is not None:
-            return self._api_key, self._secret_key
+    def _ensure_credentials(self) -> tuple[str, str, DataFeed]:
+        """Get credentials and data feed, raising if not available (lazy initialization)."""
+        if self._api_key is not None and self._secret_key is not None and self._data_feed is not None:
+            return self._api_key, self._secret_key, self._data_feed
 
         config = get_engine_config().alpaca
 
@@ -83,9 +79,13 @@ class AlpacaFeed(DataFeedProtocol):
                 f"or configure in tradingbot.toml under [tradingbot.engine.alpaca]."
             )
 
+        # Parse data feed from config
+        data_feed = DataFeed.SIP if config.data_feed.lower() == "sip" else DataFeed.IEX
+
         self._api_key = api_key
         self._secret_key = secret_key
-        return api_key, secret_key
+        self._data_feed = data_feed
+        return api_key, secret_key, data_feed
 
     @property
     def name(self) -> str:
@@ -132,7 +132,7 @@ class AlpacaFeed(DataFeedProtocol):
 
     async def _run_stream(self) -> None:
         """Run the WebSocket stream with reconnection logic."""
-        api_key, secret_key = self._ensure_credentials()
+        api_key, secret_key, data_feed = self._ensure_credentials()
 
         # Backfill missing 1m bars for current interval before starting stream
         if self._bar_interval_minutes > 1:
@@ -140,17 +140,18 @@ class AlpacaFeed(DataFeedProtocol):
 
         while self._running:
             try:
-                self._stream = StockDataStream(api_key, secret_key)
+                self._stream = StockDataStream(api_key, secret_key, feed=data_feed)
 
                 # Subscribe to bars with async handler
                 self._stream.subscribe_bars(self._handle_bar_async, *self._symbols)
 
                 self._reconnect_attempts = 0
                 interval = get_engine_config().bar_interval
-                print(f"[ALPACA] Connected to WebSocket. Subscribed to: {', '.join(self._symbols)} ({interval} bars)")
-                print(
-                    "[ALPACA] Waiting for market data (bars only arrive during market hours: 9:30 AM - 4:00 PM ET)..."
+                feed_name = "SIP" if data_feed == DataFeed.SIP else "IEX"
+                logger.info(
+                    f"Connected to Alpaca WebSocket ({feed_name} feed). Subscribed: {', '.join(self._symbols)} (1m bars → {interval})"
                 )
+                logger.info("Waiting for market data (bars arrive during market hours: 9:30 AM - 4:00 PM ET)")
 
                 # Run in a thread since StockDataStream.run() is blocking
                 loop = asyncio.get_event_loop()
@@ -162,11 +163,11 @@ class AlpacaFeed(DataFeedProtocol):
 
                 self._reconnect_attempts += 1
                 if self._reconnect_attempts >= MAX_RECONNECT_ATTEMPTS:
-                    print(f"[ALPACA] Max reconnection attempts reached. Last error: {e}")
+                    logger.error(f"Max reconnection attempts reached. Last error: {e}")
                     self._running = False
                     break
 
-                print(f"[ALPACA] Connection lost: {e}. Reconnecting in {RECONNECT_DELAY_SECONDS}s...")
+                logger.warning(f"Connection lost: {e}. Reconnecting in {RECONNECT_DELAY_SECONDS}s...")
                 await asyncio.sleep(RECONNECT_DELAY_SECONDS)
 
     async def _backfill_current_interval(self) -> None:
@@ -177,7 +178,7 @@ class AlpacaFeed(DataFeedProtocol):
         """
         from datetime import UTC
 
-        api_key, secret_key = self._ensure_credentials()
+        api_key, secret_key, data_feed = self._ensure_credentials()
         interval = self._bar_interval_minutes
 
         # Get current time in UTC
@@ -198,7 +199,7 @@ class AlpacaFeed(DataFeedProtocol):
         # End time is just before current minute (we'll get live bar for current)
         end_time = now.replace(second=0, microsecond=0)
 
-        print(f"[ALPACA] Backfilling {bars_to_fetch} bar(s) for current {interval}m interval...")
+        logger.info(f"Backfilling {bars_to_fetch} bar(s) for current {interval}m interval...")
 
         try:
             # Fetch 1m bars for each symbol
@@ -211,7 +212,7 @@ class AlpacaFeed(DataFeedProtocol):
                     timeframe=TimeFrame(1, TimeFrameUnit.Minute),
                     start=start_time,
                     end=end_time,
-                    feed=DataFeed.IEX,  # Use free IEX data (SIP requires paid subscription)
+                    feed=data_feed,
                 )
 
                 def fetch_bars(req: StockBarsRequest = request) -> Any:
@@ -224,7 +225,7 @@ class AlpacaFeed(DataFeedProtocol):
                 # Note: BarSet's __contains__ doesn't work correctly, access via .data dict
                 symbol_bars = bars_response.data.get(symbol, []) if bars_response.data else []
                 if not symbol_bars:
-                    print(f"[ALPACA] No historical bars available for {symbol}")
+                    logger.warning(f"No historical bars available for {symbol}")
                     continue
 
                 # Pre-populate pending bars
@@ -243,18 +244,14 @@ class AlpacaFeed(DataFeedProtocol):
                     )
                     self._pending_bars[symbol].append(bar)
 
-                    # Emit progress callback for backfilled bars
-                    if self._raw_bar_callback:
-                        self._raw_bar_callback(symbol, bar.close, len(self._pending_bars[symbol]), interval)
-
                 # Set bars_needed to full interval since we're backfilling from start
                 self._bars_needed[symbol] = interval
 
                 fetched = len(self._pending_bars[symbol])
-                print(f"[ALPACA] Backfilled {fetched}/{bars_to_fetch} bar(s) for {symbol}")
+                logger.info(f"Backfilled {fetched}/{bars_to_fetch} bar(s) for {symbol}")
 
         except Exception as e:
-            print(f"[ALPACA] Backfill failed: {e}. Starting fresh.")
+            logger.warning(f"Backfill failed: {e}. Starting fresh.")
             # Clear any partial state on failure
             self._pending_bars.clear()
             self._bars_needed.clear()
@@ -267,28 +264,44 @@ class AlpacaFeed(DataFeedProtocol):
         if not self._callback:
             return
 
-        # Convert Alpaca bar to our Bar model
+        from datetime import UTC
+
+        # Log bar arrival with wall clock time for debugging latency
+        now = datetime.now(UTC)
+        bar_time = alpaca_bar.timestamp.replace(tzinfo=None) if alpaca_bar.timestamp.tzinfo else alpaca_bar.timestamp
+        latency_sec = (now.replace(tzinfo=None) - bar_time).total_seconds()
+        logger.info(
+            f"1m bar: {alpaca_bar.symbol} {bar_time.strftime('%H:%M')} @ ${alpaca_bar.close:.2f} (latency: {latency_sec:.0f}s)"
+        )
+
+        # Convert Alpaca bar to our Bar model (realtime 1m bar)
         bar = Bar(
             symbol=alpaca_bar.symbol,
-            datetime=alpaca_bar.timestamp.replace(tzinfo=None) if alpaca_bar.timestamp.tzinfo else alpaca_bar.timestamp,
+            datetime=bar_time,
             open=float(alpaca_bar.open),
             high=float(alpaca_bar.high),
             low=float(alpaca_bar.low),
             close=float(alpaca_bar.close),
             volume=int(alpaca_bar.volume),
+            origin=BarOrigin.REALTIME,
         )
 
-        # If 1m interval, emit directly
+        # Emit 1m realtime bar for chart updates
+        result = self._callback(bar)
+        if asyncio.iscoroutine(result):
+            await result
+
+        # If 1m interval, realtime bar is also the aggregated bar
         if self._bar_interval_minutes == 1:
             self._persist_bar(bar)
-            result = self._callback(bar)
-            if asyncio.iscoroutine(result):
-                await result
             return
 
         # Aggregate bars for larger intervals
         aggregated = self._aggregate_bar(bar)
         if aggregated:
+            logger.info(
+                f"{self._bar_interval_minutes}m bar: {aggregated.symbol} {aggregated.datetime.strftime('%H:%M')} @ ${aggregated.close:.2f}"
+            )
             self._persist_bar(aggregated)
             result = self._callback(aggregated)
             if asyncio.iscoroutine(result):
@@ -325,12 +338,6 @@ class AlpacaFeed(DataFeedProtocol):
 
         pending = self._pending_bars[symbol]
         pending.append(bar)
-        bars_needed = self._bars_needed.get(symbol, interval)
-
-        # Emit raw bar callback for progress tracking
-        if self._raw_bar_callback:
-            collected = min(len(pending), bars_needed)
-            self._raw_bar_callback(symbol, bar.close, collected, bars_needed)
 
         if not is_complete:
             return None
@@ -353,6 +360,7 @@ class AlpacaFeed(DataFeedProtocol):
             low=min(b.low for b in valid_bars),
             close=valid_bars[-1].close,
             volume=sum(b.volume for b in valid_bars),
+            origin=BarOrigin.AGGREGATED,
         )
 
         # Clear pending bars for next interval
@@ -424,12 +432,12 @@ class AlpacaFeed(DataFeedProtocol):
         debug: bool = False,
     ) -> pl.DataFrame:
         """Fetch historical bar data from Alpaca."""
-        api_key, secret_key = self._ensure_credentials()
+        api_key, secret_key, data_feed = self._ensure_credentials()
         client = StockHistoricalDataClient(api_key, secret_key)
 
         timeframe = self._parse_interval(interval)
 
-        # Build request (use IEX feed - SIP requires paid subscription)
+        # Build request using configured data feed
         if start_date and end_date:
             start_dt = datetime.fromisoformat(start_date)
             end_dt = datetime.fromisoformat(end_date)
@@ -438,7 +446,7 @@ class AlpacaFeed(DataFeedProtocol):
                 timeframe=timeframe,
                 start=start_dt,
                 end=end_dt,
-                feed=DataFeed.IEX,
+                feed=data_feed,
             )
         else:
             # Convert period to start date
@@ -448,11 +456,11 @@ class AlpacaFeed(DataFeedProtocol):
                 symbol_or_symbols=symbol,
                 timeframe=timeframe,
                 start=start_dt,
-                feed=DataFeed.IEX,
+                feed=data_feed,
             )
 
-        print(
-            f"    [alpaca] Requesting {symbol} {interval} from {start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d') if end_dt else 'now'}"
+        logger.debug(
+            f"Requesting {symbol} {interval} from {start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d') if end_dt else 'now'}"
         )
 
         response = client.get_stock_bars(request)
@@ -460,18 +468,18 @@ class AlpacaFeed(DataFeedProtocol):
         bars: BarSet = response  # type: ignore[assignment]
 
         if debug:
-            print(f"    [debug] Response type: {type(bars).__name__}")
-            print(f"    [debug] Available symbols: {list(bars.data.keys()) if bars.data else []}")
+            logger.debug(f"Response type: {type(bars).__name__}")
+            logger.debug(f"Available symbols: {list(bars.data.keys()) if bars.data else []}")
             symbol_bars_debug = bars.data.get(symbol, []) if bars.data else []
-            print(f"    [debug] Bars for {symbol}: {len(symbol_bars_debug)}")
+            logger.debug(f"Bars for {symbol}: {len(symbol_bars_debug)}")
             if symbol_bars_debug:
                 first = symbol_bars_debug[0]
                 last = symbol_bars_debug[-1]
-                print(
-                    f"    [debug] First: {first.timestamp} O={first.open} H={first.high} L={first.low} C={first.close} V={first.volume}"
+                logger.debug(
+                    f"First: {first.timestamp} O={first.open} H={first.high} L={first.low} C={first.close} V={first.volume}"
                 )
-                print(
-                    f"    [debug] Last:  {last.timestamp} O={last.open} H={last.high} L={last.low} C={last.close} V={last.volume}"
+                logger.debug(
+                    f"Last:  {last.timestamp} O={last.open} H={last.high} L={last.low} C={last.close} V={last.volume}"
                 )
 
         # Convert to DataFrame

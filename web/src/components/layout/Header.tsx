@@ -1,9 +1,17 @@
+import { useState, useEffect } from 'react';
 import { useStatus } from '../../store/tradingStore';
 import { ConnectionStatus } from '../widgets/ConnectionStatus';
 import { format } from 'date-fns';
 
 export function Header() {
   const status = useStatus();
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Update clock every second
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const formatUptime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -59,7 +67,7 @@ export function Header() {
 
         {/* Time */}
         <div className="text-lg font-medium mono text-primary">
-          {replayTime ? format(replayTime, 'HH:mm:ss') : format(new Date(), 'HH:mm:ss')}
+          {replayTime ? format(replayTime, 'HH:mm:ss') : format(currentTime, 'HH:mm:ss')}
         </div>
 
         <ConnectionStatus />

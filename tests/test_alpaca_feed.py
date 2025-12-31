@@ -238,16 +238,11 @@ class TestAlpacaFeedBarAggregation:
 
             feed = AlpacaFeed()
             aggregated_bars: list[Bar] = []
-            progress_updates: list[tuple[str, float, int, int]] = []
 
             def on_bar(bar: Bar) -> None:
                 aggregated_bars.append(bar)
 
-            def on_raw(symbol: str, price: float, collected: int, target: int) -> None:
-                progress_updates.append((symbol, price, collected, target))
-
             asyncio.run(feed.subscribe(["MSFT"], on_bar))
-            feed.set_raw_bar_callback(on_raw)
 
             # Send bars for minutes 30, 31, 32, 33, 34
             for minute in range(30, 35):
@@ -270,27 +265,12 @@ class TestAlpacaFeedBarAggregation:
             assert len(aggregated_bars) == 1
             assert aggregated_bars[0].datetime.minute == 30  # Aligned start
 
-            # Progress should show 1/5, 2/5, 3/5, 4/5, 5/5
-            assert progress_updates == [
-                ("MSFT", 450.0, 1, 5),
-                ("MSFT", 451.0, 2, 5),
-                ("MSFT", 452.0, 3, 5),
-                ("MSFT", 453.0, 4, 5),
-                ("MSFT", 454.0, 5, 5),
-            ]
-
     def test_aggregation_starting_mid_interval(self, mock_env):
         """Starting at :32 should need 3 bars to complete at :34."""
         with patch("tradingbot._components.feeds.plugins.alpaca.get_engine_config") as mock_cfg:
             mock_cfg.return_value.bar_interval = "5m"
 
             feed = AlpacaFeed()
-            progress_updates: list[tuple[str, float, int, int]] = []
-
-            def on_raw(symbol: str, price: float, collected: int, target: int) -> None:
-                progress_updates.append((symbol, price, collected, target))
-
-            feed.set_raw_bar_callback(on_raw)
 
             # Send bars for minutes 32, 33, 34 (starting mid-interval)
             aggregated = None
@@ -312,25 +292,12 @@ class TestAlpacaFeedBarAggregation:
             assert aggregated is not None
             assert aggregated.datetime.minute == 30  # Aligned to interval start
 
-            # Progress should show 1/3, 2/3, 3/3 (only need 3 bars)
-            assert progress_updates == [
-                ("MSFT", 450.0, 1, 3),
-                ("MSFT", 451.0, 2, 3),
-                ("MSFT", 452.0, 3, 3),
-            ]
-
     def test_aggregation_single_bar_at_boundary(self, mock_env):
         """Starting at :34 should only need 1 bar."""
         with patch("tradingbot._components.feeds.plugins.alpaca.get_engine_config") as mock_cfg:
             mock_cfg.return_value.bar_interval = "5m"
 
             feed = AlpacaFeed()
-            progress_updates: list[tuple[str, float, int, int]] = []
-
-            def on_raw(symbol: str, price: float, collected: int, target: int) -> None:
-                progress_updates.append((symbol, price, collected, target))
-
-            feed.set_raw_bar_callback(on_raw)
 
             bar = Bar(
                 symbol="MSFT",
@@ -343,9 +310,9 @@ class TestAlpacaFeedBarAggregation:
             )
             result = feed._aggregate_bar(bar)
 
-            # Should emit immediately
+            # Should emit immediately since :34 is end of 5m interval
             assert result is not None
-            assert progress_updates == [("MSFT", 450.5, 1, 1)]
+            assert result.datetime.minute == 30  # Aligned to interval start
 
     def test_aggregation_multiple_intervals(self, mock_env):
         """Test aggregation across multiple 5m intervals."""

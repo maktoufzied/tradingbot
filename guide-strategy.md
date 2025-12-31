@@ -282,21 +282,38 @@ Stop:     $46 → $51 → $51 → $54 → $54
            ↑     ↑trails  ↑holds  ↑trails
 ```
 
+**Activation Threshold:**
+Only start trailing after reaching a minimum profit level (R-multiple):
+
+```toml
+[tradingbot.strategy]
+atr_trail = true
+atr_trail_activation_r = 1.0  # Start trailing after 1R profit (default: 0 = immediate)
+```
+
+This prevents premature stop tightening on new positions:
+- `0.0` = Trail immediately from entry (default)
+- `0.5` = Wait until position is 0.5R in profit before trailing
+- `1.0` = Wait until position is 1R in profit before trailing
+
 **When to use:**
 - Trending markets where you want to let winners run
 - Momentum strategies that benefit from trailing
 - When fixed targets leave money on the table
+- Use activation threshold to avoid getting stopped out early on volatile entries
 
 **Configuration:**
 ```toml
 [tradingbot.strategy]
-atr_trail = true           # Enable ATR trailing
-atr_trail_multiplier = 2.0 # Trail at 2× ATR distance
+atr_trail = true              # Enable ATR trailing
+atr_trail_multiplier = 2.0    # Trail at 2× ATR distance
+atr_trail_activation_r = 0.5  # Start trailing after 0.5R profit
 ```
 
 ```bash
-task backtest -- SPY --atr-trail              # Enable with default 2× ATR
-task backtest -- SPY --atr-trail --atr-trail-mult 3  # Use 3× ATR
+task backtest -- SPY --atr-trail                    # Enable with default 2× ATR
+task backtest -- SPY --atr-trail --atr-trail-mult 3 # Use 3× ATR
+task backtest -- SPY --atr-trail --atr-trail-start 1  # Start trailing after 1R profit
 ```
 
 ---

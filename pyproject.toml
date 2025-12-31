@@ -12,6 +12,7 @@ dependencies = [
     "polars>=1.35.2",
     "pyarrow>=19.0.0",
     "rich>=14.2.0",
+    "ta-lib>=0.6.8",
     "textual>=6.7.0",
     "tomlkit>=0.13.3",
     "websockets>=15.0",

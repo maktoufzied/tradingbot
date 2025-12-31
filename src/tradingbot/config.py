@@ -108,6 +108,7 @@ class StrategyConfig:
     # Trailing stops
     atr_trail: bool = False  # ATR-based trailing stop
     atr_trail_multiplier: float = 2.0  # Trail at high_water - (N × ATR)
+    atr_trail_activation_r: float = 0.0  # Start trailing after this R-multiple (0 = immediate)
     # Partial exits: list of {r_multiple, exit_pct} levels (empty = all-or-nothing)
     partial_exit_levels: tuple[PartialExitLevel, ...] = ()
     # Time-based exits
@@ -137,12 +138,34 @@ class EngineRiskConfig:
 
 
 @dataclass(frozen=True)
-class AlpacaConfig:
-    """Alpaca API configuration."""
+class ProviderConfig:
+    """Base provider configuration with execution costs."""
+
+    spread_bps: float = 0.0  # Bid-ask spread in basis points
+    slippage_bps: float = 0.0  # Slippage in basis points
+    commission_per_share: float = 0.0  # Commission per share ($)
+
+    @property
+    def has_costs(self) -> bool:
+        """Check if any costs are configured."""
+        return self.spread_bps > 0 or self.slippage_bps > 0 or self.commission_per_share > 0
+
+
+@dataclass(frozen=True)
+class AlpacaConfig(ProviderConfig):
+    """Alpaca provider configuration."""
 
     api_key: str | None = None
     secret_key: str | None = None
     paper: bool = True
+    data_feed: str = "iex"  # "iex" (free, real-time websocket) or "sip" (paid, all exchanges)
+
+
+@dataclass(frozen=True)
+class PaperConfig(ProviderConfig):
+    """Paper trading provider configuration."""
+
+    pass
 
 
 @dataclass(frozen=True)
@@ -172,7 +195,6 @@ class CacheConfig:
 
     enabled: bool = True
     path: str = "~/.cache/tradingbot/tradingbot.duckdb"
-    source: str = "yahoo"
     retention: CacheRetentionConfig = field(default_factory=CacheRetentionConfig)
 
     @property
@@ -185,11 +207,17 @@ class CacheConfig:
 class EngineConfig:
     """Engine configuration."""
 
-    broker: str = "paper"
-    feed: str = "yahoo"
+    provider: str = "paper"  # "alpaca" or "paper"
     bar_interval: str = "5m"  # 1m, 5m, or 15m - used for cache, bootstrap, and live feed
     risk: EngineRiskConfig = field(default_factory=EngineRiskConfig)
     alpaca: AlpacaConfig = field(default_factory=AlpacaConfig)
+    paper: PaperConfig = field(default_factory=PaperConfig)
+
+    def get_provider_config(self) -> ProviderConfig:
+        """Get the configuration for the current provider."""
+        if self.provider == "alpaca":
+            return self.alpaca
+        return self.paper
 
 
 @dataclass(frozen=True)
@@ -256,6 +284,7 @@ def _parse_config(data: dict[str, Any]) -> Config:
         atr_sizing=strategy_data.get("atr_sizing", False),
         atr_trail=strategy_data.get("atr_trail", False),
         atr_trail_multiplier=strategy_data.get("atr_trail_multiplier", 2.0),
+        atr_trail_activation_r=strategy_data.get("atr_trail_activation_r", 0.0),
         partial_exit_levels=tuple(partial_exit_levels),
         eod_exit=strategy_data.get("eod_exit", True),
         time_exit_minutes=strategy_data.get("time_exit_minutes", 0),
@@ -271,6 +300,7 @@ def _parse_config(data: dict[str, Any]) -> Config:
     engine_data = root.get("engine", {})
     risk_data = engine_data.get("risk", {})
     alpaca_data = engine_data.get("alpaca", {})
+    paper_data = engine_data.get("paper", {})
 
     engine_risk = EngineRiskConfig(
         max_daily_loss_pct=risk_data.get("max_daily_loss_pct", 0.05),
@@ -284,14 +314,24 @@ def _parse_config(data: dict[str, Any]) -> Config:
         api_key=alpaca_data.get("api_key"),
         secret_key=alpaca_data.get("secret_key"),
         paper=alpaca_data.get("paper", True),
+        data_feed=alpaca_data.get("data_feed", "iex"),
+        spread_bps=alpaca_data.get("spread_bps", 0.0),
+        slippage_bps=alpaca_data.get("slippage_bps", 0.0),
+        commission_per_share=alpaca_data.get("commission_per_share", 0.0),
+    )
+
+    paper = PaperConfig(
+        spread_bps=paper_data.get("spread_bps", 0.0),
+        slippage_bps=paper_data.get("slippage_bps", 0.0),
+        commission_per_share=paper_data.get("commission_per_share", 0.0),
     )
 
     engine = EngineConfig(
-        broker=engine_data.get("broker", "paper"),
-        feed=engine_data.get("feed", "yahoo"),
+        provider=engine_data.get("provider", "paper"),
         bar_interval=engine_data.get("bar_interval", "5m"),
         risk=engine_risk,
         alpaca=alpaca,
+        paper=paper,
     )
 
     # Parse cache config
@@ -309,7 +349,6 @@ def _parse_config(data: dict[str, Any]) -> Config:
     cache = CacheConfig(
         enabled=cache_data.get("enabled", True),
         path=cache_data.get("path", "~/.cache/tradingbot/tradingbot.duckdb"),
-        source=cache_data.get("source", "yahoo"),
         retention=cache_retention,
     )
 
@@ -357,6 +396,11 @@ def get_engine_config() -> EngineConfig:
 def get_cache_config() -> CacheConfig:
     """Get cache configuration."""
     return get_config().cache
+
+
+def get_provider_config() -> ProviderConfig:
+    """Get the current provider's configuration (includes costs)."""
+    return get_config().engine.get_provider_config()
 
 
 def get_indicator_config() -> IndicatorConfig:

@@ -19,10 +19,8 @@ from tradingbot import (
     PositionSizer,
     SignalEvent,
     SignalGenerator,
-    StatsUpdatedEvent,
     TradeClosedEvent,
     TradingEngine,
-    TradingTUI,
     get_broker_registry,
     get_feed_registry,
 )
@@ -38,7 +36,9 @@ def update_cache_for_replay(symbols: list[str], days: int) -> None:
     from tradingbot._components.cache.db import get_date_range, insert_bars
 
     engine_cfg = get_engine_config()
-    feed = get_feed_registry().get(engine_cfg.feed)
+    # Derive feed from provider: alpaca -> alpaca, paper -> yahoo
+    feed_name = "alpaca" if engine_cfg.provider == "alpaca" else "yahoo"
+    feed = get_feed_registry().get(feed_name)
     interval = engine_cfg.bar_interval  # Use same interval as replay
 
     # Use local time for date range - users think in terms of local dates
@@ -74,7 +74,7 @@ def update_cache_for_replay(symbols: list[str], days: int) -> None:
                         interval=interval,
                     )
                     if not df.is_empty():
-                        insert_bars(df, symbol, interval, engine_cfg.feed)
+                        insert_bars(df, symbol, interval, feed_name)
                         progress.update(task, description=f"[green]{symbol}[/green] cached {len(df)} bars")
                     else:
                         progress.update(task, description=f"[yellow]{symbol}[/yellow] no data")
@@ -225,101 +225,6 @@ async def run_live(
         await engine.stop()
 
 
-def _run_with_tui(
-    symbols: list[str],
-    broker: BrokerProtocol,
-    feed: DataFeedProtocol,
-    signal_generator: SignalGenerator,
-    position_sizer: PositionSizer,
-    live_risk_manager: LiveRiskManager,
-    rr_ratio: float,
-    dry_run: bool,
-    allow_short: bool,
-) -> None:
-    """Run live trading with TUI."""
-
-    def make_tui_callbacks(tui: TradingTUI) -> EngineCallbacks:
-        """Create callbacks that route to TUI."""
-        callbacks = EngineCallbacks()
-
-        level_to_style = {
-            MessageLevel.INFO: "",
-            MessageLevel.SUCCESS: "green",
-            MessageLevel.WARNING: "yellow",
-            MessageLevel.ERROR: "red",
-            MessageLevel.DEBUG: "dim",
-        }
-
-        @callbacks.on_started
-        def on_started(event: EngineStartedEvent) -> None:
-            tui.log_message(f"Starting: {', '.join(event.symbols)}", "bold")
-            tui.log_message(f"Broker: {event.broker_name}, Feed: {event.feed_name}")
-
-        @callbacks.on_message
-        def on_message(event: MessageEvent) -> None:
-            tui.log_message(event.message, level_to_style.get(event.level, ""))
-
-        @callbacks.on_bar
-        def on_bar(event: BarEvent) -> None:
-            tui.log_bar(event.bar, event.signal, event.trend, event.position)
-
-        @callbacks.on_signal
-        def on_signal(event: SignalEvent) -> None:
-            tui.log_signal(
-                event.direction,
-                event.symbol,
-                event.entry,
-                event.stop,
-                event.tp,
-                event.size,
-                event.blocked,
-                event.reason,
-                event.was_capped,
-            )
-
-        @callbacks.on_trade_closed
-        def on_trade_closed(event: TradeClosedEvent) -> None:
-            tui.log_trade_close(event.direction, event.symbol, event.entry, event.exit_price, event.pnl, event.reason)
-
-        @callbacks.on_stats_updated
-        def on_stats_updated(event: StatsUpdatedEvent) -> None:
-            tui.update_session_stats(event.pnl, event.trades, event.winners, event.losers)
-
-        return callbacks
-
-    class TradingApp(TradingTUI):
-        """TUI app with trading engine worker."""
-
-        def __init__(self) -> None:
-            super().__init__(broker=broker, symbols=symbols)
-            # Set raw bar callback early so backfill progress is visible
-            with contextlib.suppress(NotImplementedError):
-                feed.set_raw_bar_callback(self.update_aggregation)
-
-        def on_mount(self) -> None:
-            """Start trading engine when app mounts."""
-            super().on_mount()
-            self.run_worker(self._run_engine, exclusive=True)  # type: ignore[arg-type]
-
-        async def _run_engine(self) -> None:
-            """Run the trading engine."""
-            await run_live(
-                symbols=symbols,
-                broker=broker,
-                feed=feed,
-                signal_generator=signal_generator,
-                position_sizer=position_sizer,
-                live_risk_manager=live_risk_manager,
-                rr_ratio=rr_ratio,
-                dry_run=dry_run,
-                allow_short=allow_short,
-                callbacks=make_tui_callbacks(self),
-            )
-
-    app = TradingApp()
-    app.run()
-
-
 def _run_with_modern_tui(
     symbols: list[str],
     broker: BrokerProtocol,
@@ -349,11 +254,15 @@ def _run_with_modern_tui(
     - WebSocket server for remote clients
     - Modern TradingApp with multi-stock grid
     """
+    from tradingbot._components.hub.logging import setup_logging
     from tradingbot._components.hub.types import StrategyInfo
     from tradingbot._components.tui.app import TradingApp as ModernTradingApp
 
     # Create the event hub
     hub = EventHub()
+
+    # Setup logging to file and hub
+    setup_logging(hub)
 
     # Set strategy info
     strategy_info = StrategyInfo(
@@ -479,10 +388,14 @@ def _run_headless_with_hub(
     """
     import contextlib
 
+    from tradingbot._components.hub.logging import setup_logging
     from tradingbot._components.hub.types import StrategyInfo
 
     # Create the event hub
     hub = EventHub()
+
+    # Setup logging to file and hub
+    setup_logging(hub)
 
     # Set strategy info
     strategy_info = StrategyInfo(
@@ -560,8 +473,7 @@ Examples:
         "--replay-speed", type=float, default=0.5, help="Seconds between bars in replay mode (default: 0.5)"
     )
     parser.add_argument("--replay-days", type=int, default=5, help="Days of historical data to replay (default: 5)")
-    parser.add_argument("--tui", action="store_true", help="Run with modern terminal UI")
-    parser.add_argument("--legacy-tui", action="store_true", help="Run with legacy terminal UI")
+    parser.add_argument("--tui", action="store_true", help="Run with terminal UI")
     parser.add_argument("--ws-port", type=int, default=8765, help="WebSocket server port (default: 8765)")
     parser.add_argument("--no-ws", action="store_true", help="Disable WebSocket server")
     parser.add_argument("--web", action="store_true", help="Serve web interface (on ws-port - 1)")
@@ -630,8 +542,10 @@ Examples:
         # PaperBroker is safe (simulated) so we don't need dry_run
         # dry_run would prevent orders from reaching the broker, breaking account tracking
     else:
-        feed = get_feed_registry().get(engine_cfg.feed)
-        broker = get_broker_registry().get(engine_cfg.broker)
+        # Derive feed/broker from provider
+        feed_name = "alpaca" if engine_cfg.provider == "alpaca" else "yahoo"
+        feed = get_feed_registry().get(feed_name)
+        broker = get_broker_registry().get(engine_cfg.provider)
 
     if args.tui:
         # Modern TUI with hub-based architecture
@@ -677,19 +591,6 @@ Examples:
             risk_pct=risk_pct,
             indicators=indicators,
             is_replay=args.replay,
-        )
-    elif args.legacy_tui:
-        # Legacy TUI (for backwards compatibility)
-        _run_with_tui(
-            symbols=symbols,
-            broker=broker,
-            feed=feed,
-            signal_generator=signal_generator,
-            position_sizer=position_sizer,
-            live_risk_manager=live_risk_manager,
-            rr_ratio=rr_ratio,
-            dry_run=args.dry_run,
-            allow_short=strategy_cfg.allow_short,
         )
     else:
         with contextlib.suppress(KeyboardInterrupt):

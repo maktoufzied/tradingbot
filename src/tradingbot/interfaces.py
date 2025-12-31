@@ -104,17 +104,6 @@ class DataFeedProtocol(ABC):
         """Whether the feed is currently connected."""
         ...
 
-    def set_raw_bar_callback(self, callback: Callable[[str, float, int, int], None] | None) -> None:
-        """Set callback for raw bar progress updates during aggregation.
-
-        Args:
-            callback: Function called with (symbol, price, collected, target)
-                      or None to clear the callback.
-
-        Feeds that don't support aggregation should raise NotImplementedError.
-        """
-        raise NotImplementedError(f"{self.name} feed does not support raw bar callbacks")
-
     def history(
         self,
         symbol: str,

@@ -72,6 +72,11 @@ Examples:
         "--exit-strategy",
         help="Exit strategy to use (default: from config)",
     )
+    parser.add_argument(
+        "--eod-exit",
+        action="store_true",
+        help="Close positions at end of day (for day trading strategies like orb_fvg)",
+    )
 
     # Walk-forward options
     parser.add_argument(
@@ -132,6 +137,7 @@ Examples:
         seed=args.seed,
         entry_strategy=args.strategy,
         exit_strategy=args.exit_strategy,
+        eod_exit=args.eod_exit,
     )
 
     # Save preset if requested
@@ -150,10 +156,12 @@ Examples:
             swing_lb=best_trial.params["swing_lb"],
             risk_pct=best_trial.params["risk_pct"],
             rr_ratio=best_trial.params["rr_ratio"],
+            stop_pct=best_trial.params.get("stop_pct", 0.01),
             total_return=best_trial.user_attrs.get("total_return"),
             max_drawdown=best_trial.user_attrs.get("max_drawdown"),
             entry_strategy=args.strategy or defaults.get("entry_strategy"),
             exit_strategy=args.exit_strategy or defaults.get("exit_strategy"),
             atr_sizing=best_trial.params.get("atr_sizing"),
+            eod_exit=args.eod_exit,
         )
         print(f"\n✓ Saved preset '{args.save_preset}' to tradingbot.toml")

@@ -68,27 +68,35 @@ class MarketStructureBot:
         capital: float = 100000,
         risk_pct: float = 0.01,
         rr_ratio: float = 2.0,
+        stop_pct: float = 0.01,
         swing_lb: int = 5,
         trailing_stop: bool = False,
         atr_trail: bool = False,
         atr_trail_multiplier: float = 2.0,
+        atr_trail_activation_r: float = 0.0,
         entry_strategy: str | None = None,
         exit_strategy: str | None = None,
         allow_short: bool = False,
         execution_model: ExecutionModel | None = None,
         use_atr_sizing: bool = False,
         partial_exit_levels: tuple[PartialExitLevel, ...] = (),
+        eod_exit: bool = False,
+        eod_exit_minutes_before: int = 15,
     ):
         self.sig_gen = SignalGenerator(swing_lb, entry_strategy=entry_strategy, exit_strategy=exit_strategy)
         self.pos_sizer = PositionSizer(capital, risk_pct, use_atr_sizing=use_atr_sizing)
         self.rr_ratio = rr_ratio
+        self.stop_pct = stop_pct
         self.swing_lb = swing_lb
         self.trailing_stop = trailing_stop
         self.atr_trail = atr_trail
         self.atr_trail_multiplier = atr_trail_multiplier
+        self.atr_trail_activation_r = atr_trail_activation_r
         self.allow_short = allow_short
         self.execution_model = execution_model or ExecutionModel()
         self.partial_exit_levels = partial_exit_levels
+        self.eod_exit = eod_exit
+        self.eod_exit_minutes_before = eod_exit_minutes_before
         self.position: Position | None = None
         self.trades: list[Trade] = []
         self.equity: list[float] = []
@@ -178,7 +186,40 @@ class MarketStructureBot:
                 return "STOP_LOSS"
             if bar["low"] <= p.take_profit:
                 return "TAKE_PROFIT"
+
+        # EOD exit: close positions before market close
+        if self.eod_exit:
+            bar_time: datetime = bar["datetime"]
+            if self._is_near_market_close(bar_time):
+                return "EOD_EXIT"
+
         return None
+
+    def _is_near_market_close(self, bar_time: datetime) -> bool:
+        """Check if bar time is within eod_exit_minutes_before of market close.
+
+        Market close is 4:00 PM ET (16:00).
+        Bars are in UTC, so we convert using zoneinfo for proper DST handling.
+        """
+        from zoneinfo import ZoneInfo
+
+        # Treat bar_time as UTC and convert to US/Eastern
+        utc_time = bar_time.replace(tzinfo=ZoneInfo("UTC"))
+        et_time = utc_time.astimezone(ZoneInfo("America/New_York"))
+
+        et_hour = et_time.hour
+        et_minute = et_time.minute
+
+        # Market close is at 16:00 ET (4:00 PM)
+        market_close_hour = 16
+        market_close_minute = 0
+
+        # Calculate minutes until close
+        current_minutes = et_hour * 60 + et_minute
+        close_minutes = market_close_hour * 60 + market_close_minute
+        minutes_to_close = close_minutes - current_minutes
+
+        return 0 < minutes_to_close <= self.eod_exit_minutes_before
 
     def _process_partial_exits(self, bar: dict[str, Any], bar_time: datetime) -> None:
         """Check and execute any triggered partial exit levels."""
@@ -281,6 +322,7 @@ class MarketStructureBot:
 
         - trailing_stop=True: Move to breakeven after 1R profit
         - atr_trail=True: Continuously trail at high_water - (N × ATR)
+        - atr_trail_activation_r: Only start ATR trailing after reaching this R-multiple
         """
         assert self.position is not None
         p: Position = self.position
@@ -298,7 +340,16 @@ class MarketStructureBot:
                 p.high_water_mark = current_low
 
         # ATR-based trailing (continuous)
-        if self.atr_trail and self._current_atr > 0:
+        if self.atr_trail and self._current_atr > 0 and p.high_water_mark is not None:
+            # Check activation threshold before trailing
+            if self.atr_trail_activation_r > 0:
+                risk = abs(p.entry_price - p.initial_stop_loss)
+                if risk > 0:
+                    profit = bar["high"] - p.entry_price if p.direction == "LONG" else p.entry_price - bar["low"]
+                    current_r = profit / risk
+                    if current_r < self.atr_trail_activation_r:
+                        return  # Not yet at activation threshold
+
             trail_distance = self.atr_trail_multiplier * self._current_atr
             if p.direction == "LONG":
                 new_stop = p.high_water_mark - trail_distance
@@ -314,7 +365,7 @@ class MarketStructureBot:
 
         # Breakeven trailing (move to entry after 1R)
         if self.trailing_stop:
-            risk: float = abs(p.entry_price - p.initial_stop_loss)
+            risk = abs(p.entry_price - p.initial_stop_loss)
             if p.direction == "LONG":
                 if bar["high"] >= p.entry_price + risk and p.stop_loss < p.entry_price:
                     p.stop_loss = p.entry_price
@@ -331,7 +382,7 @@ class MarketStructureBot:
         df: pl.DataFrame,
     ) -> None:
         history = df.head(idx + 1)
-        exit_params = self.sig_gen.calc_exit(direction, price, history, self.rr_ratio)
+        exit_params = self.sig_gen.calc_exit(direction, price, history, self.rr_ratio, self.stop_pct)
         size = self.pos_sizer.calc_size(price, exit_params.stop_loss, history)
 
         # Cache ATR at entry for trailing stop

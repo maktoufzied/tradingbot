@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import polars as pl
 
-from tradingbot.config import get_cache_config
+from tradingbot.config import get_cache_config, get_engine_config
 from tradingbot.interfaces import DataFeedProtocol
 
 from .db import get_date_range, insert_bars, query_bars
@@ -14,17 +14,21 @@ class CachedFeed:
     """Feed wrapper that caches historical data in DuckDB."""
 
     def __init__(self, upstream: DataFeedProtocol | None = None) -> None:
-        config = get_cache_config()
+        cache_config = get_cache_config()
+        engine_config = get_engine_config()
 
-        if not config.enabled:
+        if not cache_config.enabled:
             self._cache_enabled = False
         else:
             self._cache_enabled = True
 
-        # Use configured source or provided upstream
+        # Derive data source from provider: alpaca -> alpaca, paper -> yahoo
+        self._source = "alpaca" if engine_config.provider == "alpaca" else "yahoo"
+
+        # Use provided upstream or create from provider
         if upstream:
             self._upstream = upstream
-        elif config.source == "alpaca":
+        elif engine_config.provider == "alpaca":
             # Lazy import to avoid circular dependency
             from ..feeds.plugins.alpaca import AlpacaFeed
 
@@ -67,7 +71,7 @@ class CachedFeed:
             need_end = datetime.now(UTC).replace(tzinfo=None)
             need_start = self._period_to_start(period, need_end)
 
-        source = get_cache_config().source
+        source = self._source
 
         if refresh:
             # Force fetch everything from upstream

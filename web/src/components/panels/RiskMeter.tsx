@@ -4,7 +4,9 @@ import clsx from 'clsx';
 export function RiskMeter() {
   const risk = useRisk();
 
-  const lossRatio = Math.min(Math.abs(risk.daily_loss_pct) / risk.max_daily_loss_pct, 1);
+  // Only actual losses count toward the limit (negative daily_loss_pct = loss)
+  const actualLoss = Math.max(0, -risk.daily_loss_pct);
+  const lossRatio = Math.min(actualLoss / risk.max_daily_loss_pct, 1);
   const progressWidth = `${lossRatio * 100}%`;
 
   const getProgressColor = () => {
@@ -18,12 +20,12 @@ export function RiskMeter() {
       <h3 className="text-sm font-semibold text-primary mb-3">RISK</h3>
 
       <div className="space-y-3">
-        {/* Daily Loss Progress Bar */}
+        {/* Daily Loss Limit Progress Bar */}
         <div>
           <div className="flex justify-between text-xs mb-1">
-            <span className="text-text-secondary">Daily Loss</span>
+            <span className="text-text-secondary">Loss Limit</span>
             <span className="mono text-text-secondary">
-              {risk.daily_loss_pct.toFixed(2)}% / {risk.max_daily_loss_pct.toFixed(1)}%
+              {actualLoss.toFixed(2)}% / {risk.max_daily_loss_pct.toFixed(1)}%
             </span>
           </div>
           <div className="h-2 bg-surface-dark rounded-full overflow-hidden">

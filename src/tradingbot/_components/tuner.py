@@ -40,6 +40,8 @@ class TunerConfig:
     risk_pct_max: float = 0.02
     rr_ratio_min: float = 1.0
     rr_ratio_max: float = 3.0
+    stop_pct_min: float = 0.003  # 0.3%
+    stop_pct_max: float = 0.02  # 2%
 
     # Strategy settings (from config if not specified)
     entry_strategy: str | None = None
@@ -48,8 +50,14 @@ class TunerConfig:
     # Position sizing
     optimize_atr_sizing: bool = True  # Include atr_sizing in optimization
 
+    # ATR trailing
+    optimize_atr_trail: bool = True  # Include atr_trail in optimization
+
     # Partial exits
     optimize_partial_exits: bool = True  # Include partial_exits in optimization
+
+    # EOD exit (for day trading strategies)
+    eod_exit: bool = False
 
     # Optimization settings
     n_trials: int = 100
@@ -107,12 +115,27 @@ class OptunaTuner:
         swing_lb = trial.suggest_int("swing_lb", self.config.swing_lb_min, self.config.swing_lb_max)
         risk_pct = trial.suggest_float("risk_pct", self.config.risk_pct_min, self.config.risk_pct_max, step=0.001)
         rr_ratio = trial.suggest_float("rr_ratio", self.config.rr_ratio_min, self.config.rr_ratio_max, step=0.1)
+        stop_pct = trial.suggest_float("stop_pct", self.config.stop_pct_min, self.config.stop_pct_max, step=0.001)
 
         # ATR sizing (categorical: True/False)
         if self.config.optimize_atr_sizing:
             atr_sizing = trial.suggest_categorical("atr_sizing", [True, False])
         else:
             atr_sizing = False
+
+        # ATR trailing (categorical: disabled, immediate, 0.5R, 1R activation)
+        atr_trail = False
+        atr_trail_multiplier = 2.0
+        atr_trail_activation_r = 0.0
+        if self.config.optimize_atr_trail:
+            trail_mode = trial.suggest_categorical("atr_trail_mode", ["off", "immediate", "0.5R", "1R"])
+            if trail_mode != "off":
+                atr_trail = True
+                atr_trail_multiplier = trial.suggest_float("atr_trail_mult", 1.5, 3.0, step=0.5)
+                if trail_mode == "0.5R":
+                    atr_trail_activation_r = 0.5
+                elif trail_mode == "1R":
+                    atr_trail_activation_r = 1.0
 
         # Partial exits (categorical: True/False - True uses default levels)
         if self.config.optimize_partial_exits:
@@ -128,11 +151,16 @@ class OptunaTuner:
             capital=self.capital,
             risk_pct=risk_pct,
             rr_ratio=rr_ratio,
+            stop_pct=stop_pct,
             swing_lb=swing_lb,
             entry_strategy=self.config.entry_strategy,
             exit_strategy=self.config.exit_strategy,
             use_atr_sizing=atr_sizing,
+            atr_trail=atr_trail,
+            atr_trail_multiplier=atr_trail_multiplier,
+            atr_trail_activation_r=atr_trail_activation_r,
             partial_exit_levels=partial_exit_levels,
+            eod_exit=self.config.eod_exit,
         )
         bot.backtest(df, self.symbol)
 
@@ -160,7 +188,11 @@ class OptunaTuner:
         trial.set_user_attr("total_return", total_return)
         trial.set_user_attr("max_drawdown", max_dd)
         trial.set_user_attr("profit_factor", profit_factor)
+        trial.set_user_attr("stop_pct", stop_pct)
         trial.set_user_attr("atr_sizing", atr_sizing)
+        trial.set_user_attr("atr_trail", atr_trail)
+        trial.set_user_attr("atr_trail_multiplier", atr_trail_multiplier)
+        trial.set_user_attr("atr_trail_activation_r", atr_trail_activation_r)
         trial.set_user_attr("partial_exits", use_partial_exits)
 
         # Return objective value based on config
@@ -180,6 +212,13 @@ class OptunaTuner:
     def tune(self) -> optuna.Study:
         """Run Optuna optimization."""
         self._prefetch_data()
+
+        # Warn if seed is not set (non-deterministic results)
+        if self.config.seed is None:
+            console.print(
+                "[yellow]⚠ Warning: No seed set. Results will vary between runs.[/yellow]\n"
+                "[dim]   Use --seed <number> for reproducible results.[/dim]\n"
+            )
 
         # Create sampler with optional seed for reproducibility
         sampler = optuna.samplers.TPESampler(seed=self.config.seed)
@@ -253,9 +292,17 @@ class OptunaTuner:
         table.add_row("swing_lb", str(best.params["swing_lb"]))
         table.add_row("risk_pct", f"{best.params['risk_pct'] * 100:.2f}%")
         table.add_row("rr_ratio", f"{best.params['rr_ratio']:.1f}")
+        table.add_row("stop_pct", f"{best.params['stop_pct'] * 100:.2f}%")
         if "atr_sizing" in best.params:
             atr_val = "Yes" if best.params["atr_sizing"] else "No"
             table.add_row("atr_sizing", atr_val)
+        if "atr_trail_mode" in best.params:
+            trail_mode = best.params["atr_trail_mode"]
+            if trail_mode != "off":
+                mult = best.params.get("atr_trail_mult", 2.0)
+                table.add_row("atr_trail", f"{trail_mode} ({mult}×)")
+            else:
+                table.add_row("atr_trail", "No")
         if "partial_exits" in best.params:
             partial_val = "Yes" if best.params["partial_exits"] else "No"
             table.add_row("partial_exits", partial_val)
@@ -285,33 +332,34 @@ class OptunaTuner:
             table = Table()
             table.add_column("#", justify="center")
             table.add_column("Interval", justify="center")
-            table.add_column("Period", justify="center")
-            table.add_column("Swing", justify="center")
             table.add_column("Risk", justify="center")
+            table.add_column("Stop", justify="center")
             table.add_column("R:R", justify="center")
             table.add_column("ATR", justify="center")
-            table.add_column("Part", justify="center")
+            table.add_column("Trail", justify="center")
             table.add_column("Return", justify="right")
             table.add_column("DD", justify="center")
             table.add_column("PF", justify="center")
+            table.add_column("WR", justify="center")
 
             for i, t in enumerate(sorted_trials, 1):
                 ret = t.user_attrs.get("total_return", 0)
                 ret_style = "green" if ret > 0 else "red"
                 atr_str = "Y" if t.params.get("atr_sizing") else "N"
-                partial_str = "Y" if t.params.get("partial_exits") else "N"
+                trail_mode = t.params.get("atr_trail_mode", "off")
+                trail_str = trail_mode[0].upper() if trail_mode != "off" else "N"  # I/0/1/N
                 table.add_row(
                     str(i),
                     t.params["interval"],
-                    t.params["period"],
-                    str(t.params["swing_lb"]),
                     f"{t.params['risk_pct'] * 100:.1f}%",
+                    f"{t.params['stop_pct'] * 100:.1f}%",
                     f"{t.params['rr_ratio']:.1f}",
                     atr_str,
-                    partial_str,
+                    trail_str,
                     f"[{ret_style}]{ret:+.2f}%[/{ret_style}]",
                     f"{t.user_attrs.get('max_drawdown', 0):.2f}%",
                     f"{t.user_attrs.get('profit_factor', 0):.2f}",
+                    f"{t.user_attrs.get('win_rate', 0):.0f}%",
                 )
 
             console.print(table)
@@ -339,6 +387,7 @@ class OptunaTuner:
         table.add_column("Risk", justify="center")
         table.add_column("R:R", justify="center")
         table.add_column("ATR", justify="center")
+        table.add_column("Trail", justify="center")
         table.add_column("Part", justify="center")
         table.add_column("Return", justify="right")
         table.add_column("Drawdown", justify="center")
@@ -352,6 +401,8 @@ class OptunaTuner:
             dd = t.values[1]
             ret_style = "green" if ret > 0 else "red"
             atr_str = "Y" if t.params.get("atr_sizing") else "N"
+            trail_mode = t.params.get("atr_trail_mode", "off")
+            trail_str = trail_mode[0].upper() if trail_mode != "off" else "N"
             partial_str = "Y" if t.params.get("partial_exits") else "N"
             table.add_row(
                 str(i),
@@ -361,6 +412,7 @@ class OptunaTuner:
                 f"{t.params['risk_pct'] * 100:.1f}%",
                 f"{t.params['rr_ratio']:.1f}",
                 atr_str,
+                trail_str,
                 partial_str,
                 f"[{ret_style}]{ret:+.2f}%[/{ret_style}]",
                 f"{dd:.2f}%",
@@ -409,6 +461,7 @@ def tune(
     seed: int | None = None,
     entry_strategy: str | None = None,
     exit_strategy: str | None = None,
+    eod_exit: bool = False,
 ) -> OptunaTuner:
     """Convenience function to run Optuna tuning.
 
@@ -426,6 +479,7 @@ def tune(
         seed: Random seed for reproducibility (None = random each run)
         entry_strategy: Entry strategy to use (default: from config)
         exit_strategy: Exit strategy to use (default: from config)
+        eod_exit: Close positions at end of day (for day trading strategies)
     """
     # Get defaults from config if not specified
     from .presets import get_strategy_defaults
@@ -440,6 +494,7 @@ def tune(
         seed=seed,
         entry_strategy=entry_strategy or defaults.get("entry_strategy"),
         exit_strategy=exit_strategy or defaults.get("exit_strategy"),
+        eod_exit=eod_exit,
     )
 
     tuner = OptunaTuner(symbol, capital, config)

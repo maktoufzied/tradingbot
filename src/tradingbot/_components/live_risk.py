@@ -58,6 +58,15 @@ class LiveRiskManager:
         if loss_pct >= self._config.circuit_breaker_loss_pct:
             self._circuit_breaker_triggered = True
 
+    def sync_realized_pnl(self, pnl: float) -> None:
+        """Sync realized P&L from broker without counting as a trade.
+
+        Use this on startup to sync P&L from earlier trades made today.
+        Does not increment trade counters.
+        """
+        self._realized_pnl_today += pnl
+        self._session_pnl += pnl
+
     def update_position_count(self, count: int) -> None:
         """Update the current number of open positions."""
         self._open_positions = count

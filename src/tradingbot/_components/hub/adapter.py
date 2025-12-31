@@ -10,6 +10,7 @@ from tradingbot._components.engine.callbacks import EngineCallbacks
 from tradingbot._components.engine.events import (
     AccountEvent,
     BarEvent,
+    ClockEvent,
     EngineStartedEvent,
     EngineStoppedEvent,
     MessageEvent,
@@ -18,6 +19,7 @@ from tradingbot._components.engine.events import (
     StatsUpdatedEvent,
     TradeClosedEvent,
 )
+from tradingbot.types import Bar, BarOrigin
 
 from .hub import EventHub
 from .types import (
@@ -59,11 +61,16 @@ class EngineAdapter:
         self._session_open_prices: dict[str, float] = {}
         self._session_highs: dict[str, float] = {}
         self._session_lows: dict[str, float] = {}
-        self._price_history: dict[str, list[float]] = {s: [] for s in symbols}
+        self._initial_equity: float | None = None
+        self._ohlc_history: dict[str, dict[str, list[float]]] = {
+            s: {"opens": [], "highs": [], "lows": [], "closes": []} for s in symbols
+        }
         self._timestamp_history: dict[str, list[datetime]] = {s: [] for s in symbols}
         self._equity_curve: list[float] = []
         self._trade_pnls: list[float] = []
         self._current_streak = 0
+        self._market_open = True  # Updated from clock events
+        self._market_next_change: datetime | None = None
 
         # Wire up all engine events
         self.callbacks.on_started(self._on_started)
@@ -75,6 +82,7 @@ class EngineAdapter:
         self.callbacks.on_message(self._on_message)
         self.callbacks.on_account(self._on_account_event)
         self.callbacks.on_risk(self._on_risk_event)
+        self.callbacks.on_clock(self._on_clock_event)
 
     async def _on_started(self, event: EngineStartedEvent) -> None:
         """Initialize hub state on engine start."""
@@ -89,8 +97,8 @@ class EngineAdapter:
             SystemStatus(
                 feed_connected=True,
                 broker_connected=True,
-                market_open=True,
-                market_next_change=None,
+                market_open=self._market_open,
+                market_next_change=self._market_next_change,
                 uptime_seconds=0,
                 bars_received=0,
                 errors_count=0,
@@ -115,8 +123,8 @@ class EngineAdapter:
             loss_count=rm.session_losers,
             win_rate=rm.session_win_rate * 100,
             profit_factor=rm.session_profit_factor,
-            largest_win=max(self._trade_pnls) if self._trade_pnls else 0.0,
-            largest_loss=min(self._trade_pnls) if self._trade_pnls else 0.0,
+            largest_win=max((p for p in self._trade_pnls if p > 0), default=0.0),
+            largest_loss=min((p for p in self._trade_pnls if p < 0), default=0.0),
             current_streak=self._current_streak,
             equity_curve=self._equity_curve[-60:],
         )
@@ -128,7 +136,7 @@ class EngineAdapter:
                 feed_connected=False,
                 broker_connected=False,
                 market_open=False,
-                market_next_change=None,
+                market_next_change=self._market_next_change,
                 uptime_seconds=int((datetime.now(UTC) - self._start_time).total_seconds()),
                 bars_received=self._bars_received,
                 errors_count=self._errors,
@@ -140,6 +148,33 @@ class EngineAdapter:
     async def _on_bar(self, event: BarEvent) -> None:
         """Transform BarEvent -> TickerUpdate + PositionUpdate."""
         bar = event.bar
+
+        # REALTIME bars: update chart and send lightweight ticker update
+        if bar.origin == BarOrigin.REALTIME:
+            await self._update_chart(bar)
+
+            # Send real-time price update to TUI/web (no session stats changes)
+            if bar.symbol in self._session_open_prices:
+                open_price = self._session_open_prices[bar.symbol]
+                change = bar.close - open_price
+                change_pct = (change / open_price * 100) if open_price > 0 else 0.0
+
+                ticker = TickerUpdate(
+                    symbol=bar.symbol,
+                    price=bar.close,
+                    change=change,
+                    change_pct=change_pct,
+                    high=max(self._session_highs.get(bar.symbol, bar.high), bar.high),
+                    low=min(self._session_lows.get(bar.symbol, bar.low), bar.low),
+                    volume=bar.volume,
+                    timestamp=bar.datetime,
+                    trend="NEUTRAL",
+                    signal="HOLD",
+                )
+                await self.hub.update_ticker(ticker)
+            return
+
+        # AGGREGATED bars: full processing
         self._bars_received += 1
         self._last_bar_time = bar.datetime
 
@@ -181,21 +216,7 @@ class EngineAdapter:
         await self.hub.update_ticker(ticker)
 
         # Track price history for charts
-        if bar.symbol in self._price_history:
-            self._price_history[bar.symbol].append(bar.close)
-            self._price_history[bar.symbol] = self._price_history[bar.symbol][-120:]
-            self._timestamp_history[bar.symbol].append(bar.datetime)
-            self._timestamp_history[bar.symbol] = self._timestamp_history[bar.symbol][-120:]
-
-            # Update chart data
-            chart = ChartUpdate(
-                symbol=bar.symbol,
-                prices=self._price_history[bar.symbol].copy(),
-                timestamps=self._timestamp_history[bar.symbol].copy(),
-                swing_highs=[],
-                swing_lows=[],
-            )
-            await self.hub.update_chart(chart)
+        await self._update_chart(bar)
 
         # Update position if exists
         pos = event.position
@@ -236,8 +257,8 @@ class EngineAdapter:
             SystemStatus(
                 feed_connected=True,
                 broker_connected=True,
-                market_open=True,
-                market_next_change=None,
+                market_open=self._market_open,
+                market_next_change=self._market_next_change,
                 uptime_seconds=uptime,
                 bars_received=self._bars_received,
                 errors_count=self._errors,
@@ -315,33 +336,51 @@ class EngineAdapter:
         losses = [abs(p) for p in self._trade_pnls if p < 0]
         total_wins = sum(wins) if wins else 0.0
         total_losses = sum(losses) if losses else 0.0
-        profit_factor = (total_wins / total_losses) if total_losses > 0 else 0.0
+        # PF = wins/losses. Use -1 as sentinel for "not applicable" (no losses yet)
+        profit_factor = total_wins / total_losses if total_losses > 0 else -1.0
+
+        # Calculate return % using initial equity
+        total_pnl_pct = (event.pnl / self._initial_equity * 100) if self._initial_equity else 0.0
 
         stats = SessionStats(
             total_pnl=event.pnl,
-            total_pnl_pct=0.0,  # Need starting equity for this
+            total_pnl_pct=total_pnl_pct,
             trade_count=event.trades,
             win_count=event.winners,
             loss_count=event.losers,
             win_rate=win_rate,
             profit_factor=profit_factor,
-            largest_win=max(self._trade_pnls) if self._trade_pnls else 0.0,
-            largest_loss=min(self._trade_pnls) if self._trade_pnls else 0.0,
+            largest_win=max((p for p in self._trade_pnls if p > 0), default=0.0),
+            largest_loss=min((p for p in self._trade_pnls if p < 0), default=0.0),
             current_streak=self._current_streak,
             equity_curve=self._equity_curve.copy(),
         )
         await self.hub.update_stats(stats)
 
     async def _on_message(self, event: MessageEvent) -> None:
-        """Track errors from message events."""
+        """Forward messages to hub for TUI/web display and track errors."""
+        from .logging import log_engine_message
+
+        # Broadcast message to all UI clients (TUI and web)
+        log_entry = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "level": event.level.value.upper(),
+            "message": event.message,
+        }
+        await self.hub.broadcast_log(log_entry)
+
+        # Also write to log file
+        log_engine_message(event.level.value, event.message)
+
+        # Track error count for status display
         if event.level.value == "error":
             self._errors += 1
             await self.hub.update_status(
                 SystemStatus(
                     feed_connected=True,
                     broker_connected=True,
-                    market_open=True,
-                    market_next_change=None,
+                    market_open=self._market_open,
+                    market_next_change=self._market_next_change,
                     uptime_seconds=int((datetime.now(UTC) - self._start_time).total_seconds()),
                     bars_received=self._bars_received,
                     errors_count=self._errors,
@@ -352,6 +391,10 @@ class EngineAdapter:
 
     async def _on_account_event(self, event: AccountEvent) -> None:
         """Transform AccountEvent -> AccountSnapshot."""
+        # Track initial equity for return % calculation
+        if self._initial_equity is None:
+            self._initial_equity = event.equity - event.day_pnl
+
         positions_value = event.equity - event.cash
 
         # Calculate total unrealized P&L from open positions
@@ -380,6 +423,11 @@ class EngineAdapter:
         )
         await self.hub.update_risk(status)
 
+    async def _on_clock_event(self, event: ClockEvent) -> None:
+        """Update market clock status."""
+        self._market_open = event.is_open
+        self._market_next_change = event.next_close if event.is_open else event.next_open
+
     # --- Account Updates (called externally) ---
 
     async def update_account(self, account: AccountSnapshot) -> None:
@@ -389,3 +437,39 @@ class EngineAdapter:
     async def update_risk(self, risk: RiskStatus) -> None:
         """Update risk status from risk manager."""
         await self.hub.update_risk(risk)
+
+    # --- Chart Updates ---
+
+    async def _update_chart(self, bar: Bar) -> None:
+        """Update chart with new bar data."""
+        if bar.symbol not in self._ohlc_history:
+            return
+
+        ohlc = self._ohlc_history[bar.symbol]
+        max_bars = 120
+
+        # Update OHLC history
+        ohlc["opens"].append(bar.open)
+        ohlc["highs"].append(bar.high)
+        ohlc["lows"].append(bar.low)
+        ohlc["closes"].append(bar.close)
+        ohlc["opens"] = ohlc["opens"][-max_bars:]
+        ohlc["highs"] = ohlc["highs"][-max_bars:]
+        ohlc["lows"] = ohlc["lows"][-max_bars:]
+        ohlc["closes"] = ohlc["closes"][-max_bars:]
+
+        self._timestamp_history[bar.symbol].append(bar.datetime)
+        self._timestamp_history[bar.symbol] = self._timestamp_history[bar.symbol][-max_bars:]
+
+        # Send chart update
+        chart = ChartUpdate(
+            symbol=bar.symbol,
+            timestamps=self._timestamp_history[bar.symbol].copy(),
+            opens=ohlc["opens"].copy(),
+            highs=ohlc["highs"].copy(),
+            lows=ohlc["lows"].copy(),
+            closes=ohlc["closes"].copy(),
+            swing_highs=[],
+            swing_lows=[],
+        )
+        await self.hub.update_chart(chart)

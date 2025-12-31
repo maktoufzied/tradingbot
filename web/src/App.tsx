@@ -3,6 +3,7 @@ import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { SymbolGrid } from './components/cards/SymbolGrid';
 import { TradeLog } from './components/trade-log/TradeLog';
+import { LogPanel } from './components/panels/LogPanel';
 import { useConnectionStatus } from './store/tradingStore';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8765';
@@ -24,6 +25,8 @@ function App() {
           </div>
           {/* Trade log - fixed at bottom */}
           <TradeLog />
+          {/* Feed log - collapsible at very bottom */}
+          <LogPanel />
         </main>
 
         {/* Sidebar */}

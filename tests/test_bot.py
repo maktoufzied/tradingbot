@@ -329,6 +329,52 @@ class TestAtrTrailing:
         bot.backtest(df, symbol="TEST")
         # Test passes if no errors - stop behavior is internal
 
+    def test_atr_trail_activation_default_zero(self):
+        """Test that ATR trail activation R-multiple defaults to 0 (immediate)."""
+        bot = MarketStructureBot(atr_trail=True)
+        assert bot.atr_trail_activation_r == 0.0
+
+    def test_atr_trail_activation_custom_value(self):
+        """Test custom ATR trail activation R-multiple."""
+        bot = MarketStructureBot(atr_trail=True, atr_trail_activation_r=1.0)
+        assert bot.atr_trail_activation_r == 1.0
+
+    def test_atr_trail_activation_half_r(self):
+        """Test ATR trail activation at 0.5R."""
+        bot = MarketStructureBot(atr_trail=True, atr_trail_activation_r=0.5)
+        assert bot.atr_trail_activation_r == 0.5
+
+    def test_atr_trail_activation_integrates_with_backtest(self):
+        """Test that ATR trail with activation threshold runs without errors."""
+        bot = MarketStructureBot(atr_trail=True, atr_trail_activation_r=1.0, swing_lb=3)
+
+        # Create data with clear uptrend
+        n = 60
+        prices = []
+        for i in range(n):
+            if i < 30:
+                trend = i * 0.5
+                cycle = 2 * math.sin(i * 0.4)
+                prices.append(100 + trend + cycle)
+            else:
+                # Strong move up to reach activation threshold
+                prices.append(120 + (i - 30) * 1.0)
+
+        base_date = datetime(2024, 1, 1)
+        df = pl.DataFrame(
+            {
+                "datetime": [base_date + timedelta(days=i) for i in range(n)],
+                "open": prices,
+                "high": [p + 3 for p in prices],
+                "low": [p - 2 for p in prices],
+                "close": prices,
+                "volume": [10000] * n,
+            }
+        )
+
+        bot.backtest(df, symbol="TEST")
+        # Test passes if no errors occur during backtest with ATR trailing + activation
+
 
 class TestPartialExits:
     def test_partial_exits_disabled_by_default(self):

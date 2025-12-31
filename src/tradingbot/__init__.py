@@ -1,4 +1,4 @@
-from tradingbot.types import Position, Signal, SwingPoint, Trade, Trend
+from tradingbot.types import BarOrigin, Position, Signal, SwingPoint, Trade, Trend
 
 from ._components.bot import MarketStructureBot
 from ._components.brokers import get_registry as get_broker_registry
@@ -24,12 +24,12 @@ from ._components.runner import run_multi_backtest, run_single_backtest
 from ._components.signals import SignalGenerator
 from ._components.strategies import Entry, Exit, get_entry_registry, get_exit_registry
 from ._components.swing import analyze_structure, find_swing_points
-from ._components.tui_legacy import TradingTUI
 from ._components.tuner import OptunaTuner, TunerConfig, tune
 from ._components.walk_forward import WalkForwardResult, WalkForwardValidator, walk_forward
 
 __all__ = [
     "BarEvent",
+    "BarOrigin",
     "DataFeed",
     "EngineCallbacks",
     "EngineStartedEvent",
@@ -54,7 +54,6 @@ __all__ = [
     "Trade",
     "TradeClosedEvent",
     "TradingEngine",
-    "TradingTUI",
     "Trend",
     "TunerConfig",
     "analyze_structure",

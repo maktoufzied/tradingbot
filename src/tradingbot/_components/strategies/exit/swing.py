@@ -49,8 +49,10 @@ class SwingExitStrategy:
         df: pl.DataFrame,
         swings: list[SwingPoint],
         rr_ratio: float,
+        stop_pct: float = 0.01,
     ) -> Exit:
         """Calculate swing-based stop-loss and take-profit."""
+        _ = stop_pct  # Not used by swing strategy
         stop = self._calc_stop(direction, entry, swings)
         tp = self._calc_tp(direction, entry, stop, rr_ratio, swings)
         return Exit(stop_loss=stop, take_profit=tp)

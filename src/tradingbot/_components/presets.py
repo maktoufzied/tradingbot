@@ -21,10 +21,12 @@ class Preset:
     # Risk
     risk_pct: float = 0.01
     rr_ratio: float = 1.5
+    stop_pct: float = 0.01  # 1% stop loss for fixed exit strategy
     atr_sizing: bool = False
     # Trailing stops
     atr_trail: bool = False
     atr_trail_multiplier: float = 2.0
+    atr_trail_activation_r: float = 0.0  # Start trailing after this R-multiple
     # Partial exits: list of {r_multiple, exit_pct} levels (empty = all-or-nothing)
     partial_exit_levels: tuple[PartialExitLevel, ...] = ()
     # Indicators
@@ -56,6 +58,34 @@ PRESETS: Final[dict[str, Preset]] = {
         filter_mode="all",
         eod_exit=True,
         time_exit_minutes=30,
+    ),
+    "orb_fvg": Preset(
+        name="orb_fvg",
+        description="1m ORB+FVG scalping, engulfing confirmation, 3:1 RR",
+        interval="1m",
+        period="1mo",
+        entry="orb_fvg",
+        exit="fixed",
+        risk_pct=0.005,  # 0.5% per trade
+        rr_ratio=3.0,  # 3:1 risk/reward
+        indicators=[],  # Strategy has built-in FVG + engulfing logic
+        filter_mode="none",
+        eod_exit=True,
+        time_exit_minutes=0,  # Exit at EOD only
+    ),
+    "orb_fvg_simple": Preset(
+        name="orb_fvg_simple",
+        description="1m ORB+FVG scalping, enters on FVG retest (no engulfing), 2:1 RR",
+        interval="1m",
+        period="1mo",
+        entry="orb_fvg_simple",
+        exit="fixed",
+        risk_pct=0.005,
+        rr_ratio=2.0,
+        indicators=[],
+        filter_mode="none",
+        eod_exit=True,
+        time_exit_minutes=0,
     ),
     "day_momentum": Preset(
         name="day_momentum",
@@ -201,6 +231,7 @@ def _load_custom_presets() -> dict[str, Preset]:
             atr_sizing=preset_data.get("atr_sizing", False),
             atr_trail=preset_data.get("atr_trail", False),
             atr_trail_multiplier=preset_data.get("atr_trail_multiplier", 2.0),
+            atr_trail_activation_r=preset_data.get("atr_trail_activation_r", 0.0),
             partial_exit_levels=tuple(partial_exit_levels),
             indicators=preset_data.get("indicators", []),
             filter_mode=preset_data.get("filter_mode", "all"),
@@ -270,6 +301,7 @@ def save_preset(
     swing_lb: int,
     risk_pct: float,
     rr_ratio: float,
+    stop_pct: float = 0.01,
     total_return: float | None = None,
     max_drawdown: float | None = None,
     entry_strategy: str | None = None,
@@ -277,7 +309,9 @@ def save_preset(
     atr_sizing: bool | None = None,
     atr_trail: bool | None = None,
     atr_trail_multiplier: float | None = None,
+    atr_trail_activation_r: float | None = None,
     partial_exit_levels: tuple[PartialExitLevel, ...] | None = None,
+    eod_exit: bool = False,
 ) -> None:
     """Save optimization results as a custom preset to tradingbot.toml.
 
@@ -289,6 +323,7 @@ def save_preset(
         swing_lb: Swing lookback
         risk_pct: Risk percentage (0.01 = 1%)
         rr_ratio: Reward/risk ratio
+        stop_pct: Stop loss percentage (0.01 = 1%)
         total_return: Optional backtest return for description
         max_drawdown: Optional max drawdown for description
         entry_strategy: Entry strategy used (optional)
@@ -296,7 +331,9 @@ def save_preset(
         atr_sizing: ATR-based position sizing (optional)
         atr_trail: ATR-based trailing stop (optional)
         atr_trail_multiplier: ATR trail multiplier (optional)
+        atr_trail_activation_r: ATR trail activation R-multiple (optional)
         partial_exit_levels: Partial exit levels (optional)
+        eod_exit: Close positions at end of day (optional)
     """
     from pathlib import Path
 
@@ -333,16 +370,21 @@ def save_preset(
     preset.add("swing_lb", swing_lb)
     preset.add("risk_pct", round(risk_pct, 4))  # Round for readability
     preset.add("rr_ratio", round(rr_ratio, 1))
+    preset.add("stop_pct", round(stop_pct, 4))
     if entry_strategy:
         preset.add("entry", entry_strategy)
     if exit_strategy:
         preset.add("exit", exit_strategy)
     if atr_sizing is not None:
         preset.add("atr_sizing", atr_sizing)
+    if eod_exit:
+        preset.add("eod_exit", eod_exit)
     if atr_trail is not None:
         preset.add("atr_trail", atr_trail)
     if atr_trail_multiplier is not None:
         preset.add("atr_trail_multiplier", atr_trail_multiplier)
+    if atr_trail_activation_r is not None:
+        preset.add("atr_trail_activation_r", atr_trail_activation_r)
     if partial_exit_levels:
         levels_array = tomlkit.array()
         for level in partial_exit_levels:

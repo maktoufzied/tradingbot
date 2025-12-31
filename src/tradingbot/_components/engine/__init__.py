@@ -4,6 +4,7 @@ from .callbacks import EngineCallbacks
 from .engine import TradingEngine
 from .events import (
     BarEvent,
+    ClockEvent,
     EngineStartedEvent,
     EngineStoppedEvent,
     MessageEvent,
@@ -15,6 +16,7 @@ from .events import (
 
 __all__ = [
     "BarEvent",
+    "ClockEvent",
     "EngineCallbacks",
     "EngineStartedEvent",
     "EngineStoppedEvent",
