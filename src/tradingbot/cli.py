@@ -25,10 +25,12 @@ from tradingbot import (
     get_feed_registry,
 )
 from tradingbot._components.hub import EngineAdapter, EventHub, HubServer
+from tradingbot._components.logging import get_logger
 from tradingbot.config import get_bot_config, get_engine_config, get_strategy_config
 from tradingbot.interfaces import BrokerProtocol, DataFeedProtocol
 
 console = Console()
+logger = get_logger(__name__)
 
 
 def update_cache_for_replay(symbols: list[str], days: int) -> None:
@@ -95,6 +97,19 @@ def make_cli_callbacks() -> EngineCallbacks:
     @callbacks.on_started
     def on_started(event: EngineStartedEvent) -> None:
         engine_cfg = get_engine_config()
+
+        # Structured logging
+        logger.info(
+            "engine_started",
+            symbols=event.symbols,
+            broker=event.broker_name,
+            feed=event.feed_name,
+            dry_run=event.dry_run,
+            max_daily_loss_pct=engine_cfg.risk.max_daily_loss_pct,
+            max_positions=engine_cfg.risk.max_open_positions,
+        )
+
+        # Console output for user
         console.print()
         console.rule("[bold green]TRADING ENGINE[/bold green]")
         console.print(f"Symbols: [cyan]{', '.join(event.symbols)}[/cyan]")
@@ -113,6 +128,21 @@ def make_cli_callbacks() -> EngineCallbacks:
     @callbacks.on_stopped
     def on_stopped(event: EngineStoppedEvent) -> None:
         risk = event.risk_manager
+
+        # Structured logging
+        logger.info(
+            "engine_stopped",
+            trades=risk.session_trades,
+            winners=risk.session_winners,
+            losers=risk.session_losers,
+            win_rate=risk.session_win_rate,
+            pnl=risk.session_pnl,
+            return_pct=risk.session_return_pct,
+            profit_factor=risk.session_profit_factor,
+            final_equity=risk.final_equity,
+        )
+
+        # Console output for user
         console.print()
         console.rule("[bold]SESSION SUMMARY[/bold]")
 
@@ -138,6 +168,17 @@ def make_cli_callbacks() -> EngineCallbacks:
 
     @callbacks.on_message
     def on_message(event: MessageEvent) -> None:
+        # Structured logging based on level
+        log_method = {
+            MessageLevel.INFO: logger.info,
+            MessageLevel.SUCCESS: logger.info,
+            MessageLevel.WARNING: logger.warning,
+            MessageLevel.ERROR: logger.error,
+            MessageLevel.DEBUG: logger.debug,
+        }.get(event.level, logger.info)
+        log_method("engine_message", message=event.message, level=event.level.value)
+
+        # Console output for user
         style_map = {
             MessageLevel.INFO: "",
             MessageLevel.SUCCESS: "green",
@@ -164,6 +205,21 @@ def make_cli_callbacks() -> EngineCallbacks:
 
     @callbacks.on_signal
     def on_signal(event: SignalEvent) -> None:
+        # Structured logging
+        logger.info(
+            "signal_generated",
+            symbol=event.symbol,
+            direction=event.direction,
+            entry=event.entry,
+            stop=event.stop,
+            tp=event.tp,
+            size=event.size,
+            blocked=event.blocked,
+            reason=event.reason,
+            was_capped=event.was_capped,
+        )
+
+        # Console output for user
         console.print()
         emoji = "🔼" if event.direction == "LONG" else "🔽"
         console.print(f"[bold cyan]{emoji} {event.direction} SIGNAL: {event.symbol}[/bold cyan]")
@@ -179,6 +235,17 @@ def make_cli_callbacks() -> EngineCallbacks:
 
     @callbacks.on_trade_closed
     def on_trade_closed(event: TradeClosedEvent) -> None:
+        # Structured logging
+        logger.info(
+            "trade_closed",
+            symbol=event.symbol,
+            reason=event.reason,
+            entry=event.entry,
+            exit_price=event.exit_price,
+            pnl=event.pnl,
+        )
+
+        # Console output for user
         console.print()
         emoji = "🛑" if event.reason == "STOP_LOSS" else "✅"
         console.print(f"[bold]{emoji} EXIT {event.symbol}: {event.reason}[/bold]")

@@ -4,10 +4,13 @@ from datetime import UTC, datetime, timedelta
 
 import polars as pl
 
+from tradingbot._components.logging import get_logger
 from tradingbot.config import get_cache_config, get_engine_config
 from tradingbot.interfaces import DataFeedProtocol
 
 from .db import get_date_range, insert_bars, query_bars
+
+logger = get_logger(__name__)
 
 
 class CachedFeed:
@@ -75,7 +78,7 @@ class CachedFeed:
 
         if refresh:
             # Force fetch everything from upstream
-            print(f"  [refresh] Fetching all from {source}")
+            logger.debug("cache_refresh", symbol=symbol, interval=interval, source=source)
             df = self._upstream.history(symbol, start_date, end_date, period, interval, debug=debug)
             insert_bars(df, symbol, interval, source)
             return df
@@ -85,15 +88,19 @@ class CachedFeed:
 
         if cached_start is None:
             # No cache - fetch everything
-            print(f"  [cache miss] Fetching all from {source}")
+            logger.debug("cache_miss", symbol=symbol, interval=interval, source=source)
             df = self._upstream.history(symbol, start_date, end_date, period, interval, debug=debug)
             insert_bars(df, symbol, interval, source)
         else:
-            # Show requested range vs cached range
-            is_intraday = interval in ("1m", "5m", "15m", "30m", "1h")
-            fmt = "%Y-%m-%d %H:%M" if is_intraday else "%Y-%m-%d"
-            print(
-                f"  [cache hit] using {need_start.strftime(fmt)} → {need_end.strftime(fmt)} (cached: {cached_start.strftime('%Y-%m-%d')} → {cached_end.strftime('%Y-%m-%d') if cached_end else '?'})"
+            # Log cache hit
+            logger.debug(
+                "cache_hit",
+                symbol=symbol,
+                interval=interval,
+                need_start=need_start.isoformat(),
+                need_end=need_end.isoformat(),
+                cached_start=cached_start.isoformat(),
+                cached_end=cached_end.isoformat() if cached_end else None,
             )
 
             # For intraday intervals, compare timestamps; for daily+, compare dates
@@ -105,7 +112,7 @@ class CachedFeed:
                 # Use ISO format for intraday to preserve time
                 start_str = need_start.isoformat() if is_intraday else need_start.strftime("%Y-%m-%d")
                 end_str = cached_start.isoformat() if is_intraday else cached_start.strftime("%Y-%m-%d")
-                print(f"  [backfill] {start_str} → {end_str} from {source}")
+                logger.debug("cache_backfill", symbol=symbol, start=start_str, end=end_str, source=source)
                 try:
                     df = self._upstream.history(
                         symbol,
@@ -116,9 +123,9 @@ class CachedFeed:
                     )
                     if not df.is_empty():
                         insert_bars(df, symbol, interval, source)
-                        print(f"    +{len(df)} bars")
+                        logger.debug("cache_backfill_complete", symbol=symbol, bars=len(df))
                 except ValueError:
-                    print("    (no data)")
+                    logger.debug("cache_backfill_empty", symbol=symbol)
 
             # Fetch gaps at the end (new data since last fetch)
             need_update = cached_end is not None and (
@@ -127,7 +134,7 @@ class CachedFeed:
             if need_update and cached_end is not None:
                 start_str = cached_end.isoformat() if is_intraday else cached_end.strftime("%Y-%m-%d")
                 end_str = need_end.isoformat() if is_intraday else need_end.strftime("%Y-%m-%d")
-                print(f"  [update] {start_str} → {end_str} from {source}")
+                logger.debug("cache_update", symbol=symbol, start=start_str, end=end_str, source=source)
                 try:
                     df = self._upstream.history(
                         symbol,
@@ -138,9 +145,9 @@ class CachedFeed:
                     )
                     if not df.is_empty():
                         insert_bars(df, symbol, interval, source)
-                        print(f"    +{len(df)} bars")
+                        logger.debug("cache_update_complete", symbol=symbol, bars=len(df))
                 except ValueError:
-                    print("    (no new data)")
+                    logger.debug("cache_update_empty", symbol=symbol)
 
         # Return from cache
         return query_bars(symbol, interval, need_start, need_end)
