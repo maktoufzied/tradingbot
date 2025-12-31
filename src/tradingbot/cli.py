@@ -91,7 +91,12 @@ def update_cache_for_replay(symbols: list[str], days: int) -> None:
 
 
 def make_cli_callbacks() -> EngineCallbacks:
-    """Create callbacks for CLI output."""
+    """Create callbacks for CLI output.
+
+    Each callback uses dual output:
+    - Structured logging for file/aggregation (machine-parseable JSON in production)
+    - Rich console output for interactive user feedback (human-readable)
+    """
     callbacks = EngineCallbacks()
 
     @callbacks.on_started

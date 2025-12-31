@@ -6,7 +6,6 @@ retry decorators, and callbacks for UI notification.
 
 import asyncio
 import functools
-import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,8 +13,9 @@ from enum import Enum
 from typing import Final, ParamSpec, TypeVar
 
 from .exceptions import RetryableError
+from .logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -94,7 +94,7 @@ async def reconnect_with_backoff(
     for attempt in range(config.max_retries):
         # Check if we should abort
         if should_stop and should_stop():
-            logger.info("%s reconnection aborted by stop signal", component)
+            logger.info("reconnection_aborted", component=component, reason="stop_signal")
             return False
 
         # Notify: reconnecting
@@ -108,10 +108,10 @@ async def reconnect_with_backoff(
             on_state_change(status)
 
         logger.info(
-            "%s reconnection attempt %d/%d",
-            component,
-            attempt + 1,
-            config.max_retries,
+            "reconnection_attempt",
+            component=component,
+            attempt=attempt + 1,
+            max_retries=config.max_retries,
         )
 
         try:
@@ -127,16 +127,16 @@ async def reconnect_with_backoff(
                 )
                 on_state_change(status)
 
-            logger.info("%s reconnected successfully", component)
+            logger.info("reconnection_success", component=component)
             return True
 
         except Exception as e:
             error_msg = str(e)
             logger.warning(
-                "%s reconnection attempt %d failed: %s",
-                component,
-                attempt + 1,
-                error_msg,
+                "reconnection_attempt_failed",
+                component=component,
+                attempt=attempt + 1,
+                error=error_msg,
             )
 
             # Check if this was the last attempt
@@ -152,14 +152,14 @@ async def reconnect_with_backoff(
                     on_state_change(status)
 
                 logger.error(
-                    "%s reconnection failed after %d attempts",
-                    component,
-                    config.max_retries,
+                    "reconnection_exhausted",
+                    component=component,
+                    max_retries=config.max_retries,
                 )
                 return False
 
             # Wait before next attempt
-            logger.info("%s waiting %.1fs before next attempt", component, delay)
+            logger.info("reconnection_waiting", component=component, delay_seconds=delay)
             await asyncio.sleep(delay)
 
             # Increase delay for next attempt (exponential backoff)
@@ -221,14 +221,14 @@ class ConnectionMonitor:
         self._last_connected = datetime.now()
         self._last_error = None
         self._notify_state_change()
-        logger.info("%s connected", self.component)
+        logger.info("component_connected", component=self.component)
 
     def set_disconnected(self, error: str | None = None) -> None:
         """Mark as disconnected (called when connection lost)."""
         self._state = ConnectionState.DISCONNECTED
         self._last_error = error
         self._notify_state_change()
-        logger.warning("%s disconnected: %s", self.component, error or "unknown")
+        logger.warning("component_disconnected", component=self.component, error=error or "unknown")
 
     def set_reconnecting(self, attempt: int) -> None:
         """Mark as reconnecting (called during reconnection attempts)."""
@@ -241,7 +241,7 @@ class ConnectionMonitor:
         self._state = ConnectionState.FAILED
         self._last_error = error
         self._notify_state_change()
-        logger.error("%s connection failed: %s", self.component, error or "unknown")
+        logger.error("component_connection_failed", component=self.component, error=error or "unknown")
 
     async def reconnect(
         self,
@@ -327,20 +327,20 @@ def retry(
                     last_exception = e
                     if attempt == max_attempts - 1:
                         logger.error(
-                            "%s failed after %d attempts: %s",
-                            func.__name__,
-                            max_attempts,
-                            e,
+                            "retry_exhausted",
+                            function=func.__name__,
+                            max_attempts=max_attempts,
+                            error=str(e),
                         )
                         raise
 
                     logger.warning(
-                        "%s attempt %d/%d failed: %s (retrying in %.1fs)",
-                        func.__name__,
-                        attempt + 1,
-                        max_attempts,
-                        e,
-                        delay,
+                        "retry_attempt_failed",
+                        function=func.__name__,
+                        attempt=attempt + 1,
+                        max_attempts=max_attempts,
+                        error=str(e),
+                        retry_delay=delay,
                     )
                     await asyncio.sleep(delay)
                     delay = min(delay * backoff_factor, max_delay)
@@ -386,20 +386,20 @@ def retry_sync(
                     last_exception = e
                     if attempt == max_attempts - 1:
                         logger.error(
-                            "%s failed after %d attempts: %s",
-                            func.__name__,
-                            max_attempts,
-                            e,
+                            "retry_exhausted",
+                            function=func.__name__,
+                            max_attempts=max_attempts,
+                            error=str(e),
                         )
                         raise
 
                     logger.warning(
-                        "%s attempt %d/%d failed: %s (retrying in %.1fs)",
-                        func.__name__,
-                        attempt + 1,
-                        max_attempts,
-                        e,
-                        delay,
+                        "retry_attempt_failed",
+                        function=func.__name__,
+                        attempt=attempt + 1,
+                        max_attempts=max_attempts,
+                        error=str(e),
+                        retry_delay=delay,
                     )
                     time.sleep(delay)
                     delay = min(delay * backoff_factor, max_delay)
@@ -456,16 +456,16 @@ async def retry_async_call[T](
         except exceptions as e:
             last_exception = e
             if attempt == max_attempts - 1:
-                logger.error("%s failed after %d attempts: %s", name, max_attempts, e)
+                logger.error("retry_exhausted", operation=name, max_attempts=max_attempts, error=str(e))
                 raise
 
             logger.warning(
-                "%s attempt %d/%d failed: %s (retrying in %.1fs)",
-                name,
-                attempt + 1,
-                max_attempts,
-                e,
-                delay,
+                "retry_attempt_failed",
+                operation=name,
+                attempt=attempt + 1,
+                max_attempts=max_attempts,
+                error=str(e),
+                retry_delay=delay,
             )
             await asyncio.sleep(delay)
             delay = min(delay * backoff_factor, max_delay)

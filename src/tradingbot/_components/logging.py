@@ -80,7 +80,7 @@ def configure_logging(
 
     # Configure structlog
     structlog.configure(
-        processors=processors,
+        processors=processors,  # type: ignore[arg-type]
         wrapper_class=structlog.make_filtering_bound_logger(log_level),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
