@@ -1,6 +1,5 @@
 """Alpaca broker implementation for paper and live trading."""
 
-import logging
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -21,11 +20,12 @@ from tradingbot._components.exceptions import (
     BrokerConnectionError,
     InsufficientFundsError,
 )
+from tradingbot._components.logging import get_logger
 from tradingbot.config import get_engine_config
 from tradingbot.interfaces import BrokerProtocol
 from tradingbot.types import AccountInfo, BrokerPosition, Direction, MarketClock, Order, OrderResult, OrderStatus
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

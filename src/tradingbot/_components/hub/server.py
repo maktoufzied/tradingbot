@@ -9,15 +9,16 @@ Also provides an optional HTTP server for serving static web interface files.
 
 import asyncio
 import json
-import logging
 import threading
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 
+from tradingbot._components.logging import get_logger
+
 from .hub import EventHub
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Optional websockets import - gracefully handle if not installed
 try:

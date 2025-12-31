@@ -8,11 +8,12 @@ to all registered callbacks and WebSocket clients.
 import asyncio
 import contextlib
 import json
-import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
+
+from tradingbot._components.logging import get_logger
 
 from .types import (
     AccountSnapshot,
@@ -29,7 +30,7 @@ from .types import (
     UIChannel,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 type Unsubscribe = Callable[[], None]
 type SyncCallback = Callable[[Any], None]
