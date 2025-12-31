@@ -4,7 +4,7 @@ export type Trend = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
 export type Signal = 'BUY' | 'SELL' | 'HOLD';
 export type Direction = 'LONG' | 'SHORT';
 export type TradeType = 'ENTRY' | 'EXIT' | 'BLOCKED';
-export type UIChannel = 'ticker' | 'position' | 'trade' | 'stats' | 'account' | 'risk' | 'status' | 'chart' | 'log';
+export type UIChannel = 'ticker' | 'position' | 'trade' | 'stats' | 'account' | 'risk' | 'status' | 'chart';
 
 // Connection state (mirrors Python resilience.ConnectionState)
 export type ConnectionState = 'connected' | 'disconnected' | 'reconnecting' | 'failed';
@@ -126,13 +126,6 @@ export interface StrategyInfo {
   risk_pct: number;
   rr_ratio: number;
   indicators: string[];
-}
-
-export interface LogEntry {
-  timestamp: string;
-  level: 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR';
-  source: string;
-  message: string;
 }
 
 export interface GlobalState {

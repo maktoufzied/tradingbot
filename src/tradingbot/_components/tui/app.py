@@ -26,7 +26,6 @@ from tradingbot._components.hub.types import (
 
 from .views import ViewMode, get_config, next_mode
 from .widgets import (
-    LogPanel,
     SignalLog,
     StatsBar,
     StatusBar,
@@ -121,9 +120,6 @@ class TradingApp(App[None]):
             # Signal log
             yield SignalLog(id="signal-log")
 
-            # Log panel (for INFO, WARNING, ERROR messages)
-            yield LogPanel(id="log-panel")
-
         # Status bar
         yield StatusBar(id="status-bar")
 
@@ -154,7 +150,6 @@ class TradingApp(App[None]):
         self._unsubscribes.append(self.hub.on_account(self._on_account))
         self._unsubscribes.append(self.hub.on_risk(self._on_risk))
         self._unsubscribes.append(self.hub.on_status(self._on_status))
-        self._unsubscribes.append(self.hub.on_log(self._on_log))
 
     def _call_safe(self, callback: Callable[..., Any], *args: Any) -> None:
         """Call a function thread-safely.
@@ -268,14 +263,6 @@ class TradingApp(App[None]):
         try:
             bar = self.query_one("#stats-bar", StatsBar)
             self._call_safe(bar.update_strategy, strategy)
-        except Exception:
-            pass
-
-    def _on_log(self, log_data: dict[str, str]) -> None:
-        """Handle log message."""
-        try:
-            log_panel = self.query_one("#log-panel", LogPanel)
-            self._call_safe(log_panel.add_log, log_data)
         except Exception:
             pass
 

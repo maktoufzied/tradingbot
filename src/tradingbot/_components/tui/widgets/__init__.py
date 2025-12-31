@@ -1,6 +1,5 @@
 """TUI Widgets for the trading dashboard."""
 
-from .log_panel import LogPanel
 from .position_panel import PositionPanel
 from .signal_log import SignalLog
 from .sparkline import Sparkline
@@ -9,7 +8,6 @@ from .status_bar import StatusBar
 from .symbol_card import SymbolCard
 
 __all__ = [
-    "LogPanel",
     "Sparkline",
     "SymbolCard",
     "PositionPanel",

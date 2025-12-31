@@ -369,20 +369,7 @@ class EngineAdapter:
         await self.hub.update_stats(stats)
 
     async def _on_message(self, event: MessageEvent) -> None:
-        """Forward messages to hub for TUI/web display and track errors."""
-        from .logging import log_engine_message
-
-        # Broadcast message to all UI clients (TUI and web)
-        log_entry = {
-            "timestamp": datetime.now(UTC).isoformat(),
-            "level": event.level.value.upper(),
-            "message": event.message,
-        }
-        await self.hub.broadcast_log(log_entry)
-
-        # Also write to log file
-        log_engine_message(event.level.value, event.message)
-
+        """Track errors for status display."""
         # Track error count for status display
         if event.level.value == "error":
             self._errors += 1

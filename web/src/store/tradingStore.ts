@@ -11,7 +11,6 @@ import type {
   ChartUpdate,
   StrategyInfo,
   GlobalState,
-  LogEntry,
 } from '../types/api';
 
 interface TradingState {
@@ -30,7 +29,6 @@ interface TradingState {
   charts: Record<string, ChartUpdate>;
   recentTrades: TradeAlert[];
   strategy: StrategyInfo;
-  logs: LogEntry[];
 
   // Actions
   setConnected: (connected: boolean) => void;
@@ -44,7 +42,6 @@ interface TradingState {
   updateStatus: (data: SystemStatus) => void;
   updateChart: (data: ChartUpdate) => void;
   addTrade: (data: TradeAlert) => void;
-  addLog: (data: LogEntry) => void;
   clearState: () => void;
 }
 
@@ -126,7 +123,6 @@ export const useTradingStore = create<TradingState>((set) => ({
   charts: {},
   recentTrades: [],
   strategy: defaultStrategy,
-  logs: [],
 
   // Actions
   setConnected: (connected) => set({ connected, reconnecting: false, reconnectAttempts: 0 }),
@@ -175,11 +171,6 @@ export const useTradingStore = create<TradingState>((set) => ({
       recentTrades: [data, ...state.recentTrades].slice(0, 50),
     })),
 
-  addLog: (data) =>
-    set((state) => ({
-      logs: [...state.logs, data].slice(-100),
-    })),
-
   clearState: () =>
     set({
       tickers: {},
@@ -191,7 +182,6 @@ export const useTradingStore = create<TradingState>((set) => ({
       charts: {},
       recentTrades: [],
       strategy: defaultStrategy,
-      logs: [],
     }),
 }));
 
@@ -209,7 +199,6 @@ export const useStatus = () => useTradingStore((s) => s.status);
 export const useChart = (symbol: string) => useTradingStore((s) => s.charts[symbol]);
 export const useRecentTrades = () => useTradingStore((s) => s.recentTrades);
 export const useStrategy = () => useTradingStore((s) => s.strategy);
-export const useLogs = () => useTradingStore((s) => s.logs);
 export const useSymbols = () => useTradingStore(useShallow((s) => Object.keys(s.tickers)));
 export const useAllTickers = () => useTradingStore((s) => s.tickers);
 export const useAllPositions = () => useTradingStore((s) => s.positions);

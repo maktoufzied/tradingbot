@@ -116,10 +116,6 @@ class EventHub:
         """Register callback for chart data updates."""
         return self.on(UIChannel.CHART, callback)
 
-    def on_log(self, callback: Callback) -> Unsubscribe:
-        """Register callback for log messages."""
-        return self.on(UIChannel.LOG, callback)
-
     # --- State Access ---
 
     def get_state(self) -> GlobalState:
@@ -304,20 +300,6 @@ class EventHub:
         """Update chart data and broadcast."""
         self._charts[chart.symbol] = chart
         await self._broadcast(UIChannel.CHART, chart)
-
-    async def broadcast_log(self, log_entry: dict[str, str]) -> None:
-        """Broadcast a log entry to all clients (callbacks + WebSocket)."""
-        # Invoke callbacks (for TUI)
-        for cb in self._callbacks[UIChannel.LOG]:
-            try:
-                result = cb(log_entry)
-                if asyncio.iscoroutine(result):
-                    await result
-            except Exception as e:
-                logger.warning(f"Callback error on log: {e}")
-
-        # Send to WebSocket clients (for web UI)
-        await self._broadcast_raw(UIChannel.LOG, log_entry)
 
     # --- WebSocket Client Management ---
 

@@ -26,7 +26,6 @@ class UIChannel(Enum):
     RISK = "risk"
     STATUS = "status"
     CHART = "chart"
-    LOG = "log"
 
 
 @dataclass(slots=True)

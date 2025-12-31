@@ -259,50 +259,6 @@ SignalLogEntry.blocked {
     background: $warning 10%;
 }
 
-/* Log Panel (Messages) */
-LogPanel {
-    height: 6;
-    width: 100%;
-    border: round $border;
-    background: $surface;
-    margin: 0 1;
-}
-
-LogPanel .log-title {
-    height: 1;
-    padding: 0 1;
-    color: $primary;
-    text-style: bold;
-    background: $surface-dark;
-}
-
-LogPanel VerticalScroll {
-    height: 1fr;
-    scrollbar-size: 1 1;
-    scrollbar-background: $surface-dark;
-    scrollbar-color: $border;
-    scrollbar-color-hover: $neutral;
-    scrollbar-color-active: $positive;
-}
-
-LogEntryWidget {
-    height: 1;
-    width: 100%;
-    padding: 0 1;
-}
-
-LogEntryWidget.level-error {
-    background: $negative 10%;
-}
-
-LogEntryWidget.level-warning {
-    background: $warning 10%;
-}
-
-LogEntryWidget.level-success {
-    background: $positive 10%;
-}
-
 /* Status Bar */
 StatusBar {
     height: 1;

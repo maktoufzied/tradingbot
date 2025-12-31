@@ -322,15 +322,11 @@ def _run_with_modern_tui(
     - WebSocket server for remote clients
     - Modern TradingApp with multi-stock grid
     """
-    from tradingbot._components.hub.logging import setup_logging
     from tradingbot._components.hub.types import StrategyInfo
     from tradingbot._components.tui.app import TradingApp as ModernTradingApp
 
     # Create the event hub
     hub = EventHub()
-
-    # Setup logging to file and hub
-    setup_logging(hub)
 
     # Set strategy info
     strategy_info = StrategyInfo(
@@ -471,14 +467,10 @@ def _run_headless_with_hub(
     """
     import contextlib
 
-    from tradingbot._components.hub.logging import setup_logging
     from tradingbot._components.hub.types import StrategyInfo
 
     # Create the event hub
     hub = EventHub()
-
-    # Setup logging to file and hub
-    setup_logging(hub)
 
     # Set strategy info
     strategy_info = StrategyInfo(

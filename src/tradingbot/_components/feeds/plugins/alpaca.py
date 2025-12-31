@@ -2,7 +2,6 @@
 
 import asyncio
 import contextlib
-import logging
 import os
 from collections.abc import Awaitable, Callable, Collection
 from datetime import datetime, timedelta
@@ -16,6 +15,7 @@ from alpaca.data.models.bars import BarSet
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
+from tradingbot._components.logging import get_logger
 from tradingbot.config import get_cache_config, get_engine_config
 from tradingbot.interfaces import DataFeedProtocol
 from tradingbot.types import Bar, BarOrigin
@@ -28,7 +28,7 @@ from ...resilience import (
     ReconnectionConfig,
 )
 
-logger = logging.getLogger("tradingbot.feed")
+logger = get_logger(__name__)
 
 ALPACA_API_KEY_ENV: Final = "ALPACA_API_KEY"
 ALPACA_SECRET_KEY_ENV: Final = "ALPACA_SECRET_KEY"
