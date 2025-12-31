@@ -204,6 +204,16 @@ class CacheConfig:
 
 
 @dataclass(frozen=True)
+class LoggingConfig:
+    """Logging configuration."""
+
+    level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
+    format: str = "console"  # "console" for dev, "json" for production
+    log_file: str | None = None  # Optional file path
+    colors: bool = True  # Enable colors in console output
+
+
+@dataclass(frozen=True)
 class EngineConfig:
     """Engine configuration."""
 
@@ -228,6 +238,7 @@ class Config:
     bot: BotConfig = field(default_factory=BotConfig)
     engine: EngineConfig = field(default_factory=EngineConfig)
     cache: CacheConfig = field(default_factory=CacheConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
 
 
 def _parse_config(data: dict[str, Any]) -> Config:
@@ -352,11 +363,21 @@ def _parse_config(data: dict[str, Any]) -> Config:
         retention=cache_retention,
     )
 
+    # Parse logging config
+    logging_data = root.get("logging", {})
+    logging_config = LoggingConfig(
+        level=logging_data.get("level", "INFO"),
+        format=logging_data.get("format", "console"),
+        log_file=logging_data.get("log_file"),
+        colors=logging_data.get("colors", True),
+    )
+
     return Config(
         strategy=strategy,
         bot=bot,
         engine=engine,
         cache=cache,
+        logging=logging_config,
     )
 
 
@@ -396,6 +417,11 @@ def get_engine_config() -> EngineConfig:
 def get_cache_config() -> CacheConfig:
     """Get cache configuration."""
     return get_config().cache
+
+
+def get_logging_config() -> LoggingConfig:
+    """Get logging configuration."""
+    return get_config().logging
 
 
 def get_provider_config() -> ProviderConfig:

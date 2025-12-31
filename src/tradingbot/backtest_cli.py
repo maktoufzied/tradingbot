@@ -11,6 +11,18 @@ DEFAULT_PARTIAL_EXITS = (PartialExitLevel(r_multiple=1.0, exit_pct=0.5),)  # 50%
 
 def main() -> None:
     """CLI entry point for backtest."""
+    from tradingbot._components.logging import configure_logging
+    from tradingbot.config import get_logging_config
+
+    # Initialize structured logging from config
+    log_cfg = get_logging_config()
+    configure_logging(
+        level=log_cfg.level,
+        log_format=log_cfg.format,  # type: ignore[arg-type]
+        log_file=log_cfg.log_file,
+        enable_colors=log_cfg.colors,
+    )
+
     parser = argparse.ArgumentParser(
         description="Run trading bot backtest",
         formatter_class=argparse.RawDescriptionHelpFormatter,

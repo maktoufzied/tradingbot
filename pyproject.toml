@@ -12,6 +12,7 @@ dependencies = [
     "polars>=1.35.2",
     "pyarrow>=19.0.0",
     "rich>=14.2.0",
+    "structlog>=25.5.0",
     "ta-lib>=0.6.8",
     "textual>=6.7.0",
     "tomlkit>=0.13.3",
@@ -86,5 +87,5 @@ show_error_codes = true
 files = ["src/tradingbot"]
 
 [[tool.mypy.overrides]]
-module = ["yfinance", "yfinance.*", "plotext", "plotext.*", "optuna", "optuna.*", "tomlkit", "tomlkit.*"]
+module = ["yfinance", "yfinance.*", "plotext", "plotext.*", "optuna", "optuna.*", "tomlkit", "tomlkit.*", "structlog", "structlog.*"]
 ignore_missing_imports = true

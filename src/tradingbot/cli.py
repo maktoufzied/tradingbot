@@ -475,7 +475,18 @@ def main() -> None:
     """CLI entry point for live trading."""
     import argparse
 
+    from tradingbot._components.logging import configure_logging
     from tradingbot._components.presets import get_preset
+    from tradingbot.config import get_logging_config
+
+    # Initialize structured logging from config
+    log_cfg = get_logging_config()
+    configure_logging(
+        level=log_cfg.level,
+        log_format=log_cfg.format,  # type: ignore[arg-type]
+        log_file=log_cfg.log_file,
+        enable_colors=log_cfg.colors,
+    )
 
     parser = argparse.ArgumentParser(
         description="Run live trading bot",
