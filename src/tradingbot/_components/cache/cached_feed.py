@@ -78,7 +78,7 @@ class CachedFeed:
 
         if refresh:
             # Force fetch everything from upstream
-            logger.debug("cache_refresh", symbol=symbol, interval=interval, source=source)
+            logger.debug("Cache refresh: %s %s (%s)", symbol, interval, source)
             df = self._upstream.history(symbol, start_date, end_date, period, interval, debug=debug)
             insert_bars(df, symbol, interval, source)
             return df
@@ -88,19 +88,19 @@ class CachedFeed:
 
         if cached_start is None:
             # No cache - fetch everything
-            logger.debug("cache_miss", symbol=symbol, interval=interval, source=source)
+            logger.debug("Cache miss: %s %s (%s)", symbol, interval, source)
             df = self._upstream.history(symbol, start_date, end_date, period, interval, debug=debug)
             insert_bars(df, symbol, interval, source)
         else:
             # Log cache hit
             logger.debug(
-                "cache_hit",
-                symbol=symbol,
-                interval=interval,
-                need_start=need_start.isoformat(),
-                need_end=need_end.isoformat(),
-                cached_start=cached_start.isoformat(),
-                cached_end=cached_end.isoformat() if cached_end else None,
+                "Cache hit: %s %s (need %s to %s, cached %s to %s)",
+                symbol,
+                interval,
+                need_start.isoformat(),
+                need_end.isoformat(),
+                cached_start.isoformat(),
+                cached_end.isoformat() if cached_end else "N/A",
             )
 
             # For intraday intervals, compare timestamps; for daily+, compare dates
@@ -112,7 +112,7 @@ class CachedFeed:
                 # Use ISO format for intraday to preserve time
                 start_str = need_start.isoformat() if is_intraday else need_start.strftime("%Y-%m-%d")
                 end_str = cached_start.isoformat() if is_intraday else cached_start.strftime("%Y-%m-%d")
-                logger.debug("cache_backfill", symbol=symbol, start=start_str, end=end_str, source=source)
+                logger.debug("Cache backfill: %s %s to %s (%s)", symbol, start_str, end_str, source)
                 try:
                     df = self._upstream.history(
                         symbol,
@@ -123,9 +123,9 @@ class CachedFeed:
                     )
                     if not df.is_empty():
                         insert_bars(df, symbol, interval, source)
-                        logger.debug("cache_backfill_complete", symbol=symbol, bars=len(df))
+                        logger.debug("Cache backfill complete: %s (%d bars)", symbol, len(df))
                 except ValueError:
-                    logger.debug("cache_backfill_empty", symbol=symbol)
+                    logger.debug("Cache backfill empty: %s", symbol)
 
             # Fetch gaps at the end (new data since last fetch)
             need_update = cached_end is not None and (
@@ -134,7 +134,7 @@ class CachedFeed:
             if need_update and cached_end is not None:
                 start_str = cached_end.isoformat() if is_intraday else cached_end.strftime("%Y-%m-%d")
                 end_str = need_end.isoformat() if is_intraday else need_end.strftime("%Y-%m-%d")
-                logger.debug("cache_update", symbol=symbol, start=start_str, end=end_str, source=source)
+                logger.debug("Cache update: %s %s to %s (%s)", symbol, start_str, end_str, source)
                 try:
                     df = self._upstream.history(
                         symbol,
@@ -145,9 +145,9 @@ class CachedFeed:
                     )
                     if not df.is_empty():
                         insert_bars(df, symbol, interval, source)
-                        logger.debug("cache_update_complete", symbol=symbol, bars=len(df))
+                        logger.debug("Cache update complete: %s (%d bars)", symbol, len(df))
                 except ValueError:
-                    logger.debug("cache_update_empty", symbol=symbol)
+                    logger.debug("Cache update empty: %s", symbol)
 
         # Return from cache
         return query_bars(symbol, interval, need_start, need_end)

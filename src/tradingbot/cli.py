@@ -103,15 +103,14 @@ def make_cli_callbacks() -> EngineCallbacks:
     def on_started(event: EngineStartedEvent) -> None:
         engine_cfg = get_engine_config()
 
-        # Structured logging
         logger.info(
-            "engine_started",
-            symbols=event.symbols,
-            broker=event.broker_name,
-            feed=event.feed_name,
-            dry_run=event.dry_run,
-            max_daily_loss_pct=engine_cfg.risk.max_daily_loss_pct,
-            max_positions=engine_cfg.risk.max_open_positions,
+            "Engine started: symbols=%s broker=%s feed=%s dry_run=%s max_loss=%.1f%% max_positions=%d",
+            event.symbols,
+            event.broker_name,
+            event.feed_name,
+            event.dry_run,
+            engine_cfg.risk.max_daily_loss_pct * 100,
+            engine_cfg.risk.max_open_positions,
         )
 
         # Console output for user
@@ -134,17 +133,16 @@ def make_cli_callbacks() -> EngineCallbacks:
     def on_stopped(event: EngineStoppedEvent) -> None:
         risk = event.risk_manager
 
-        # Structured logging
         logger.info(
-            "engine_stopped",
-            trades=risk.session_trades,
-            winners=risk.session_winners,
-            losers=risk.session_losers,
-            win_rate=risk.session_win_rate,
-            pnl=risk.session_pnl,
-            return_pct=risk.session_return_pct,
-            profit_factor=risk.session_profit_factor,
-            final_equity=risk.final_equity,
+            "Engine stopped: trades=%d win=%d loss=%d win_rate=%.1f%% pnl=$%.2f return=%.2f%% pf=%.2f equity=$%.2f",
+            risk.session_trades,
+            risk.session_winners,
+            risk.session_losers,
+            risk.session_win_rate * 100,
+            risk.session_pnl,
+            risk.session_return_pct * 100,
+            risk.session_profit_factor,
+            risk.final_equity,
         )
 
         # Console output for user
@@ -173,7 +171,7 @@ def make_cli_callbacks() -> EngineCallbacks:
 
     @callbacks.on_message
     def on_message(event: MessageEvent) -> None:
-        # Structured logging based on level
+        # Log based on level
         log_method = {
             MessageLevel.INFO: logger.info,
             MessageLevel.SUCCESS: logger.info,
@@ -181,7 +179,7 @@ def make_cli_callbacks() -> EngineCallbacks:
             MessageLevel.ERROR: logger.error,
             MessageLevel.DEBUG: logger.debug,
         }.get(event.level, logger.info)
-        log_method("engine_message", message=event.message, level=event.level.value)
+        log_method("[%s] %s", event.level.value, event.message)
 
         # Console output for user
         style_map = {
@@ -210,18 +208,17 @@ def make_cli_callbacks() -> EngineCallbacks:
 
     @callbacks.on_signal
     def on_signal(event: SignalEvent) -> None:
-        # Structured logging
         logger.info(
-            "signal_generated",
-            symbol=event.symbol,
-            direction=event.direction,
-            entry=event.entry,
-            stop=event.stop,
-            tp=event.tp,
-            size=event.size,
-            blocked=event.blocked,
-            reason=event.reason,
-            was_capped=event.was_capped,
+            "Signal: %s %s entry=$%.2f stop=$%.2f tp=$%.2f size=%.2f blocked=%s reason=%s capped=%s",
+            event.direction,
+            event.symbol,
+            event.entry,
+            event.stop,
+            event.tp,
+            event.size,
+            event.blocked,
+            event.reason or "N/A",
+            event.was_capped,
         )
 
         # Console output for user
@@ -240,14 +237,13 @@ def make_cli_callbacks() -> EngineCallbacks:
 
     @callbacks.on_trade_closed
     def on_trade_closed(event: TradeClosedEvent) -> None:
-        # Structured logging
         logger.info(
-            "trade_closed",
-            symbol=event.symbol,
-            reason=event.reason,
-            entry=event.entry,
-            exit_price=event.exit_price,
-            pnl=event.pnl,
+            "Trade closed: %s reason=%s entry=$%.2f exit=$%.2f pnl=$%.2f",
+            event.symbol,
+            event.reason,
+            event.entry,
+            event.exit_price,
+            event.pnl,
         )
 
         # Console output for user
@@ -551,14 +547,9 @@ def main() -> None:
     from tradingbot._components.presets import get_preset
     from tradingbot.config import get_logging_config
 
-    # Initialize structured logging from config
+    # Initialize logging from config
     log_cfg = get_logging_config()
-    configure_logging(
-        level=log_cfg.level,
-        log_format=log_cfg.format,  # type: ignore[arg-type]
-        log_file=log_cfg.log_file,
-        enable_colors=log_cfg.colors,
-    )
+    configure_logging(level=log_cfg.level, log_file=log_cfg.log_file)
 
     parser = argparse.ArgumentParser(
         description="Run live trading bot",

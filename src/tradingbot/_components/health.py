@@ -52,12 +52,12 @@ class HealthChecker:
     async def start(self) -> None:
         """Start the health check background task."""
         if not self._config.enabled:
-            logger.debug("health_check_disabled")
+            logger.debug("Health check disabled")
             return
 
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
-        logger.info("health_checker_started", interval_minutes=self._config.interval_minutes)
+        logger.info("Health checker started (interval=%dm)", self._config.interval_minutes)
 
     async def stop(self) -> None:
         """Stop the health check background task."""
@@ -67,7 +67,7 @@ class HealthChecker:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
-        logger.debug("health_checker_stopped")
+        logger.debug("Health checker stopped")
 
     async def _run_loop(self) -> None:
         """Main health check loop."""
@@ -80,7 +80,7 @@ class HealthChecker:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error("health_check_error", error=str(e))
+                logger.error("Health check error: %s", e)
 
     async def _emit_health(self) -> None:
         """Emit health metrics."""
@@ -102,14 +102,15 @@ class HealthChecker:
         # Position and risk info
         open_positions = self._get_positions_count()
 
+        bar_age_str = f"{last_bar_age_seconds:.0f}s" if last_bar_age_seconds else "N/A"
         logger.info(
-            "health_check",
-            feed_connected=feed_connected,
-            broker_connected=broker_connected,
-            last_bar_age_seconds=last_bar_age_seconds,
-            open_positions=open_positions,
-            session_trades=self._risk.session_trades,
-            session_pnl=round(self._risk.session_pnl, 2),
-            session_win_rate=round(self._risk.session_win_rate, 2),
-            memory_mb=round(get_memory_mb(), 1),
+            "Health: feed=%s broker=%s bar_age=%s positions=%d trades=%d pnl=$%.2f win_rate=%.0f%% mem=%.1fMB",
+            "OK" if feed_connected else "DOWN",
+            "OK" if broker_connected else "DOWN",
+            bar_age_str,
+            open_positions,
+            self._risk.session_trades,
+            self._risk.session_pnl,
+            self._risk.session_win_rate * 100,
+            get_memory_mb(),
         )

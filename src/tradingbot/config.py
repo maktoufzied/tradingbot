@@ -208,9 +208,7 @@ class LoggingConfig:
     """Logging configuration."""
 
     level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
-    format: str = "console"  # "console" for dev, "json" for production
     log_file: str | None = None  # Optional file path
-    colors: bool = True  # Enable colors in console output
 
 
 @dataclass(frozen=True)
@@ -376,9 +374,7 @@ def _parse_config(data: dict[str, Any]) -> Config:
     logging_data = root.get("logging", {})
     logging_config = LoggingConfig(
         level=logging_data.get("level", "INFO"),
-        format=logging_data.get("format", "console"),
         log_file=logging_data.get("log_file"),
-        colors=logging_data.get("colors", True),
     )
 
     # Parse health config
