@@ -275,8 +275,23 @@ def _run_with_modern_tui(
     )
     hub.set_strategy(strategy_info)
 
+    # Wire feed connection status to hub (if feed supports it)
+    if hasattr(feed, "set_connection_callback"):
+        from tradingbot._components.resilience import ConnectionStatus
+
+        def on_feed_connection_change(status: ConnectionStatus) -> None:
+            hub.update_connection_status_sync(
+                component=status.component,
+                state=status.state,
+                retry_count=status.retry_count,
+                error=status.last_error,
+            )
+
+        feed.set_connection_callback(on_feed_connection_change)
+
     # Create adapter that transforms engine events to hub updates
-    adapter = EngineAdapter(hub, symbols, is_replay=is_replay)
+    provider_name = broker.name.title()  # "alpaca" -> "Alpaca", "paper" -> "Paper"
+    adapter = EngineAdapter(hub, symbols, is_replay=is_replay, provider=provider_name)
 
     class ModernTUIApp(ModernTradingApp):
         """Modern TUI app with integrated trading engine."""
@@ -408,8 +423,23 @@ def _run_headless_with_hub(
     )
     hub.set_strategy(strategy_info)
 
+    # Wire feed connection status to hub (if feed supports it)
+    if hasattr(feed, "set_connection_callback"):
+        from tradingbot._components.resilience import ConnectionStatus
+
+        def on_feed_connection_change(status: ConnectionStatus) -> None:
+            hub.update_connection_status_sync(
+                component=status.component,
+                state=status.state,
+                retry_count=status.retry_count,
+                error=status.last_error,
+            )
+
+        feed.set_connection_callback(on_feed_connection_change)
+
     # Create adapter that transforms engine events to hub updates
-    adapter = EngineAdapter(hub, symbols, is_replay=is_replay)
+    provider_name = broker.name.title()  # "alpaca" -> "Alpaca", "paper" -> "Paper"
+    adapter = EngineAdapter(hub, symbols, is_replay=is_replay, provider=provider_name)
 
     async def run_with_server() -> None:
         # Start WebSocket server (and optionally web server)

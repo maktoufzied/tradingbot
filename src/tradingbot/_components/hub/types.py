@@ -9,6 +9,11 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
+from tradingbot._components.resilience import ConnectionState
+
+# Re-export for backward compatibility and type annotations
+ConnectionStateEnum = ConnectionState
+
 
 class UIChannel(Enum):
     """Message channels for subscription filtering."""
@@ -211,6 +216,16 @@ class SystemStatus:
     errors_count: int
     is_replay: bool = False
     replay_time: datetime | None = None
+    # Provider name (e.g., "Alpaca", "Paper")
+    provider: str = "Alpaca"
+    # Connection state details (feed only - broker uses REST)
+    feed_state: ConnectionStateEnum = ConnectionStateEnum.DISCONNECTED
+    feed_retry_count: int = 0
+    feed_last_error: str | None = None
+    # Legacy broker fields (kept for compatibility, not displayed)
+    broker_state: ConnectionStateEnum = ConnectionStateEnum.CONNECTED
+    broker_retry_count: int = 0
+    broker_last_error: str | None = None
 
     @classmethod
     def default(cls) -> SystemStatus:
@@ -224,6 +239,13 @@ class SystemStatus:
             errors_count=0,
             is_replay=False,
             replay_time=None,
+            provider="Alpaca",
+            feed_state=ConnectionStateEnum.DISCONNECTED,
+            feed_retry_count=0,
+            feed_last_error=None,
+            broker_state=ConnectionStateEnum.CONNECTED,
+            broker_retry_count=0,
+            broker_last_error=None,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -232,6 +254,9 @@ class SystemStatus:
             d["market_next_change"] = self.market_next_change.isoformat()
         if self.replay_time:
             d["replay_time"] = self.replay_time.isoformat()
+        # Convert enums to strings
+        d["feed_state"] = self.feed_state.value
+        d["broker_state"] = self.broker_state.value
         return d
 
 

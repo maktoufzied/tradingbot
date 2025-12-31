@@ -91,6 +91,16 @@ const defaultStatus: SystemStatus = {
   errors_count: 0,
   is_replay: false,
   replay_time: null,
+  // Provider name
+  provider: 'Alpaca',
+  // Connection state details (feed only - broker uses REST)
+  feed_state: 'disconnected',
+  feed_retry_count: 0,
+  feed_last_error: null,
+  // Legacy broker fields
+  broker_state: 'connected',
+  broker_retry_count: 0,
+  broker_last_error: null,
 };
 
 const defaultStrategy: StrategyInfo = {

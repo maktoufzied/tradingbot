@@ -7,7 +7,7 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
-from tradingbot._components.hub.types import SystemStatus
+from tradingbot._components.hub.types import ConnectionStateEnum, SystemStatus
 
 from ..theme import THEME
 from ..views import ViewMode, mode_name
@@ -106,21 +106,18 @@ class StatusBar(Widget):
 
         status = self.status
         if not status:
-            text.append("\u25cf Feed ", style=THEME.text_dim)
-            text.append("\u25cf Broker ", style=THEME.text_dim)
+            text.append("\u25cf Alpaca ", style=THEME.text_dim)
             text.append("\u25cf Market", style=THEME.text_dim)
             indicators.update(text)
             return
 
-        # Feed status
-        feed_color = THEME.connected if status.feed_connected else THEME.disconnected
-        text.append("\u25cf ", style=feed_color)
-        text.append("Feed ", style=THEME.text_secondary)
-
-        # Broker status
-        broker_color = THEME.connected if status.broker_connected else THEME.disconnected
-        text.append("\u25cf ", style=broker_color)
-        text.append("Broker ", style=THEME.text_secondary)
+        # Provider status (uses feed connection state - broker is REST/stateless)
+        provider_indicator = self._get_connection_indicator(
+            status.feed_state,
+            status.feed_retry_count,
+            status.provider,
+        )
+        text.append_text(provider_indicator)
 
         # Market status
         market_color = THEME.connected if status.market_open else THEME.warning
@@ -144,6 +141,43 @@ class StatusBar(Widget):
                 text.append(f" | {mins}m", style=THEME.text_dim)
 
         indicators.update(text)
+
+    def _get_connection_indicator(
+        self,
+        state: ConnectionStateEnum,
+        retry_count: int,
+        label: str,
+    ) -> Text:
+        """Get connection indicator text with appropriate styling.
+
+        Args:
+            state: Current connection state
+            retry_count: Number of retry attempts (for reconnecting state)
+            label: Label to show (e.g., "Feed", "Broker")
+
+        Returns:
+            Text with styled indicator
+        """
+        text = Text()
+
+        if state == ConnectionStateEnum.CONNECTED:
+            text.append("\u25cf ", style=THEME.connected)
+            text.append(f"{label} ", style=THEME.text_secondary)
+        elif state == ConnectionStateEnum.RECONNECTING:
+            # Yellow blinking indicator with retry count
+            text.append("\u25cf ", style=f"bold blink {THEME.warning}")
+            text.append(f"{label} ", style=THEME.text_secondary)
+            text.append(f"(retry {retry_count}) ", style=f"bold {THEME.warning}")
+        elif state == ConnectionStateEnum.FAILED:
+            # Red indicator with error
+            text.append("\u25cf ", style=f"bold {THEME.disconnected}")
+            text.append(f"{label} ", style=THEME.text_secondary)
+            text.append("FAILED ", style=f"bold {THEME.disconnected}")
+        else:  # DISCONNECTED
+            text.append("\u25cf ", style=THEME.disconnected)
+            text.append(f"{label} ", style=THEME.text_secondary)
+
+        return text
 
     def _update_view_mode(self) -> None:
         """Update view mode display."""

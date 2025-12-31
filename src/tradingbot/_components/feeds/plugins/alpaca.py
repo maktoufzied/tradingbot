@@ -21,13 +21,31 @@ from tradingbot.interfaces import DataFeedProtocol
 from tradingbot.types import Bar, BarOrigin
 
 from ...cache.db import insert_bars
+from ...resilience import (
+    ConnectionMonitor,
+    ConnectionState,
+    ConnectionStatus,
+    ReconnectionConfig,
+)
 
 logger = logging.getLogger("tradingbot.feed")
 
 ALPACA_API_KEY_ENV: Final = "ALPACA_API_KEY"
 ALPACA_SECRET_KEY_ENV: Final = "ALPACA_SECRET_KEY"
-RECONNECT_DELAY_SECONDS: Final = 5
-MAX_RECONNECT_ATTEMPTS: Final = 10
+
+# Watchdog: if no bars for this long during market hours, assume connection is stale
+STALE_CONNECTION_SECONDS: Final = 180  # 3 minutes
+
+# Reconnection configuration
+DEFAULT_FEED_RECONNECTION_CONFIG: Final = ReconnectionConfig(
+    max_retries=10,
+    base_delay=5.0,
+    max_delay=60.0,
+    backoff_factor=2.0,
+)
+
+# Type alias for connection state callback
+ConnectionStateCallback = Callable[[ConnectionStatus], None]
 
 
 class AlpacaFeed(DataFeedProtocol):
@@ -37,7 +55,17 @@ class AlpacaFeed(DataFeedProtocol):
     (e.g., 5m), we aggregate 1m bars into the configured interval.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        on_connection_state: ConnectionStateCallback | None = None,
+        reconnection_config: ReconnectionConfig | None = None,
+    ) -> None:
+        """Initialize Alpaca feed.
+
+        Args:
+            on_connection_state: Optional callback invoked on connection state changes.
+            reconnection_config: Optional custom reconnection configuration.
+        """
         self._api_key: str | None = None
         self._secret_key: str | None = None
         self._data_feed: DataFeed | None = None
@@ -46,11 +74,19 @@ class AlpacaFeed(DataFeedProtocol):
         self._callback: Callable[[Bar], Awaitable[None] | None] | None = None
         self._running = False
         self._task: asyncio.Task[None] | None = None
-        self._reconnect_attempts = 0
+        self._watchdog_task: asyncio.Task[None] | None = None
         # Bar aggregation state per symbol
         self._pending_bars: dict[str, list[Bar]] = {}
         self._bars_needed: dict[str, int] = {}  # Target bars for current interval per symbol
         self._bar_interval_minutes = self._parse_interval_minutes()
+        # Watchdog state
+        self._last_bar_time: datetime | None = None
+        # Connection monitoring
+        self._connection_monitor = ConnectionMonitor(
+            component="feed",
+            config=reconnection_config or DEFAULT_FEED_RECONNECTION_CONFIG,
+            on_state_change=on_connection_state,
+        )
 
     def _parse_interval_minutes(self) -> int:
         """Parse bar_interval config into minutes."""
@@ -93,7 +129,27 @@ class AlpacaFeed(DataFeedProtocol):
 
     @property
     def is_connected(self) -> bool:
+        # Keep backward compatibility: return True when running
+        # Use connection_state property for detailed state
         return self._running
+
+    @property
+    def connection_state(self) -> ConnectionState:
+        """Get current connection state."""
+        return self._connection_monitor.state
+
+    @property
+    def is_reconnecting(self) -> bool:
+        """Check if feed is currently reconnecting."""
+        return self._connection_monitor.is_reconnecting
+
+    def set_connection_callback(self, callback: ConnectionStateCallback) -> None:
+        """Set the connection state callback after instantiation.
+
+        This allows wiring the callback to a hub after the feed is created
+        via the registry (which doesn't pass constructor arguments).
+        """
+        self._connection_monitor.on_state_change = callback
 
     async def subscribe(self, symbols: Collection[str], on_bar: Callable[[Bar], Awaitable[None] | None]) -> None:
         """Subscribe to real-time bars for the given symbols."""
@@ -113,11 +169,19 @@ class AlpacaFeed(DataFeedProtocol):
     async def start(self) -> None:
         """Start the WebSocket connection."""
         self._running = True
+        self._last_bar_time = datetime.now()  # Initialize to avoid immediate stale detection
         self._task = asyncio.create_task(self._run_stream())
+        self._watchdog_task = asyncio.create_task(self._run_watchdog())
 
     async def stop(self) -> None:
         """Stop the WebSocket connection."""
         self._running = False
+
+        if self._watchdog_task:
+            self._watchdog_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._watchdog_task
+            self._watchdog_task = None
 
         if self._stream:
             with contextlib.suppress(Exception):
@@ -145,7 +209,9 @@ class AlpacaFeed(DataFeedProtocol):
                 # Subscribe to bars with async handler
                 self._stream.subscribe_bars(self._handle_bar_async, *self._symbols)
 
-                self._reconnect_attempts = 0
+                # Mark as connected
+                self._connection_monitor.set_connected()
+
                 interval = get_engine_config().bar_interval
                 feed_name = "SIP" if data_feed == DataFeed.SIP else "IEX"
                 logger.info(
@@ -154,21 +220,94 @@ class AlpacaFeed(DataFeedProtocol):
                 logger.info("Waiting for market data (bars arrive during market hours: 9:30 AM - 4:00 PM ET)")
 
                 # Run in a thread since StockDataStream.run() is blocking
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self._stream.run)
 
             except Exception as e:
                 if not self._running:
                     break
 
-                self._reconnect_attempts += 1
-                if self._reconnect_attempts >= MAX_RECONNECT_ATTEMPTS:
-                    logger.error(f"Max reconnection attempts reached. Last error: {e}")
+                error_msg = str(e)
+                self._connection_monitor.set_disconnected(error_msg)
+                logger.warning(f"Connection lost: {error_msg}")
+
+                # Attempt reconnection with exponential backoff
+                # Note: connect() only sets up the stream; the main loop runs it
+                async def connect() -> None:
+                    nonlocal api_key, secret_key, data_feed
+                    # Create and configure the stream
+                    self._stream = StockDataStream(api_key, secret_key, feed=data_feed)
+                    self._stream.subscribe_bars(self._handle_bar_async, *self._symbols)
+                    # Connection test: alpaca-py validates on subscribe
+                    # The actual run() will happen in the main loop after reconnect succeeds
+
+                reconnected = await self._connection_monitor.reconnect(
+                    connect_fn=connect,
+                    should_stop=lambda: not self._running,
+                )
+
+                if not reconnected:
+                    logger.error("Feed reconnection failed after max attempts")
                     self._running = False
                     break
 
-                logger.warning(f"Connection lost: {e}. Reconnecting in {RECONNECT_DELAY_SECONDS}s...")
-                await asyncio.sleep(RECONNECT_DELAY_SECONDS)
+                # Reconnection successful - mark as connected and run the stream
+                self._connection_monitor.set_connected()
+                interval = get_engine_config().bar_interval
+                feed_name = "SIP" if data_feed == DataFeed.SIP else "IEX"
+                logger.info(
+                    f"Reconnected to Alpaca WebSocket ({feed_name} feed). Subscribed: {', '.join(self._symbols)} (1m bars → {interval})"
+                )
+                # Run the reconnected stream (blocking call in executor)
+                # Stream was set in connect(), assert for type safety
+                assert self._stream is not None
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self._stream.run)
+
+    async def _run_watchdog(self) -> None:
+        """Monitor connection health and force reconnect if stale.
+
+        During market hours, we expect bars every minute. If no bars arrive
+        for STALE_CONNECTION_SECONDS, the connection is likely dead and we
+        force a reconnect by stopping the stream.
+        """
+        while self._running:
+            await asyncio.sleep(30)  # Check every 30 seconds
+
+            if not self._running or not self._connection_monitor.is_connected:
+                continue
+
+            if self._last_bar_time is None:
+                continue
+
+            # Only check during US market hours (9:30 AM - 4:00 PM ET)
+            from zoneinfo import ZoneInfo
+
+            et_tz = ZoneInfo("America/New_York")
+            now_et = datetime.now(et_tz)
+            market_open = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+            market_close = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
+
+            if not (market_open <= now_et <= market_close):
+                continue
+
+            if now_et.weekday() >= 5:
+                continue
+
+            seconds_since_bar = (datetime.now() - self._last_bar_time).total_seconds()
+
+            if seconds_since_bar > STALE_CONNECTION_SECONDS:
+                logger.warning(
+                    f"No bars received for {seconds_since_bar:.0f}s during market hours - connection may be stale"
+                )
+
+                # Force disconnect to trigger reconnection
+                self._connection_monitor.set_disconnected("Stale connection (no data)")
+
+                if self._stream:
+                    logger.info("Stopping stale stream to force reconnection...")
+                    with contextlib.suppress(Exception):
+                        self._stream.stop()
 
     async def _backfill_current_interval(self) -> None:
         """Fetch historical 1m bars to complete the current interval.
@@ -203,7 +342,7 @@ class AlpacaFeed(DataFeedProtocol):
 
         try:
             # Fetch 1m bars for each symbol
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             client = await loop.run_in_executor(None, lambda: StockHistoricalDataClient(api_key, secret_key))
 
             for symbol in self._symbols:
@@ -273,6 +412,9 @@ class AlpacaFeed(DataFeedProtocol):
         logger.info(
             f"1m bar: {alpaca_bar.symbol} {bar_time.strftime('%H:%M')} @ ${alpaca_bar.close:.2f} (latency: {latency_sec:.0f}s)"
         )
+
+        # Update watchdog timestamp
+        self._last_bar_time = datetime.now()
 
         # Convert Alpaca bar to our Bar model (realtime 1m bar)
         bar = Bar(

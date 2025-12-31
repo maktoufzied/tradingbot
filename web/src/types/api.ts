@@ -6,6 +6,9 @@ export type Direction = 'LONG' | 'SHORT';
 export type TradeType = 'ENTRY' | 'EXIT' | 'BLOCKED';
 export type UIChannel = 'ticker' | 'position' | 'trade' | 'stats' | 'account' | 'risk' | 'status' | 'chart' | 'log';
 
+// Connection state (mirrors Python resilience.ConnectionState)
+export type ConnectionState = 'connected' | 'disconnected' | 'reconnecting' | 'failed';
+
 export interface TickerUpdate {
   symbol: string;
   price: number;
@@ -93,6 +96,16 @@ export interface SystemStatus {
   errors_count: number;
   is_replay: boolean;
   replay_time: string | null;
+  // Provider name (e.g., "Alpaca", "Paper")
+  provider: string;
+  // Connection state details (feed only - broker uses REST)
+  feed_state: ConnectionState;
+  feed_retry_count: number;
+  feed_last_error: string | null;
+  // Legacy broker fields (kept for compatibility)
+  broker_state: ConnectionState;
+  broker_retry_count: number;
+  broker_last_error: string | null;
 }
 
 export interface ChartUpdate {

@@ -36,18 +36,7 @@ export function Header() {
       <div className="flex items-center gap-6">
         {/* Connection indicators */}
         <div className="flex items-center gap-4 text-sm">
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`w-2 h-2 rounded-full ${status.feed_connected ? 'bg-positive' : 'bg-negative'}`}
-            />
-            <span className="text-text-secondary">Feed</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`w-2 h-2 rounded-full ${status.broker_connected ? 'bg-positive' : 'bg-negative'}`}
-            />
-            <span className="text-text-secondary">Broker</span>
-          </div>
+          <ConnectionStatus />
           <div className="flex items-center gap-1.5">
             <span
               className={`w-2 h-2 rounded-full ${status.market_open ? 'bg-positive' : 'bg-warning'}`}
@@ -69,8 +58,6 @@ export function Header() {
         <div className="text-lg font-medium mono text-primary">
           {replayTime ? format(replayTime, 'HH:mm:ss') : format(currentTime, 'HH:mm:ss')}
         </div>
-
-        <ConnectionStatus />
       </div>
     </header>
   );

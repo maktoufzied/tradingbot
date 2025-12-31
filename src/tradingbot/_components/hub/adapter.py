@@ -47,10 +47,18 @@ class EngineAdapter:
         engine = TradingEngine(..., callbacks=adapter.callbacks)
     """
 
-    def __init__(self, hub: EventHub, symbols: list[str], *, is_replay: bool = False) -> None:
+    def __init__(
+        self,
+        hub: EventHub,
+        symbols: list[str],
+        *,
+        is_replay: bool = False,
+        provider: str = "Alpaca",
+    ) -> None:
         self.hub = hub
         self.symbols = symbols
         self.is_replay = is_replay
+        self.provider = provider
         self.callbacks = EngineCallbacks()
 
         # Tracking state
@@ -92,7 +100,7 @@ class EngineAdapter:
         for symbol in event.symbols:
             await self.hub.update_position(PositionUpdate.empty(symbol))
 
-        # Set initial status
+        # Set initial status (feed_state managed by hub via connection callbacks)
         await self.hub.update_status(
             SystemStatus(
                 feed_connected=True,
@@ -104,6 +112,7 @@ class EngineAdapter:
                 errors_count=0,
                 is_replay=self.is_replay,
                 replay_time=None,
+                provider=self.provider,
             )
         )
 
@@ -142,6 +151,7 @@ class EngineAdapter:
                 errors_count=self._errors,
                 is_replay=self.is_replay,
                 replay_time=self._last_bar_time,
+                provider=self.provider,
             )
         )
 
@@ -251,7 +261,7 @@ class EngineAdapter:
             # No position - send empty update
             await self.hub.update_position(PositionUpdate.empty(bar.symbol))
 
-        # Update system status periodically
+        # Update system status periodically (feed_state managed by hub via connection callbacks)
         uptime = int((datetime.now(UTC) - self._start_time).total_seconds())
         await self.hub.update_status(
             SystemStatus(
@@ -264,6 +274,7 @@ class EngineAdapter:
                 errors_count=self._errors,
                 is_replay=self.is_replay,
                 replay_time=bar.datetime if self.is_replay else None,
+                provider=self.provider,
             )
         )
 
@@ -386,6 +397,7 @@ class EngineAdapter:
                     errors_count=self._errors,
                     is_replay=self.is_replay,
                     replay_time=self._last_bar_time,
+                    provider=self.provider,
                 )
             )
 

@@ -17,6 +17,7 @@ from typing import Any
 from .types import (
     AccountSnapshot,
     ChartUpdate,
+    ConnectionStateEnum,
     GlobalState,
     PositionUpdate,
     RiskStatus,
@@ -200,9 +201,103 @@ class EventHub:
         await self._broadcast(UIChannel.RISK, risk)
 
     async def update_status(self, status: SystemStatus) -> None:
-        """Update system status and broadcast."""
+        """Update system status and broadcast.
+
+        Preserves feed_state from current status if the incoming status
+        has the default value (DISCONNECTED), since feed_state is managed
+        by connection callbacks, not the adapter.
+        """
+        # Preserve connection state from current status (managed by connection callbacks)
+        if self._status is not None and status.feed_state == ConnectionStateEnum.DISCONNECTED:
+            # Incoming status has default feed_state - preserve current value
+            from dataclasses import replace
+
+            status = replace(status, feed_state=self._status.feed_state)
+
         self._status = status
         await self._broadcast(UIChannel.STATUS, status)
+
+    def _build_updated_status(
+        self,
+        component: str,
+        state: ConnectionStateEnum,
+        retry_count: int,
+        error: str | None,
+    ) -> SystemStatus:
+        """Build an updated SystemStatus for a component state change."""
+        if self._status is None:
+            self._status = SystemStatus.default()
+
+        is_connected = state == ConnectionStateEnum.CONNECTED
+        current = self._status
+
+        if component == "feed":
+            return SystemStatus(
+                feed_connected=is_connected,
+                broker_connected=current.broker_connected,
+                market_open=current.market_open,
+                market_next_change=current.market_next_change,
+                uptime_seconds=current.uptime_seconds,
+                bars_received=current.bars_received,
+                errors_count=current.errors_count,
+                is_replay=current.is_replay,
+                replay_time=current.replay_time,
+                provider=current.provider,
+                feed_state=state,
+                feed_retry_count=retry_count,
+                feed_last_error=error,
+                broker_state=current.broker_state,
+                broker_retry_count=current.broker_retry_count,
+                broker_last_error=current.broker_last_error,
+            )
+        else:  # broker
+            return SystemStatus(
+                feed_connected=current.feed_connected,
+                broker_connected=is_connected,
+                market_open=current.market_open,
+                market_next_change=current.market_next_change,
+                uptime_seconds=current.uptime_seconds,
+                bars_received=current.bars_received,
+                errors_count=current.errors_count,
+                is_replay=current.is_replay,
+                replay_time=current.replay_time,
+                provider=current.provider,
+                feed_state=current.feed_state,
+                feed_retry_count=current.feed_retry_count,
+                feed_last_error=current.feed_last_error,
+                broker_state=state,
+                broker_retry_count=retry_count,
+                broker_last_error=error,
+            )
+
+    async def update_connection_status(
+        self,
+        component: str,
+        state: ConnectionStateEnum,
+        retry_count: int = 0,
+        error: str | None = None,
+    ) -> None:
+        """Update connection status for a specific component and broadcast.
+
+        Args:
+            component: "feed" or "broker"
+            state: New connection state
+            retry_count: Current retry attempt (0 if connected)
+            error: Error message if disconnected/failed
+        """
+        self._status = self._build_updated_status(component, state, retry_count, error)
+        await self._broadcast(UIChannel.STATUS, self._status)
+
+    def update_connection_status_sync(
+        self,
+        component: str,
+        state: ConnectionStateEnum,
+        retry_count: int = 0,
+        error: str | None = None,
+    ) -> None:
+        """Synchronous version of update_connection_status."""
+        self._status = self._build_updated_status(component, state, retry_count, error)
+        self._broadcast_sync(UIChannel.STATUS, self._status)
 
     async def update_chart(self, chart: ChartUpdate) -> None:
         """Update chart data and broadcast."""
