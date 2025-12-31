@@ -1,18 +1,24 @@
 """Resilience utilities for connection management and recovery.
 
 Provides exponential backoff reconnection, connection state tracking,
-and callbacks for UI notification.
+retry decorators, and callbacks for UI notification.
 """
 
 import asyncio
+import functools
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Final
+from typing import Final, ParamSpec, TypeVar
+
+from .exceptions import RetryableError
 
 logger = logging.getLogger(__name__)
+
+P = ParamSpec("P")
+T = TypeVar("T")
 
 
 class ConnectionState(Enum):
@@ -267,3 +273,203 @@ class ConnectionMonitor:
             on_state_change=state_change_handler,
             should_stop=should_stop,
         )
+
+
+# --- Retry Decorator ---
+
+
+@dataclass(frozen=True)
+class RetryConfig:
+    """Configuration for retry decorator."""
+
+    max_attempts: int = 3
+    base_delay: float = 1.0
+    max_delay: float = 30.0
+    backoff_factor: float = 2.0
+    exceptions: tuple[type[Exception], ...] = (RetryableError,)
+
+
+DEFAULT_RETRY_CONFIG: Final = RetryConfig()
+
+
+def retry(
+    max_attempts: int = 3,
+    base_delay: float = 1.0,
+    max_delay: float = 30.0,
+    backoff_factor: float = 2.0,
+    exceptions: tuple[type[Exception], ...] = (RetryableError,),
+) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Awaitable[T]]]:
+    """Retry decorator with exponential backoff for async functions.
+
+    Args:
+        max_attempts: Maximum number of retry attempts.
+        base_delay: Initial delay between retries in seconds.
+        max_delay: Maximum delay between retries.
+        backoff_factor: Multiplier for delay after each retry.
+        exceptions: Tuple of exception types that trigger a retry.
+
+    Example:
+        @retry(max_attempts=3, exceptions=(RetryableError, TimeoutError))
+        async def fetch_data():
+            ...
+    """
+
+    def decorator(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
+        @functools.wraps(func)
+        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            delay = base_delay
+            last_exception: Exception | None = None
+
+            for attempt in range(max_attempts):
+                try:
+                    return await func(*args, **kwargs)
+                except exceptions as e:
+                    last_exception = e
+                    if attempt == max_attempts - 1:
+                        logger.error(
+                            "%s failed after %d attempts: %s",
+                            func.__name__,
+                            max_attempts,
+                            e,
+                        )
+                        raise
+
+                    logger.warning(
+                        "%s attempt %d/%d failed: %s (retrying in %.1fs)",
+                        func.__name__,
+                        attempt + 1,
+                        max_attempts,
+                        e,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    delay = min(delay * backoff_factor, max_delay)
+
+            # Should never reach here, but satisfy type checker
+            if last_exception:
+                raise last_exception
+            raise RuntimeError("Retry loop completed without success or exception")
+
+        return wrapper
+
+    return decorator
+
+
+def retry_sync(
+    max_attempts: int = 3,
+    base_delay: float = 1.0,
+    max_delay: float = 30.0,
+    backoff_factor: float = 2.0,
+    exceptions: tuple[type[Exception], ...] = (RetryableError,),
+) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """Retry decorator with exponential backoff for sync functions.
+
+    Args:
+        max_attempts: Maximum number of retry attempts.
+        base_delay: Initial delay between retries in seconds.
+        max_delay: Maximum delay between retries.
+        backoff_factor: Multiplier for delay after each retry.
+        exceptions: Tuple of exception types that trigger a retry.
+    """
+    import time
+
+    def decorator(func: Callable[P, T]) -> Callable[P, T]:
+        @functools.wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            delay = base_delay
+            last_exception: Exception | None = None
+
+            for attempt in range(max_attempts):
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as e:
+                    last_exception = e
+                    if attempt == max_attempts - 1:
+                        logger.error(
+                            "%s failed after %d attempts: %s",
+                            func.__name__,
+                            max_attempts,
+                            e,
+                        )
+                        raise
+
+                    logger.warning(
+                        "%s attempt %d/%d failed: %s (retrying in %.1fs)",
+                        func.__name__,
+                        attempt + 1,
+                        max_attempts,
+                        e,
+                        delay,
+                    )
+                    time.sleep(delay)
+                    delay = min(delay * backoff_factor, max_delay)
+
+            if last_exception:
+                raise last_exception
+            raise RuntimeError("Retry loop completed without success or exception")
+
+        return wrapper
+
+    return decorator
+
+
+async def retry_async_call[T](
+    func: Callable[[], Awaitable[T]],
+    max_attempts: int = 3,
+    base_delay: float = 1.0,
+    max_delay: float = 30.0,
+    backoff_factor: float = 2.0,
+    exceptions: tuple[type[Exception], ...] = (RetryableError,),
+    operation_name: str | None = None,
+) -> T:
+    """Execute an async callable with retry logic.
+
+    Useful when you can't use the decorator directly.
+
+    Args:
+        func: Async callable to execute.
+        max_attempts: Maximum number of retry attempts.
+        base_delay: Initial delay between retries in seconds.
+        max_delay: Maximum delay between retries.
+        backoff_factor: Multiplier for delay after each retry.
+        exceptions: Tuple of exception types that trigger a retry.
+        operation_name: Name for logging (defaults to 'operation').
+
+    Returns:
+        The result of the callable.
+
+    Example:
+        result = await retry_async_call(
+            lambda: client.fetch_data(symbol),
+            max_attempts=3,
+            exceptions=(TimeoutError, ConnectionError),
+            operation_name="fetch_data",
+        )
+    """
+    name = operation_name or "operation"
+    delay = base_delay
+    last_exception: Exception | None = None
+
+    for attempt in range(max_attempts):
+        try:
+            return await func()
+        except exceptions as e:
+            last_exception = e
+            if attempt == max_attempts - 1:
+                logger.error("%s failed after %d attempts: %s", name, max_attempts, e)
+                raise
+
+            logger.warning(
+                "%s attempt %d/%d failed: %s (retrying in %.1fs)",
+                name,
+                attempt + 1,
+                max_attempts,
+                e,
+                delay,
+            )
+            await asyncio.sleep(delay)
+            delay = min(delay * backoff_factor, max_delay)
+
+    if last_exception:
+        raise last_exception
+    raise RuntimeError("Retry loop completed without success or exception")

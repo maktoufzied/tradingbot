@@ -119,10 +119,10 @@ class TestAlpacaBrokerOrders:
         assert result.filled_size == 0
 
     def test_submit_order_rejected(self, mock_env, mock_trading_client):
-        """Handle rejected order (API error)."""
+        """Handle rejected order with generic API error."""
         from alpaca.common.exceptions import APIError
 
-        mock_trading_client.submit_order.side_effect = APIError("Insufficient funds")
+        mock_trading_client.submit_order.side_effect = APIError("Order rejected by exchange")
 
         broker = AlpacaBroker()
         order = Order(symbol="MSFT", direction="LONG", size=10, order_type="MARKET")
@@ -130,7 +130,24 @@ class TestAlpacaBrokerOrders:
 
         assert result.status == "REJECTED"
         assert result.order_id == ""
-        assert "Insufficient funds" in str(result.message)
+        assert "Order rejected" in str(result.message)
+
+    def test_submit_order_insufficient_funds(self, mock_env, mock_trading_client):
+        """Insufficient funds raises InsufficientFundsError."""
+        import pytest
+        from alpaca.common.exceptions import APIError
+
+        from tradingbot._components.exceptions import InsufficientFundsError
+
+        mock_trading_client.submit_order.side_effect = APIError("Insufficient buying power")
+
+        broker = AlpacaBroker()
+        order = Order(symbol="MSFT", direction="LONG", size=10, order_type="MARKET")
+
+        with pytest.raises(InsufficientFundsError) as exc_info:
+            broker.submit_order(order)
+
+        assert "Insufficient" in str(exc_info.value)
 
     def test_cancel_order_success(self, mock_env, mock_trading_client):
         """Cancel order successfully."""

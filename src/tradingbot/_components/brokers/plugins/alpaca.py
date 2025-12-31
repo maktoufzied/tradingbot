@@ -1,5 +1,6 @@
 """Alpaca broker implementation for paper and live trading."""
 
+import logging
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -16,9 +17,15 @@ from alpaca.trading.requests import (
     TakeProfitRequest,
 )
 
+from tradingbot._components.exceptions import (
+    BrokerConnectionError,
+    InsufficientFundsError,
+)
 from tradingbot.config import get_engine_config
 from tradingbot.interfaces import BrokerProtocol
 from tradingbot.types import AccountInfo, BrokerPosition, Direction, MarketClock, Order, OrderResult, OrderStatus
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -113,6 +120,15 @@ class AlpacaBroker(BrokerProtocol):
 
             filled_size = float(alpaca_order.filled_qty) if alpaca_order.filled_qty else 0
 
+            logger.info(
+                "Order submitted: %s %s %s @ market (id=%s, status=%s)",
+                order.direction,
+                order.size,
+                order.symbol,
+                alpaca_order.id,
+                alpaca_order.status.value,
+            )
+
             return OrderResult(
                 order_id=str(alpaca_order.id),
                 status=self._map_order_status(str(alpaca_order.status.value)),
@@ -120,12 +136,28 @@ class AlpacaBroker(BrokerProtocol):
                 filled_size=filled_size,
             )
         except APIError as e:
+            error_msg = str(e)
+            logger.warning(
+                "Order rejected: %s %s %s - %s",
+                order.direction,
+                order.size,
+                order.symbol,
+                error_msg,
+            )
+
+            # Categorize the error for better handling
+            if "insufficient" in error_msg.lower():
+                raise InsufficientFundsError(error_msg, {"order": order.symbol}) from e
+            if "forbidden" in error_msg.lower() or "unauthorized" in error_msg.lower():
+                raise BrokerConnectionError(error_msg) from e
+
+            # Return rejected result for other API errors (normal rejections)
             return OrderResult(
                 order_id="",
                 status="REJECTED",
                 filled_price=None,
                 filled_size=0,
-                message=str(e),
+                message=error_msg,
             )
 
     def cancel_order(self, order_id: str) -> bool:
