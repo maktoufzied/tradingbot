@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from tradingbot.config import HealthConfig
+from tradingbot.interfaces import BrokerProtocol, DataFeedProtocol
 
 from .logging import get_logger
 
@@ -33,8 +34,8 @@ class HealthChecker:
     def __init__(
         self,
         config: HealthConfig,
-        broker: Any,
-        feed: Any,
+        broker: BrokerProtocol,
+        feed: DataFeedProtocol,
         risk_manager: Any,
         get_positions_count: Callable[[], int],
         get_last_bar_time: Callable[[], datetime | None],
@@ -85,16 +86,9 @@ class HealthChecker:
         """Emit health metrics."""
         now = datetime.now(UTC)
 
-        # Connection status (default False if property raises or missing)
-        try:
-            feed_connected = self._feed.is_connected
-        except Exception:
-            feed_connected = False
-
-        try:
-            broker_connected = self._broker.is_connected
-        except Exception:
-            broker_connected = False
+        # Connection status (both required by protocol)
+        feed_connected: bool = self._feed.is_connected
+        broker_connected: bool = self._broker.is_connected
 
         # Last bar age
         last_bar_time = self._get_last_bar_time()

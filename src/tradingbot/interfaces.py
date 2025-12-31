@@ -63,6 +63,11 @@ class BrokerProtocol(ABC):
         """Unique identifier for this broker."""
         ...
 
+    @property
+    def is_connected(self) -> bool:
+        """Whether the broker is currently connected."""
+        return True  # Default: assume connected (override if broker tracks state)
+
 
 class DataFeedProtocol(ABC):
     """Abstract protocol for data feeds. Implement this to add new data sources."""
