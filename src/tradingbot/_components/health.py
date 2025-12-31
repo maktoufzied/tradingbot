@@ -8,30 +8,23 @@ import contextlib
 import resource
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+
+from tradingbot.config import HealthConfig
 
 from .logging import get_logger
 
 logger = get_logger(__name__)
 
 
-@dataclass(frozen=True)
-class HealthConfig:
-    """Configuration for health checks."""
-
-    enabled: bool = True
-    interval_minutes: int = 5
-
-
 def get_memory_mb() -> float:
     """Get current process memory usage in MB."""
     usage = resource.getrusage(resource.RUSAGE_SELF)
-    # maxrss is in bytes on Linux, kilobytes on macOS
+    # maxrss units differ by platform: kilobytes on macOS, bytes on Linux
     if sys.platform == "darwin":
-        return usage.ru_maxrss / 1024 / 1024  # KB to MB
-    return usage.ru_maxrss / 1024  # bytes to MB (Linux)
+        return usage.ru_maxrss / 1024  # KB to MB
+    return usage.ru_maxrss / 1024 / 1024  # bytes to MB (Linux)
 
 
 class HealthChecker:
@@ -81,9 +74,8 @@ class HealthChecker:
 
         while self._running:
             try:
+                await self._emit_health()
                 await asyncio.sleep(interval_seconds)
-                if self._running:
-                    await self._emit_health()
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -93,9 +85,9 @@ class HealthChecker:
         """Emit health metrics."""
         now = datetime.now(UTC)
 
-        # Connection status
-        feed_connected = getattr(self._feed, "is_connected", True)
-        broker_connected = getattr(self._broker, "is_connected", True)
+        # Connection status (default False for safety if attribute missing)
+        feed_connected = getattr(self._feed, "is_connected", False)
+        broker_connected = getattr(self._broker, "is_connected", False)
 
         # Last bar age
         last_bar_time = self._get_last_bar_time()

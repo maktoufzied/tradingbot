@@ -7,14 +7,14 @@ from typing import Final
 
 import polars as pl
 
-from tradingbot.config import get_engine_config, get_health_config, get_strategy_config
+from tradingbot.config import HealthConfig, get_engine_config, get_health_config, get_strategy_config
 from tradingbot.interfaces import BrokerProtocol, DataFeedProtocol
 from tradingbot.types import Bar, BarOrigin, Direction, Order, PendingOrder, Position, Signal
 
 from .. import sounds
 from ..brokers.plugins.paper import PaperBroker
 from ..feeds import DataFeed
-from ..health import HealthChecker, HealthConfig
+from ..health import HealthChecker
 from ..live_risk import LiveRiskManager
 from ..risk import PositionSizer
 from ..signals import SignalGenerator
