@@ -214,6 +214,14 @@ class LoggingConfig:
 
 
 @dataclass(frozen=True)
+class HealthConfig:
+    """Health check configuration."""
+
+    enabled: bool = True  # Enable periodic health checks
+    interval_minutes: int = 5  # Interval between health checks
+
+
+@dataclass(frozen=True)
 class EngineConfig:
     """Engine configuration."""
 
@@ -239,6 +247,7 @@ class Config:
     engine: EngineConfig = field(default_factory=EngineConfig)
     cache: CacheConfig = field(default_factory=CacheConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    health: HealthConfig = field(default_factory=HealthConfig)
 
 
 def _parse_config(data: dict[str, Any]) -> Config:
@@ -372,12 +381,20 @@ def _parse_config(data: dict[str, Any]) -> Config:
         colors=logging_data.get("colors", True),
     )
 
+    # Parse health config
+    health_data = root.get("health", {})
+    health_config = HealthConfig(
+        enabled=health_data.get("enabled", True),
+        interval_minutes=health_data.get("interval_minutes", 5),
+    )
+
     return Config(
         strategy=strategy,
         bot=bot,
         engine=engine,
         cache=cache,
         logging=logging_config,
+        health=health_config,
     )
 
 
@@ -432,6 +449,11 @@ def get_provider_config() -> ProviderConfig:
 def get_indicator_config() -> IndicatorConfig:
     """Get indicator configuration."""
     return get_config().strategy.indicators
+
+
+def get_health_config() -> HealthConfig:
+    """Get health check configuration."""
+    return get_config().health
 
 
 def get_config_value(*keys: str, default: str) -> str:

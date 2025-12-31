@@ -7,13 +7,14 @@ from typing import Final
 
 import polars as pl
 
-from tradingbot.config import get_engine_config, get_strategy_config
+from tradingbot.config import get_engine_config, get_health_config, get_strategy_config
 from tradingbot.interfaces import BrokerProtocol, DataFeedProtocol
 from tradingbot.types import Bar, BarOrigin, Direction, Order, PendingOrder, Position, Signal
 
 from .. import sounds
 from ..brokers.plugins.paper import PaperBroker
 from ..feeds import DataFeed
+from ..health import HealthChecker, HealthConfig
 from ..live_risk import LiveRiskManager
 from ..risk import PositionSizer
 from ..signals import SignalGenerator
@@ -69,6 +70,18 @@ class TradingEngine:
         self._pending_closes: set[str] = set()  # symbols with pending close orders
         self._bars: dict[str, deque[Bar]] = {sym: deque(maxlen=MAX_BARS_HISTORY) for sym in self._symbols}
         self._running = False
+        self._last_bar_time: datetime | None = None
+
+        # Health checker
+        health_cfg = get_health_config()
+        self._health_checker = HealthChecker(
+            config=HealthConfig(enabled=health_cfg.enabled, interval_minutes=health_cfg.interval_minutes),
+            broker=broker,
+            feed=feed,
+            risk_manager=live_risk_manager,
+            get_positions_count=lambda: len(self._positions),
+            get_last_bar_time=lambda: self._last_bar_time,
+        )
 
     @property
     def symbols(self) -> list[str]:
@@ -200,14 +213,16 @@ class TradingEngine:
         await self._feed.subscribe(self._symbols, self._on_bar)
         await self._emit_message(f"Subscribed to: {', '.join(self._symbols)}", MessageLevel.DEBUG)
 
-        # Start feed
+        # Start feed and health checker
         self._running = True
+        await self._health_checker.start()
         await self._emit_message("Live feed started", MessageLevel.SUCCESS)
         await self._feed.start()
 
     async def stop(self) -> None:
         """Stop live trading gracefully."""
         self._running = False
+        await self._health_checker.stop()
         await self._feed.stop()
         await self._cb.emit_stopped(EngineStoppedEvent(risk_manager=self._live_risk))
 
@@ -310,6 +325,7 @@ class TradingEngine:
             return
 
         self._bars[bar.symbol].append(bar)
+        self._last_bar_time = bar.datetime
 
         if isinstance(self._broker, PaperBroker):
             self._broker.set_price(bar.symbol, bar.close)
