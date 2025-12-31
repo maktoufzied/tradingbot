@@ -133,6 +133,8 @@ Pre-configured trading setups for different styles.
 | [x] Event-driven engine | Async event processing for live trading | `engine/engine.py` |
 | [x] Signal generator | Real-time signal generation | `signals.py` |
 | [x] Position tracker | Track open positions and P&L | `engine/engine.py` |
+| [x] Connection resilience | Exponential backoff reconnection for feeds/brokers | `resilience.py` |
+| [x] Connection status UI | Visual indicators in TUI/Web for connection state | `hub/types.py` |
 
 ### Data Management
 
@@ -189,6 +191,8 @@ Pre-configured trading setups for different styles.
 | [x] Event types | Typed events for bar, signal, order, trade | `engine/events.py` |
 | [x] Cached feed wrapper | Transparent caching layer for data feeds | `cache/cached_feed.py` |
 | [x] Sound notifications | Audio alerts for trades and signals | `sounds.py` |
+| [x] Connection resilience | Reconnection with exponential backoff | `resilience.py` |
+| [x] Connection monitor | Track and manage connection lifecycle | `resilience.py` |
 
 ### CLI Commands
 

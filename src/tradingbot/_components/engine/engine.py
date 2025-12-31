@@ -15,8 +15,8 @@ from .. import sounds
 from ..brokers.plugins.paper import PaperBroker
 from ..feeds import DataFeed
 from ..health import HealthChecker
-from ..live_risk import LiveRiskManager
 from ..risk import PositionSizer
+from ..risk_manager import RiskManager
 from ..signals import SignalGenerator
 from .callbacks import EngineCallbacks
 from .events import (
@@ -47,7 +47,7 @@ class TradingEngine:
         feed: DataFeedProtocol,
         signal_generator: SignalGenerator,
         position_sizer: PositionSizer,
-        live_risk_manager: LiveRiskManager,
+        risk_manager: RiskManager,
         rr_ratio: float = 2.0,
         dry_run: bool = False,
         allow_short: bool = False,
@@ -60,7 +60,7 @@ class TradingEngine:
         self._feed = feed
         self._sig_gen = signal_generator
         self._pos_sizer = position_sizer
-        self._live_risk = live_risk_manager
+        self._risk_mgr = risk_manager
         self._rr_ratio = rr_ratio
         self._cb = callbacks or EngineCallbacks()
 
@@ -77,7 +77,7 @@ class TradingEngine:
             config=get_health_config(),
             broker=broker,
             feed=feed,
-            risk_manager=live_risk_manager,
+            risk_manager=risk_manager,
             get_positions_count=lambda: len(self._positions),
             get_last_bar_time=lambda: self._last_bar_time,
         )
@@ -96,10 +96,10 @@ class TradingEngine:
     async def _emit_stats(self) -> None:
         await self._cb.emit_stats_updated(
             StatsUpdatedEvent(
-                pnl=self._live_risk.session_pnl,
-                trades=self._live_risk.session_trades,
-                winners=self._live_risk.session_winners,
-                losers=self._live_risk.session_losers,
+                pnl=self._risk_mgr.session_pnl,
+                trades=self._risk_mgr.session_trades,
+                winners=self._risk_mgr.session_winners,
+                losers=self._risk_mgr.session_losers,
             )
         )
 
@@ -110,19 +110,19 @@ class TradingEngine:
                 equity=account.equity,
                 cash=account.cash,
                 buying_power=account.buying_power,
-                day_pnl=self._live_risk.session_pnl,
+                day_pnl=self._risk_mgr.session_pnl,
             )
         )
 
     async def _emit_risk(self) -> None:
-        can_trade, blocked_reason = self._live_risk.can_open_position()
+        can_trade, blocked_reason = self._risk_mgr.can_open_position()
         await self._cb.emit_risk(
             RiskEvent(
-                daily_loss_pct=self._live_risk.daily_pnl_pct,
-                max_daily_loss_pct=self._live_risk._config.max_daily_loss_pct,
+                daily_loss_pct=self._risk_mgr.daily_pnl_pct,
+                max_daily_loss_pct=self._risk_mgr._config.max_daily_loss_pct,
                 open_positions=len(self._positions),
-                max_positions=self._live_risk._config.max_open_positions,
-                circuit_breaker_active=self._live_risk.check_circuit_breaker(),
+                max_positions=self._risk_mgr._config.max_open_positions,
+                circuit_breaker_active=self._risk_mgr.check_circuit_breaker(),
                 can_trade=can_trade,
                 blocked_reason=blocked_reason if not can_trade else None,
             )
@@ -170,14 +170,14 @@ class TradingEngine:
 
         # Reset daily tracking
         account = self._broker.get_account()
-        self._live_risk.reset_daily(account.equity)
+        self._risk_mgr.reset_daily(account.equity)
 
         # Sync today's trades from broker (if available)
         if hasattr(self._broker, "get_today_trades"):
             trades = self._broker.get_today_trades()
             for trade in trades:
                 # Record trade stats
-                self._live_risk.record_trade_pnl(trade.pnl)
+                self._risk_mgr.record_trade_pnl(trade.pnl)
                 # Emit trade event to TUI
                 await self._cb.emit_trade_closed(
                     TradeClosedEvent(
@@ -223,7 +223,7 @@ class TradingEngine:
         self._running = False
         await self._health_checker.stop()
         await self._feed.stop()
-        await self._cb.emit_stopped(EngineStoppedEvent(risk_manager=self._live_risk))
+        await self._cb.emit_stopped(EngineStoppedEvent(risk_manager=self._risk_mgr))
 
     async def _load_history(self) -> None:
         """Load historical intraday data for each symbol to bootstrap indicators.
@@ -302,7 +302,7 @@ class TradingEngine:
             )
 
         if broker_positions:
-            self._live_risk.update_position_count(len(self._positions))
+            self._risk_mgr.update_position_count(len(self._positions))
 
     async def _on_bar(self, bar: Bar) -> None:
         """Process new bar - main trading logic."""
@@ -330,9 +330,9 @@ class TradingEngine:
             self._broker.set_price(bar.symbol, bar.close)
 
         account = self._broker.get_account()
-        self._live_risk.reset_daily(account.equity)
+        self._risk_mgr.reset_daily(account.equity)
 
-        if self._live_risk.check_circuit_breaker():
+        if self._risk_mgr.check_circuit_breaker():
             return
 
         if len(self._bars[bar.symbol]) < MIN_BARS_REQUIRED:
@@ -394,9 +394,9 @@ class TradingEngine:
         size = self._pos_sizer.calc_size(price, stop)
 
         account = self._broker.get_account()
-        self._live_risk.update_position_count(len(self._positions))
-        can_trade, reason = self._live_risk.can_open_position()
-        size, was_capped = self._live_risk.cap_position_size(size, price, account.equity)
+        self._risk_mgr.update_position_count(len(self._positions))
+        can_trade, reason = self._risk_mgr.can_open_position()
+        size, was_capped = self._risk_mgr.cap_position_size(size, price, account.equity)
 
         blocked = not can_trade and not self._dry_run
         await self._cb.emit_signal(
@@ -427,7 +427,7 @@ class TradingEngine:
                 take_profit=tp,
                 initial_stop_loss=stop,
             )
-            self._live_risk.update_position_count(len(self._positions))
+            self._risk_mgr.update_position_count(len(self._positions))
             return
 
         # Use bracket order with SL/TP so Alpaca manages exits
@@ -452,7 +452,7 @@ class TradingEngine:
                 take_profit=tp,
                 initial_stop_loss=stop,
             )
-            self._live_risk.update_position_count(len(self._positions))
+            self._risk_mgr.update_position_count(len(self._positions))
             await self._emit_message(f"✓ Order filled at ${result.filled_price:.2f}", MessageLevel.SUCCESS)
             sounds.play(sounds.BUY if direction == "LONG" else sounds.SELL)
         elif result.status == "PENDING":
@@ -492,7 +492,7 @@ class TradingEngine:
                 take_profit=pending.take_profit,
                 initial_stop_loss=pending.stop_loss,
             )
-            self._live_risk.update_position_count(len(self._positions))
+            self._risk_mgr.update_position_count(len(self._positions))
             await self._emit_message(f"✓ Order filled at ${result.filled_price:.2f}", MessageLevel.SUCCESS)
             sounds.play(sounds.BUY if pending.direction == "LONG" else sounds.SELL)
         elif result.status in ("REJECTED", "CANCELLED"):
@@ -522,8 +522,8 @@ class TradingEngine:
                 pnl = -pnl
 
             del self._positions[bar.symbol]
-            self._live_risk.update_position_count(len(self._positions))
-            self._live_risk.record_trade_pnl(pnl)
+            self._risk_mgr.update_position_count(len(self._positions))
+            self._risk_mgr.record_trade_pnl(pnl)
             await self._emit_message(
                 f"✓ Position closed by Alpaca ({exit_reason}) at ${exit_price:.2f}, P&L: ${pnl:+.2f}",
                 MessageLevel.SUCCESS if pnl > 0 else MessageLevel.WARNING,
@@ -572,7 +572,7 @@ class TradingEngine:
             pnl = (exit_price - position.entry_price) * position.size
             if position.direction == "SHORT":
                 pnl = -pnl
-            self._live_risk.record_trade_pnl(pnl)
+            self._risk_mgr.record_trade_pnl(pnl)
 
             await self._cb.emit_trade_closed(
                 TradeClosedEvent(
@@ -589,7 +589,7 @@ class TradingEngine:
 
             sounds.play(sounds.PROFIT if pnl > 0 else sounds.LOSS)
             del self._positions[bar.symbol]
-            self._live_risk.update_position_count(len(self._positions))
+            self._risk_mgr.update_position_count(len(self._positions))
             return
 
         close_direction: Direction = "SHORT" if position.direction == "LONG" else "LONG"
@@ -601,7 +601,7 @@ class TradingEngine:
             pnl = (actual_exit - position.entry_price) * position.size
             if position.direction == "SHORT":
                 pnl = -pnl
-            self._live_risk.record_trade_pnl(pnl)
+            self._risk_mgr.record_trade_pnl(pnl)
 
             await self._cb.emit_trade_closed(
                 TradeClosedEvent(
@@ -619,9 +619,9 @@ class TradingEngine:
             sounds.play(sounds.PROFIT if pnl > 0 else sounds.LOSS)
             del self._positions[bar.symbol]
             self._pending_closes.discard(bar.symbol)
-            self._live_risk.update_position_count(len(self._positions))
+            self._risk_mgr.update_position_count(len(self._positions))
 
-            if self._live_risk.check_circuit_breaker():
+            if self._risk_mgr.check_circuit_breaker():
                 await self._emit_message("⚠ CIRCUIT BREAKER TRIGGERED - Trading paused", MessageLevel.ERROR)
         elif result.status == "PENDING":
             self._pending_closes.add(bar.symbol)

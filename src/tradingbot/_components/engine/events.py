@@ -6,7 +6,7 @@ from enum import Enum
 
 from tradingbot.types import Bar, Direction, Position, Signal
 
-from ..live_risk import LiveRiskManager
+from ..risk_manager import RiskManager
 
 
 class MessageLevel(Enum):
@@ -29,7 +29,7 @@ class EngineStartedEvent:
 
 @dataclass
 class EngineStoppedEvent:
-    risk_manager: LiveRiskManager
+    risk_manager: RiskManager
 
 
 @dataclass

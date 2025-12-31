@@ -1,4 +1,4 @@
-"""Live trading risk controls and safety measures."""
+"""Trading risk controls and safety measures."""
 
 from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Final
@@ -10,8 +10,8 @@ MARKET_OPEN: Final[time] = time(9, 30)
 MARKET_CLOSE: Final[time] = time(16, 0)
 
 
-class LiveRiskManager:
-    """Risk management for live trading with safety controls."""
+class RiskManager:
+    """Risk management with safety controls for trading sessions."""
 
     def __init__(self, config: EngineRiskConfig, initial_equity: float) -> None:
         self._config = config

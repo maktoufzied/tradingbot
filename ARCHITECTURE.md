@@ -27,6 +27,7 @@ src/tradingbot/
     ├── risk.py              # PositionSizer
     ├── live_risk.py         # LiveRiskManager
     ├── presets.py           # Strategy presets
+    ├── resilience.py        # Connection resilience (reconnection, backoff)
     │
     ├── engine/              # Real-time trading engine
     ├── feeds/               # Data feed plugins
@@ -53,6 +54,8 @@ Defined in `types.py`:
 | `SwingPoint` | Local high/low for structure analysis |
 | `Order` | Broker order request |
 | `Trend` | BULLISH / BEARISH / NEUTRAL |
+| `ConnectionState` | Connection lifecycle: CONNECTED, DISCONNECTED, RECONNECTING, FAILED |
+| `ReconnectionConfig` | Retry settings: max_retries, base_delay, max_delay, backoff_factor |
 
 ## Plugin Architecture
 
@@ -471,6 +474,104 @@ flowchart LR
 | `aggregate_all_intervals()` | Aggregate 1m → 5m/15m/1h/1d |
 | `purge_old_bars()` | Delete bars older than retention policy |
 | `run_maintenance()` | Full maintenance: aggregate + purge |
+
+### Connection Resilience
+
+The `resilience.py` module provides automatic reconnection with exponential backoff:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Disconnected
+
+    Disconnected --> Reconnecting: connect()
+
+    Reconnecting --> Connected: success
+    Reconnecting --> Reconnecting: retry (backoff)
+    Reconnecting --> Failed: max retries
+
+    Connected --> Disconnected: disconnect
+    Connected --> Reconnecting: error
+
+    Failed --> Reconnecting: manual retry
+```
+
+**Connection States:**
+
+| State | Description | UI Indicator |
+|-------|-------------|--------------|
+| `CONNECTED` | Active connection | Green dot |
+| `DISCONNECTED` | No connection | Gray dot |
+| `RECONNECTING` | Attempting reconnect | Yellow blinking |
+| `FAILED` | Max retries exceeded | Red dot |
+
+**Reconnection Config:**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `max_retries` | 5 | Maximum reconnection attempts |
+| `base_delay` | 1.0s | Initial delay between retries |
+| `max_delay` | 60.0s | Maximum delay (caps backoff) |
+| `backoff_factor` | 2.0 | Exponential multiplier |
+
+**Backoff Formula:**
+```
+delay = min(base_delay * (backoff_factor ^ attempt), max_delay)
+```
+
+**Components:**
+
+| Component | Description |
+|-----------|-------------|
+| `ConnectionState` | Enum of connection lifecycle states |
+| `ReconnectionConfig` | Immutable configuration for retry behavior |
+| `ConnectionMonitor` | Wraps connections with state tracking and callbacks |
+| `reconnect_with_backoff()` | Core async reconnection function |
+
+**Usage in Feeds/Brokers:**
+
+```python
+from tradingbot._components.resilience import (
+    ConnectionMonitor,
+    ReconnectionConfig,
+)
+
+class AlpacaFeed:
+    def __init__(self, on_connection_state=None):
+        self._connection_monitor = ConnectionMonitor(
+            component="feed",
+            config=ReconnectionConfig(max_retries=10),
+            on_state_change=on_connection_state,
+        )
+
+    async def _run_stream(self):
+        async def connect():
+            await self._client.subscribe_bars(...)
+
+        await self._connection_monitor.run_with_reconnection(connect)
+```
+
+**Hub Integration:**
+
+The `EventHub` broadcasts connection state changes to all UI clients:
+
+```mermaid
+sequenceDiagram
+    participant Feed as AlpacaFeed
+    participant Monitor as ConnectionMonitor
+    participant Hub as EventHub
+    participant TUI as TUI StatusBar
+    participant Web as Web Dashboard
+
+    Feed->>Monitor: Connection error
+    Monitor->>Monitor: State → RECONNECTING
+    Monitor->>Hub: on_state_change callback
+    Hub->>Hub: update_connection_status()
+    Hub->>TUI: Broadcast status
+    Hub->>Web: WebSocket message
+
+    Note over TUI: Yellow blinking indicator
+    Note over Web: Pulsing yellow dot
+```
 
 ### Execution Cost Model
 
