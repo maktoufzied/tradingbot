@@ -118,19 +118,27 @@ This project has specialized sub-agents for specific tasks. Use them proactively
 
 The agent validates correctness, day trading appropriateness, and risk management.
 
-### backtest
+### backtester
 
 Use this agent when:
 - User asks to test a strategy or configuration
 - Validating code changes with historical data
 - Comparing different parameter combinations
 
-### optimize
+### optimizer
 
 Use this agent when:
 - User wants to find optimal parameters for a strategy
 - Searching for best risk/reward configurations
 - Running Optuna-based hyperparameter tuning
+
+### product-manager
+
+Use this agent when:
+- User asks about existing features or capabilities
+- User wants to add a feature to the roadmap
+- Need to update FEATURES.md after implementing something
+- User asks "what can this bot do?" or similar questions
 
 ## Key Concepts
 
