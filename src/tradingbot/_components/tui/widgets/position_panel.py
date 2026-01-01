@@ -2,6 +2,7 @@
 
 from rich.text import Text
 from textual.app import ComposeResult
+from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
@@ -82,7 +83,7 @@ class PositionPanel(Widget):
             header = self.query_one("#header", Static)
             details = self.query_one("#details", Static)
             pnl_display = self.query_one("#pnl", Static)
-        except Exception:
+        except NoMatches:
             return
 
         if not position or not position.is_open:

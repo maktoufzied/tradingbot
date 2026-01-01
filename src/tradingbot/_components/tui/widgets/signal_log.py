@@ -3,6 +3,7 @@
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
+from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
@@ -194,7 +195,7 @@ class SignalLog(Widget):
             if len(children) > self.max_entries:
                 for child in children[self.max_entries :]:
                     child.remove()
-        except Exception:
+        except NoMatches:
             pass
 
     def clear_log(self) -> None:
@@ -203,7 +204,7 @@ class SignalLog(Widget):
         try:
             scroll = self.query_one("#log-scroll", VerticalScroll)
             scroll.remove_children()
-        except Exception:
+        except NoMatches:
             pass
 
     @property

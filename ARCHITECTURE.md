@@ -331,7 +331,6 @@ flowchart TB
     subgraph Subscribers
         TUI[TUI Widgets]
         WS[WebSocket Clients]
-        Log[Logger]
     end
 ```
 
@@ -698,6 +697,29 @@ tradingbot-optimize AAPL --walk-forward --train-ratio 0.8  # 80% train data
 | 15m | 90 days |
 | 1h | 365 days |
 | 1d | Forever |
+
+### Logging
+
+Centralized in `_components/logging.py` using standard Python logging:
+
+```python
+from tradingbot._components.logging import configure_logging, get_logger
+
+# Configure once at startup (cli.py does this automatically)
+configure_logging(level="INFO", log_file="trading.log")
+
+# Get logger in any module
+logger = get_logger(__name__)
+logger.info("Processing symbol: %s", symbol)
+```
+
+**Key functions:**
+- `configure_logging(level, log_file)` - Sets up console + optional file handler
+- `get_logger(name)` - Returns named logger instance
+
+**Log directory:** `~/.tradingbot/logs/`
+
+**Third-party suppression:** Noisy libraries (alpaca, urllib3, httpx, websockets) are set to WARNING level.
 
 ## Configuration
 

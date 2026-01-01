@@ -326,8 +326,8 @@ class EventHub:
                 result = cb(data)
                 if asyncio.iscoroutine(result):
                     await result
-            except Exception as e:
-                logger.warning(f"Callback error on {channel.value}: {e}")
+            except Exception:
+                logger.warning("Callback error on %s", channel.value, exc_info=True)
 
         # Send to WebSocket clients
         await self._broadcast_raw(channel, data.to_dict() if hasattr(data, "to_dict") else data)
@@ -402,5 +402,5 @@ class EventHub:
                         loop.create_task(result)
                     except RuntimeError:
                         pass
-            except Exception as e:
-                logger.warning(f"Callback error on {channel.value}: {e}")
+            except Exception:
+                logger.warning("Callback error on %s", channel.value, exc_info=True)

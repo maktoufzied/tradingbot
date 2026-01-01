@@ -3,6 +3,7 @@
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal
+from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
@@ -56,7 +57,7 @@ class SessionPanel(Widget):
             trades_line = self.query_one("#trades-line", Static)
             metrics_line = self.query_one("#metrics-line", Static)
             streak_line = self.query_one("#streak-line", Static)
-        except Exception:
+        except NoMatches:
             return
 
         if not stats:
@@ -155,7 +156,7 @@ class AccountPanel(Widget):
             equity_line = self.query_one("#equity-line", Static)
             cash_line = self.query_one("#cash-line", Static)
             pnl_line = self.query_one("#pnl-line", Static)
-        except Exception:
+        except NoMatches:
             return
 
         if not account:
@@ -225,7 +226,7 @@ class RiskPanel(Widget):
             daily_line = self.query_one("#daily-line", Static)
             positions_line = self.query_one("#positions-line", Static)
             status_line = self.query_one("#status-line", Static)
-        except Exception:
+        except NoMatches:
             return
 
         if not risk:
@@ -311,7 +312,7 @@ class StrategyPanel(Widget):
             preset_line = self.query_one("#preset-line", Static)
             entry_exit_line = self.query_one("#entry-exit-line", Static)
             risk_line = self.query_one("#risk-line", Static)
-        except Exception:
+        except NoMatches:
             return
 
         if not strategy:
@@ -378,7 +379,7 @@ class StatsBar(Widget):
         try:
             panel = self.query_one("#session-panel", SessionPanel)
             panel.stats = stats
-        except Exception:
+        except NoMatches:
             pass
 
     def update_account(self, account: AccountSnapshot) -> None:
@@ -386,7 +387,7 @@ class StatsBar(Widget):
         try:
             panel = self.query_one("#account-panel", AccountPanel)
             panel.account = account
-        except Exception:
+        except NoMatches:
             pass
 
     def update_risk(self, risk: RiskStatus) -> None:
@@ -394,7 +395,7 @@ class StatsBar(Widget):
         try:
             panel = self.query_one("#risk-panel", RiskPanel)
             panel.risk = risk
-        except Exception:
+        except NoMatches:
             pass
 
     def update_strategy(self, strategy: StrategyInfo) -> None:
@@ -402,5 +403,5 @@ class StatsBar(Widget):
         try:
             panel = self.query_one("#strategy-panel", StrategyPanel)
             panel.strategy = strategy
-        except Exception:
+        except NoMatches:
             pass

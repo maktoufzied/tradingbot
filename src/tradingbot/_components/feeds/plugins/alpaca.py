@@ -223,13 +223,12 @@ class AlpacaFeed(DataFeedProtocol):
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self._stream.run)
 
-            except Exception as e:
+            except Exception:
                 if not self._running:
                     break
 
-                error_msg = str(e)
-                self._connection_monitor.set_disconnected(error_msg)
-                logger.warning(f"Connection lost: {error_msg}")
+                logger.warning("Feed connection lost", exc_info=True)
+                self._connection_monitor.set_disconnected("Connection error")
 
                 # Attempt reconnection with exponential backoff
                 # Note: connect() only sets up the stream; the main loop runs it
@@ -389,8 +388,8 @@ class AlpacaFeed(DataFeedProtocol):
                 fetched = len(self._pending_bars[symbol])
                 logger.info(f"Backfilled {fetched}/{bars_to_fetch} bar(s) for {symbol}")
 
-        except Exception as e:
-            logger.warning(f"Backfill failed: {e}. Starting fresh.")
+        except Exception:
+            logger.warning("Backfill failed, starting fresh", exc_info=True)
             # Clear any partial state on failure
             self._pending_bars.clear()
             self._bars_needed.clear()

@@ -3,6 +3,7 @@
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
+from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
@@ -148,28 +149,28 @@ class SymbolCard(Widget):
         try:
             panel = self.query_one("#position-panel", PositionPanel)
             panel.update_position(position)
-        except Exception:
+        except NoMatches:
             pass
 
     def watch_show_sparkline(self, show: bool) -> None:
         try:
             sparkline = self.query_one("#sparkline", Sparkline)
             sparkline.display = show
-        except Exception:
+        except NoMatches:
             pass
 
     def watch_show_position(self, show: bool) -> None:
         try:
             panel = self.query_one("#position-panel", PositionPanel)
             panel.display = show
-        except Exception:
+        except NoMatches:
             pass
 
     def _update_price_display(self) -> None:
         """Update the price row."""
         try:
             row = self.query_one("#price-row", Static)
-        except Exception:
+        except NoMatches:
             return
 
         text = Text()
@@ -207,7 +208,7 @@ class SymbolCard(Widget):
         """Update the trend/signal row."""
         try:
             row = self.query_one("#trend-signal", Static)
-        except Exception:
+        except NoMatches:
             return
 
         text = Text()
@@ -250,7 +251,7 @@ class SymbolCard(Widget):
             else:
                 sparkline.trend_color = None
             sparkline.data = self._price_history
-        except Exception:
+        except NoMatches:
             pass
 
     def update_ticker(self, update: TickerUpdate) -> None:
@@ -286,12 +287,12 @@ class SymbolCard(Widget):
         try:
             header = self.query_one(".symbol-name", Static)
             header.update(symbol)
-        except Exception:
+        except NoMatches:
             pass
 
         # Clear sparkline
         try:
             sparkline = self.query_one("#sparkline", Sparkline)
             sparkline.data = []
-        except Exception:
+        except NoMatches:
             pass

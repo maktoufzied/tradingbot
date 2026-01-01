@@ -3,6 +3,7 @@
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal
+from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
@@ -80,7 +81,7 @@ class StatusBar(Widget):
         """Update replay mode badge."""
         try:
             badge = self.query_one("#replay-badge", Static)
-        except Exception:
+        except NoMatches:
             return
 
         status = self.status
@@ -99,7 +100,7 @@ class StatusBar(Widget):
         """Update status indicators."""
         try:
             indicators = self.query_one("#indicators", Static)
-        except Exception:
+        except NoMatches:
             return
 
         text = Text()
@@ -184,7 +185,7 @@ class StatusBar(Widget):
         try:
             vm = self.query_one("#view-mode", Static)
             vm.update(f"[{mode_name(self.view_mode)}]")
-        except Exception:
+        except NoMatches:
             pass
 
     def update_status(self, status: SystemStatus) -> None:

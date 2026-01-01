@@ -10,6 +10,7 @@ from typing import Any
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Grid
+from textual.css.query import NoMatches
 from textual.widgets import Header
 
 from tradingbot._components.hub import EventHub
@@ -215,7 +216,7 @@ class TradingApp(App[None]):
         try:
             log = self.query_one("#signal-log", SignalLog)
             self._call_safe(log.add_trade, alert)
-        except Exception:
+        except NoMatches:
             pass
 
     def _on_stats(self, stats: SessionStats) -> None:
@@ -223,7 +224,7 @@ class TradingApp(App[None]):
         try:
             bar = self.query_one("#stats-bar", StatsBar)
             self._call_safe(bar.update_stats, stats)
-        except Exception:
+        except NoMatches:
             pass
 
     def _on_account(self, account: AccountSnapshot) -> None:
@@ -231,7 +232,7 @@ class TradingApp(App[None]):
         try:
             bar = self.query_one("#stats-bar", StatsBar)
             self._call_safe(bar.update_account, account)
-        except Exception:
+        except NoMatches:
             pass
 
     def _on_risk(self, risk: RiskStatus) -> None:
@@ -239,7 +240,7 @@ class TradingApp(App[None]):
         try:
             bar = self.query_one("#stats-bar", StatsBar)
             self._call_safe(bar.update_risk, risk)
-        except Exception:
+        except NoMatches:
             pass
 
     def _on_status(self, status: SystemStatus) -> None:
@@ -255,7 +256,7 @@ class TradingApp(App[None]):
         try:
             status_bar = self.query_one("#status-bar", StatusBar)
             self._call_safe(status_bar.update_status, status)
-        except Exception:
+        except NoMatches:
             pass
 
     def _on_strategy(self, strategy: StrategyInfo) -> None:
@@ -263,7 +264,7 @@ class TradingApp(App[None]):
         try:
             bar = self.query_one("#stats-bar", StatsBar)
             self._call_safe(bar.update_strategy, strategy)
-        except Exception:
+        except NoMatches:
             pass
 
     # --- Actions ---
@@ -337,11 +338,8 @@ class TradingApp(App[None]):
 
     def action_focus_grid(self) -> None:
         """Focus the symbol grid."""
-        try:
-            if self._card_slots:
-                self._card_slots[0].focus()
-        except Exception:
-            pass
+        if self._card_slots:
+            self._card_slots[0].focus()
 
     def _apply_view_mode(self) -> None:
         """Apply current view mode to all widgets."""
@@ -358,14 +356,14 @@ class TradingApp(App[None]):
         try:
             stats_bar = self.query_one("#stats-bar", StatsBar)
             stats_bar.display = config.show_stats_bar
-        except Exception:
+        except NoMatches:
             pass
 
         # Update status bar view mode indicator
         try:
             status_bar = self.query_one("#status-bar", StatusBar)
             status_bar.set_view_mode(self._view_mode)
-        except Exception:
+        except NoMatches:
             pass
 
     @property

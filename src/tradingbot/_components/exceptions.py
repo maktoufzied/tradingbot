@@ -135,3 +135,18 @@ class StateReconciliationError(StateError):
 
 class StatePersistenceError(StateError):
     """Failed to persist state."""
+
+
+# --- UI/Callback Errors ---
+
+
+class UIError(TradingBotError):
+    """UI-related errors."""
+
+
+class CallbackError(TradingBotError):
+    """Error in event callback execution.
+
+    Used when a registered callback raises an exception.
+    The original exception should be chained via `from`.
+    """
