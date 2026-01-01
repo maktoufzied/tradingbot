@@ -140,6 +140,27 @@ Use this agent when:
 - Need to update FEATURES.md after implementing something
 - User asks "what can this bot do?" or similar questions
 
+### docs-sync
+
+**Call this agent after completing significant code changes.** It analyzes modified files and reports which documentation needs updating:
+
+- README.md (CLI, config, user-facing changes)
+- ARCHITECTURE.md (components, data flow, patterns)
+- guide-strategy.md (strategies, indicators, parameters)
+- glossary.md (new terms, concepts)
+
+The agent provides specific recommendations for what to update in each file.
+
+### indicator-explorer
+
+Use this agent when:
+- Researching a new technical indicator for potential implementation
+- Need to understand how an indicator works mathematically
+- Want TA-Lib function signatures and parameters
+- Planning how to integrate an indicator into the codebase
+
+The agent provides implementation suggestions following project patterns (Polars, type hints, naming conventions).
+
 ## Key Concepts
 
 - Swing points: Local highs/lows used to identify market structure
