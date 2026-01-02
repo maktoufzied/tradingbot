@@ -104,6 +104,21 @@ uv run tradingbot-cache maintain     # Run cache maintenance
 
 This project has specialized sub-agents for specific tasks. Use them proactively:
 
+### code-reviewer
+
+**ALWAYS call this agent at the end of any significant code change.** This includes:
+
+- New modules or files
+- Modified functions or classes
+- Bug fixes
+- Refactoring
+
+The agent checks for:
+- Code quality issues and potential bugs
+- Adherence to project conventions (type hints, imports, style)
+- Error handling and edge cases
+- Security concerns
+
 ### day-trader-validator
 
 **ALWAYS call this agent after modifying any functional trading code.** This includes:

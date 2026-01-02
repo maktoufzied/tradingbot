@@ -9,15 +9,27 @@ import polars as pl
 
 from tradingbot.config import get_engine_config, get_health_config, get_strategy_config
 from tradingbot.interfaces import BrokerProtocol, DataFeedProtocol
-from tradingbot.types import Bar, BarOrigin, Direction, Order, PendingOrder, Position, Signal
+from tradingbot.types import Bar, BarOrigin, Direction, ExitReason, Order, PendingOrder, Position, Signal
 
 from .. import sounds
 from ..brokers.plugins.paper import PaperBroker
 from ..feeds import DataFeed
 from ..health import HealthChecker
+from ..logging import get_logger
 from ..risk import PositionSizer
 from ..risk_manager import RiskManager
 from ..signals import SignalGenerator
+from ..state import (
+    delete_position,
+    end_session,
+    get_last_session_info,
+    load_positions,
+    reconcile_positions,
+    record_trade,
+    save_position,
+    set_circuit_breaker,
+    start_session,
+)
 from .callbacks import EngineCallbacks
 from .events import (
     AccountEvent,
@@ -32,6 +44,8 @@ from .events import (
     StatsUpdatedEvent,
     TradeClosedEvent,
 )
+
+logger = get_logger(__name__)
 
 MIN_BARS_REQUIRED: Final[int] = 50
 MAX_BARS_HISTORY: Final[int] = 500
@@ -52,6 +66,8 @@ class TradingEngine:
         dry_run: bool = False,
         allow_short: bool = False,
         callbacks: EngineCallbacks | None = None,
+        persist_state: bool = True,
+        strategy_name: str | None = None,
     ) -> None:
         self._symbols = list(set(symbols))
         self._dry_run = dry_run
@@ -63,6 +79,8 @@ class TradingEngine:
         self._risk_mgr = risk_manager
         self._rr_ratio = rr_ratio
         self._cb = callbacks or EngineCallbacks()
+        self._persist_state = persist_state
+        self._strategy_name = strategy_name
 
         # State tracking
         self._positions: dict[str, Position] = {}
@@ -71,6 +89,7 @@ class TradingEngine:
         self._bars: dict[str, deque[Bar]] = {sym: deque(maxlen=MAX_BARS_HISTORY) for sym in self._symbols}
         self._running = False
         self._last_bar_time: datetime | None = None
+        self._session_id: int | None = None
 
         # Health checker
         self._health_checker = HealthChecker(
@@ -150,6 +169,22 @@ class TradingEngine:
             )
         )
 
+        # Start session and check previous session state
+        if self._persist_state:
+            last_session = get_last_session_info()
+            if last_session and not last_session["ended_gracefully"]:
+                await self._emit_message(
+                    f"Previous session {last_session['id']} did not end gracefully",
+                    MessageLevel.WARNING,
+                )
+                if last_session["circuit_breaker_triggered"]:
+                    await self._emit_message(
+                        "Circuit breaker was triggered in previous session",
+                        MessageLevel.WARNING,
+                    )
+            self._session_id = start_session()
+            logger.info("Started session %d", self._session_id)
+
         # Emit initial clock status
         await self._emit_clock()
 
@@ -223,6 +258,12 @@ class TradingEngine:
         self._running = False
         await self._health_checker.stop()
         await self._feed.stop()
+
+        # End session
+        if self._persist_state and self._session_id is not None:
+            end_session(self._session_id)
+            logger.info("Ended session %d", self._session_id)
+
         await self._cb.emit_stopped(EngineStoppedEvent(risk_manager=self._risk_mgr))
 
     async def _load_history(self) -> None:
@@ -269,11 +310,72 @@ class TradingEngine:
                 await self._emit_message(f"✗ {symbol}: {e}", MessageLevel.ERROR)
 
     async def _sync_broker_positions(self) -> None:
-        """Sync existing positions from broker on startup."""
+        """Sync existing positions from broker on startup with reconciliation."""
         broker_positions = self._broker.get_positions()
+        broker_pos_dict = {bp.symbol: bp for bp in broker_positions if bp.symbol in self._symbols}
 
+        # Load persisted positions for reconciliation
+        local_positions: dict[str, Position] = {}
+        if self._persist_state:
+            local_positions = load_positions()
+            if local_positions:
+                await self._emit_message(
+                    f"Loaded {len(local_positions)} persisted position(s)",
+                    MessageLevel.INFO,
+                )
+
+            # Reconcile local with broker
+            result = reconcile_positions(local_positions, broker_pos_dict)
+
+            # Report reconciliation results
+            if result.closed_externally:
+                for symbol in result.closed_externally:
+                    await self._emit_message(
+                        f"⚠ {symbol} position closed externally, removed from local state",
+                        MessageLevel.WARNING,
+                    )
+                    sounds.play(sounds.ALERT)
+
+            if result.size_mismatches:
+                for symbol, (local_size, broker_size) in result.size_mismatches.items():
+                    await self._emit_message(
+                        f"⚠ {symbol} size mismatch: local={local_size:.1f}, broker={broker_size:.1f}",
+                        MessageLevel.WARNING,
+                    )
+
+            # Use local positions that matched or had size updated
+            symbols_to_restore = result.matched + list(result.size_mismatches.keys())
+            for symbol in symbols_to_restore:
+                pos = local_positions[symbol]
+                # Update size from broker if mismatched
+                if symbol in result.size_mismatches:
+                    broker_size = result.size_mismatches[symbol][1]
+                    pos = Position(
+                        entry_price=pos.entry_price,
+                        entry_index=pos.entry_index,
+                        entry_time=pos.entry_time,
+                        direction=pos.direction,
+                        size=broker_size,
+                        stop_loss=pos.stop_loss,
+                        take_profit=pos.take_profit,
+                        initial_stop_loss=pos.initial_stop_loss,
+                        remaining_size=broker_size,
+                        partial_exits=pos.partial_exits,
+                        triggered_levels=pos.triggered_levels,
+                        high_water_mark=pos.high_water_mark,
+                    )
+                    save_position(symbol, pos)
+                self._positions[symbol] = pos
+                await self._emit_message(
+                    f"✓ Restored: {symbol} {pos.direction} {pos.get_remaining_size():.1f} @ ${pos.entry_price:.2f}",
+                    MessageLevel.SUCCESS,
+                )
+
+        # Adopt broker positions not in local state
         for bp in broker_positions:
             if bp.symbol not in self._symbols:
+                continue
+            if bp.symbol in self._positions:
                 continue
 
             # Calculate stop/TP from current market structure
@@ -285,7 +387,7 @@ class TradingEngine:
                 stop = bp.avg_entry_price * (0.98 if bp.direction == "LONG" else 1.02)
                 tp = bp.avg_entry_price * (1.04 if bp.direction == "LONG" else 0.96)
 
-            self._positions[bp.symbol] = Position(
+            position = Position(
                 entry_price=bp.avg_entry_price,
                 entry_index=0,
                 entry_time=datetime.now(),
@@ -295,13 +397,18 @@ class TradingEngine:
                 take_profit=tp,
                 initial_stop_loss=stop,
             )
+            self._positions[bp.symbol] = position
+
+            # Persist adopted position
+            if self._persist_state:
+                save_position(bp.symbol, position)
 
             await self._emit_message(
-                f"⚠ Synced: {bp.symbol} {bp.direction} {bp.size:.1f} @ ${bp.avg_entry_price:.2f}",
+                f"⚠ Adopted: {bp.symbol} {bp.direction} {bp.size:.1f} @ ${bp.avg_entry_price:.2f}",
                 MessageLevel.WARNING,
             )
 
-        if broker_positions:
+        if self._positions:
             self._risk_mgr.update_position_count(len(self._positions))
 
     async def _on_bar(self, bar: Bar) -> None:
@@ -417,7 +524,7 @@ class TradingEngine:
             return
 
         if self._dry_run:
-            self._positions[bar.symbol] = Position(
+            position = Position(
                 entry_price=price,
                 entry_index=idx,
                 entry_time=bar.datetime,
@@ -427,7 +534,10 @@ class TradingEngine:
                 take_profit=tp,
                 initial_stop_loss=stop,
             )
+            self._positions[bar.symbol] = position
             self._risk_mgr.update_position_count(len(self._positions))
+            if self._persist_state:
+                save_position(bar.symbol, position)
             return
 
         # Use bracket order with SL/TP so Alpaca manages exits
@@ -442,7 +552,7 @@ class TradingEngine:
         result = self._broker.submit_order(order)
 
         if result.status == "FILLED":
-            self._positions[bar.symbol] = Position(
+            position = Position(
                 entry_price=result.filled_price or price,
                 entry_index=idx,
                 entry_time=bar.datetime,
@@ -452,7 +562,10 @@ class TradingEngine:
                 take_profit=tp,
                 initial_stop_loss=stop,
             )
+            self._positions[bar.symbol] = position
             self._risk_mgr.update_position_count(len(self._positions))
+            if self._persist_state:
+                save_position(bar.symbol, position)
             await self._emit_message(f"✓ Order filled at ${result.filled_price:.2f}", MessageLevel.SUCCESS)
             sounds.play(sounds.BUY if direction == "LONG" else sounds.SELL)
         elif result.status == "PENDING":
@@ -482,7 +595,7 @@ class TradingEngine:
 
         if result.status == "FILLED":
             del self._pending_orders[symbol]
-            self._positions[symbol] = Position(
+            position = Position(
                 entry_price=result.filled_price or pending.expected_price,
                 entry_index=pending.entry_index,
                 entry_time=pending.entry_time,
@@ -492,7 +605,10 @@ class TradingEngine:
                 take_profit=pending.take_profit,
                 initial_stop_loss=pending.stop_loss,
             )
+            self._positions[symbol] = position
             self._risk_mgr.update_position_count(len(self._positions))
+            if self._persist_state:
+                save_position(symbol, position)
             await self._emit_message(f"✓ Order filled at ${result.filled_price:.2f}", MessageLevel.SUCCESS)
             sounds.play(sounds.BUY if pending.direction == "LONG" else sounds.SELL)
         elif result.status in ("REJECTED", "CANCELLED"):
@@ -511,21 +627,40 @@ class TradingEngine:
             # Position closed by Alpaca (bracket order SL/TP triggered)
             # Determine exit reason based on price action
             if position.direction == "LONG":
-                exit_reason = "STOP_LOSS" if bar.low <= position.stop_loss else "TAKE_PROFIT"
+                reason: ExitReason = "STOP_LOSS" if bar.low <= position.stop_loss else "TAKE_PROFIT"
             else:
-                exit_reason = "STOP_LOSS" if bar.high >= position.stop_loss else "TAKE_PROFIT"
+                reason = "STOP_LOSS" if bar.high >= position.stop_loss else "TAKE_PROFIT"
 
             # Calculate P&L and record trade
-            exit_price = position.stop_loss if exit_reason == "STOP_LOSS" else position.take_profit
+            exit_price = position.stop_loss if reason == "STOP_LOSS" else position.take_profit
             pnl = (exit_price - position.entry_price) * position.size
             if position.direction == "SHORT":
                 pnl = -pnl
+            pnl_pct = pnl / (position.entry_price * position.size) * 100
 
             del self._positions[bar.symbol]
             self._risk_mgr.update_position_count(len(self._positions))
             self._risk_mgr.record_trade_pnl(pnl)
+
+            # Persist state changes
+            if self._persist_state:
+                delete_position(bar.symbol)
+                record_trade(
+                    symbol=bar.symbol,
+                    direction=position.direction,
+                    entered_at=position.entry_time,
+                    exited_at=bar.datetime,
+                    entry_price=position.entry_price,
+                    exit_price=exit_price,
+                    size=position.size,
+                    pnl=pnl,
+                    pnl_pct=pnl_pct,
+                    exit_reason=reason,
+                    strategy=self._strategy_name,
+                )
+
             await self._emit_message(
-                f"✓ Position closed by Alpaca ({exit_reason}) at ${exit_price:.2f}, P&L: ${pnl:+.2f}",
+                f"✓ Position closed by Alpaca ({reason}) at ${exit_price:.2f}, P&L: ${pnl:+.2f}",
                 MessageLevel.SUCCESS if pnl > 0 else MessageLevel.WARNING,
             )
             sounds.play(sounds.PROFIT if pnl > 0 else sounds.LOSS)
@@ -560,6 +695,16 @@ class TradingEngine:
 
     async def _close_position(self, bar: Bar, position: Position, reason: str) -> None:
         """Close an existing position."""
+        # Map reason string to ExitReason type
+        exit_reason_map: dict[str, ExitReason] = {
+            "STOP_LOSS": "STOP_LOSS",
+            "TAKE_PROFIT": "TAKE_PROFIT",
+            "TIME_EXIT": "TIME_EXIT",
+            "EOD_EXIT": "EOD_EXIT",
+            "PARTIAL_EXIT": "PARTIAL_EXIT",
+        }
+        exit_reason: ExitReason = exit_reason_map.get(reason, "TIME_EXIT")
+
         if reason == "STOP_LOSS":
             exit_price = position.stop_loss
         elif reason == "TAKE_PROFIT":
@@ -572,6 +717,7 @@ class TradingEngine:
             pnl = (exit_price - position.entry_price) * position.size
             if position.direction == "SHORT":
                 pnl = -pnl
+            pnl_pct = pnl / (position.entry_price * position.size) * 100
             self._risk_mgr.record_trade_pnl(pnl)
 
             await self._cb.emit_trade_closed(
@@ -590,6 +736,23 @@ class TradingEngine:
             sounds.play(sounds.PROFIT if pnl > 0 else sounds.LOSS)
             del self._positions[bar.symbol]
             self._risk_mgr.update_position_count(len(self._positions))
+
+            # Persist state changes
+            if self._persist_state:
+                delete_position(bar.symbol)
+                record_trade(
+                    symbol=bar.symbol,
+                    direction=position.direction,
+                    entered_at=position.entry_time,
+                    exited_at=bar.datetime,
+                    entry_price=position.entry_price,
+                    exit_price=exit_price,
+                    size=position.size,
+                    pnl=pnl,
+                    pnl_pct=pnl_pct,
+                    exit_reason=exit_reason,
+                    strategy=self._strategy_name,
+                )
             return
 
         close_direction: Direction = "SHORT" if position.direction == "LONG" else "LONG"
@@ -601,6 +764,7 @@ class TradingEngine:
             pnl = (actual_exit - position.entry_price) * position.size
             if position.direction == "SHORT":
                 pnl = -pnl
+            pnl_pct = pnl / (position.entry_price * position.size) * 100
             self._risk_mgr.record_trade_pnl(pnl)
 
             await self._cb.emit_trade_closed(
@@ -621,8 +785,27 @@ class TradingEngine:
             self._pending_closes.discard(bar.symbol)
             self._risk_mgr.update_position_count(len(self._positions))
 
+            # Persist state changes
+            if self._persist_state:
+                delete_position(bar.symbol)
+                record_trade(
+                    symbol=bar.symbol,
+                    direction=position.direction,
+                    entered_at=position.entry_time,
+                    exited_at=bar.datetime,
+                    entry_price=position.entry_price,
+                    exit_price=actual_exit,
+                    size=position.size,
+                    pnl=pnl,
+                    pnl_pct=pnl_pct,
+                    exit_reason=exit_reason,
+                    strategy=self._strategy_name,
+                )
+
             if self._risk_mgr.check_circuit_breaker():
                 await self._emit_message("⚠ CIRCUIT BREAKER TRIGGERED - Trading paused", MessageLevel.ERROR)
+                if self._persist_state and self._session_id:
+                    set_circuit_breaker(self._session_id)
         elif result.status == "PENDING":
             self._pending_closes.add(bar.symbol)
             await self._emit_message(f"⏳ Close order pending (ID: {result.order_id})", MessageLevel.WARNING)

@@ -25,9 +25,10 @@ src/tradingbot/
     ├── signals.py           # SignalGenerator
     ├── swing.py             # Swing point detection
     ├── risk.py              # PositionSizer
-    ├── live_risk.py         # LiveRiskManager
+    ├── risk_manager.py      # RiskManager (live trading risk)
     ├── presets.py           # Strategy presets
     ├── resilience.py        # Connection resilience (reconnection, backoff)
+    ├── state.py             # State persistence (positions, sessions, trades)
     │
     ├── engine/              # Real-time trading engine
     ├── feeds/               # Data feed plugins
@@ -56,6 +57,10 @@ Defined in `types.py`:
 | `Trend` | BULLISH / BEARISH / NEUTRAL |
 | `ConnectionState` | Connection lifecycle: CONNECTED, DISCONNECTED, RECONNECTING, FAILED |
 | `ReconnectionConfig` | Retry settings: max_retries, base_delay, max_delay, backoff_factor |
+| `TradeRecord` | Persisted trade with P&L and metadata for analytics |
+| `TradeStats` | Aggregated statistics (win rate, profit factor, avg P&L) |
+| `ReconciliationResult` | Position reconciliation outcome (matched, closed, adopted) |
+| `StatsGroupBy` | Grouping: LIFETIME, DAILY, MONTHLY, SYMBOL, STRATEGY |
 
 ## Plugin Architecture
 
@@ -473,6 +478,56 @@ flowchart LR
 | `aggregate_all_intervals()` | Aggregate 1m → 5m/15m/1h/1d |
 | `purge_old_bars()` | Delete bars older than retention policy |
 | `run_maintenance()` | Full maintenance: aggregate + purge |
+
+### State Persistence
+
+The `state.py` module persists positions and trades to DuckDB for crash recovery and analytics.
+
+**Database Schema:**
+
+| Table | Purpose | Key Fields |
+|-------|---------|------------|
+| `positions` | Active positions for crash recovery | symbol (PK), entry details, SL/TP, partial_exits (JSON) |
+| `sessions` | Session boundaries and health | id (PK), started_at, ended_at, circuit_breaker_triggered |
+| `trades` | Trade history for analytics | id (PK), entry/exit prices, P&L, exit_reason, strategy |
+
+**Recovery Flow on Startup:**
+
+```mermaid
+flowchart TB
+    Start[Engine Start] --> CheckLast[Check last session]
+    CheckLast --> |not ended gracefully| Warn[Emit WARNING]
+    CheckLast --> |ended OK| Load[Load positions]
+    Warn --> Load
+
+    Load --> Fetch[Fetch broker positions]
+    Fetch --> Reconcile[Reconcile]
+
+    Reconcile --> |local not at broker| Delete[Delete local<br/>closed externally]
+    Reconcile --> |broker not local| Adopt[Adopt broker position<br/>calculate SL/TP]
+    Reconcile --> |both match| Restore[Restore local<br/>keeps SL/TP/trailing]
+
+    Delete --> Ready[Ready to trade]
+    Adopt --> Ready
+    Restore --> Ready
+```
+
+**Trade Recording:**
+
+Completed trades are recorded with:
+- Entry/exit prices, size, P&L (absolute and %)
+- Exit reason: `STOP_LOSS`, `TAKE_PROFIT`, `TIME_EXIT`, `EOD_EXIT`, `PARTIAL_EXIT`
+- Strategy name and preset (if provided)
+
+**Statistics Functions:**
+
+| Function | Description |
+|----------|-------------|
+| `get_stats(StatsGroupBy.LIFETIME)` | Overall performance |
+| `get_stats(StatsGroupBy.DAILY)` | Daily P&L grouping |
+| `get_stats(StatsGroupBy.MONTHLY)` | Monthly P&L grouping |
+| `get_stats(StatsGroupBy.SYMBOL)` | Per-symbol performance |
+| `get_stats(StatsGroupBy.STRATEGY)` | Per-strategy win rates |
 
 ### Connection Resilience
 

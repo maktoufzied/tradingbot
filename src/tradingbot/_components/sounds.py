@@ -9,6 +9,8 @@ BUY: Final = "buy"
 SELL: Final = "sell"
 PROFIT: Final = "profit"
 LOSS: Final = "loss"
+ALERT: Final = "alert"  # Critical events: circuit breaker, state mismatch
+WARNING: Final = "warning"  # Feed disconnected, recoverable issues
 
 
 def _play_system_bell() -> None:
@@ -30,7 +32,7 @@ def play(sound_type: str) -> None:
     """Play a notification sound.
 
     Args:
-        sound_type: One of 'buy', 'sell', 'profit', 'loss'
+        sound_type: One of 'buy', 'sell', 'profit', 'loss', 'alert', 'warning'
     """
     if sys.platform == "darwin":
         # macOS - use system sounds
@@ -39,6 +41,8 @@ def play(sound_type: str) -> None:
             SELL: "Pop",  # Pop for sell
             PROFIT: "Glass",  # Pleasant chime for profit
             LOSS: "Basso",  # Low tone for loss
+            ALERT: "Sosumi",  # Alert for critical events
+            WARNING: "Funk",  # Warning for recoverable issues
         }
         sound_name = sounds.get(sound_type, "Ping")
         _play_macos_sound(sound_name)
