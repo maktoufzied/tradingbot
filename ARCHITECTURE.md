@@ -362,11 +362,49 @@ sequenceDiagram
     S->>C: Snapshot message
 ```
 
+### Hub Types
+
+The `hub/types.py` module defines UI message types for WebSocket transmission:
+
+| Type | Description |
+|------|-------------|
+| `TickerUpdate` | Real-time price, change, trend, signal per symbol |
+| `PositionUpdate` | Open position state (entry, SL/TP, P&L) |
+| `TradeAlert` | Trade entry/exit notifications |
+| `SessionStats` | Aggregated session performance |
+| `AccountSnapshot` | Broker account state (equity, cash, buying power) |
+| `RiskStatus` | Risk management state (daily loss, circuit breaker) |
+| `SystemStatus` | Connection health, market hours, uptime |
+| `ChartUpdate` | OHLC candle data for charts |
+| `StrategyInfo` | Strategy configuration with per-symbol details |
+| `SymbolStrategyConfig` | Per-symbol strategy settings |
+| `GlobalState` | Complete state snapshot for client sync |
+
+**Per-Symbol Strategy Display:**
+
+`StrategyInfo` contains a `symbol_configs` dict mapping each symbol to its `SymbolStrategyConfig`:
+
+```python
+@dataclass
+class SymbolStrategyConfig:
+    preset_name: str      # e.g., "day_momentum"
+    entry_strategy: str   # e.g., "swing_break"
+    exit_strategy: str    # e.g., "swing"
+    risk_pct: float       # e.g., 0.01 (1%)
+    rr_ratio: float       # e.g., 2.0
+    indicators: list[str] # e.g., ["rsi", "adx"]
+    filter_mode: str      # "all", "any", or "none"
+    eod_exit: bool        # True = close at end of day
+    partial_exits: str    # e.g., "1R→50%, 2R→25%"
+```
+
+Both TUI and Web UI display this info in a "flip card" pattern - click/press Enter to toggle between price view and strategy details.
+
 ## Component Details
 
 ### TradingEngine
 
-Event-driven engine for real-time trading:
+Event-driven engine for real-time trading with per-symbol strategy support:
 
 ```python
 class TradingEngine:
@@ -374,7 +412,7 @@ class TradingEngine:
         symbols: list[str],
         broker: BrokerProtocol,
         feed: DataFeedProtocol,
-        signal_generator: SignalGenerator,
+        signal_generators: dict[str, SignalGenerator],  # Per-symbol strategies
         position_sizer: PositionSizer,
         live_risk_manager: LiveRiskManager,
         rr_ratio: float,
@@ -382,6 +420,20 @@ class TradingEngine:
         dry_run: bool,
         callbacks: EngineCallbacks,
     )
+```
+
+**Per-Symbol Strategy:**
+Each symbol can use a different strategy preset. The `signal_generators` dict maps symbol → SignalGenerator:
+
+```bash
+# CLI syntax: SYMBOL:preset
+tradingbot-live SPY:day_momentum AAPL:mean_reversion QQQ
+```
+
+The engine looks up the appropriate generator per symbol when processing bars:
+```python
+sig_gen = self._sig_gens.get(bar.symbol)
+signal, details = sig_gen.generate(df, idx, has_position)
 ```
 
 ### Engine Event Loop

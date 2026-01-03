@@ -223,8 +223,15 @@ task live -- SPY --dry-run
 # Paper trading with multiple symbols
 task live -- SPY QQQ AAPL
 
+# Per-symbol presets (different strategy per symbol)
+task live -- SPY:scalping AAPL:momentum QQQ
+# SPY uses scalping preset, AAPL uses momentum, QQQ uses default
+
 # TUI mode (interactive terminal dashboard)
 task live -- SPY --tui
+
+# Web UI with per-symbol presets
+task live -- APLD:apld GOOG --web
 ```
 
 **Options:**

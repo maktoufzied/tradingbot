@@ -114,6 +114,42 @@ signal_mode = "filter"     # "filter" or "none"
 | `momentum` | atr_breakout | atr | 1.5% | 1.5:1 | ATR breakouts, trend following |
 | `divergence` | rsi_divergence | swing | 1.0% | 1.5:1 | Counter-trend at exhaustion |
 
+### Per-Symbol Presets
+
+Run different strategies for different symbols in the same session:
+
+```bash
+# CLI syntax: SYMBOL:preset
+tradingbot-live SPY:day_momentum AAPL:mean_reversion QQQ:scalping
+
+# Mix: some with preset, some use default
+tradingbot-live SPY:aggressive AAPL QQQ --preset balanced
+# → SPY uses aggressive, AAPL and QQQ use balanced
+```
+
+**Display in UI:**
+
+Both TUI and Web UI show per-symbol strategy info in a "flip card" pattern:
+
+| UI | Trigger | Shows |
+|----|---------|-------|
+| TUI | Focus card + Enter | Entry, Exit, Risk%, R:R, Indicators, EOD/Swing badge |
+| Web | Click card | Entry, Exit, Risk%, R:R, Indicators, Partial exits |
+
+**Strategy Config Fields:**
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `preset_name` | The preset name | "day_momentum" |
+| `entry_strategy` | Entry strategy name | "swing_break" |
+| `exit_strategy` | Exit strategy name | "swing" |
+| `risk_pct` | Risk per trade | 0.01 (1%) |
+| `rr_ratio` | Risk:Reward ratio | 2.0 |
+| `indicators` | Indicator filters | ["rsi", "adx"] |
+| `filter_mode` | How indicators combine | "all", "any", "none" |
+| `eod_exit` | Close at end of day | true/false |
+| `partial_exits` | Partial profit levels | "1R→50%, 2R→25%" |
+
 ---
 
 ## 3. Market Hypothesis (Swing Break Strategy)

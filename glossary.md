@@ -384,6 +384,45 @@ task backtest -- AAPL --preset aapl_optimized
 
 ---
 
+### Per-Symbol Preset
+
+**Definition:** Assigning different strategy presets to different symbols in a single trading session using `SYMBOL:preset` CLI syntax.
+
+**Syntax:** `tradingbot-live SYMBOL:preset_name`
+
+**Examples:**
+```bash
+# Each symbol uses a different preset
+tradingbot-live SPY:day_momentum AAPL:mean_reversion QQQ:scalping
+
+# Mix: some symbols specify preset, others use default
+tradingbot-live SPY:aggressive AAPL QQQ --preset balanced
+# → SPY uses aggressive, AAPL and QQQ use balanced
+```
+
+**Use case:** Run multiple strategies simultaneously on different instruments (e.g., momentum on trending stocks, mean-reversion on ranging stocks).
+
+---
+
+### SymbolStrategyConfig
+
+**Definition:** A dataclass in `hub/types.py` that holds strategy configuration for a specific symbol. Sent to UI clients to display per-symbol strategy details.
+
+**Fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `preset_name` | str | Preset name (e.g., "day_momentum") |
+| `entry_strategy` | str | Entry strategy (e.g., "swing_break") |
+| `exit_strategy` | str | Exit strategy (e.g., "swing") |
+| `risk_pct` | float | Risk per trade (0.01 = 1%) |
+| `rr_ratio` | float | Risk:Reward ratio (e.g., 2.0) |
+| `indicators` | list | Indicator filters (e.g., ["rsi", "adx"]) |
+| `filter_mode` | str | How indicators combine: "all", "any", "none" |
+| `eod_exit` | bool | Close at end of day? |
+| `partial_exits` | str | Partial profit levels (e.g., "1R→50%") |
+
+---
+
 ## Data Terms
 
 ### Period
@@ -509,6 +548,48 @@ task replay -- SPY --speed 10 --from 2024-01-01
 |-----------|------------|
 | **Pivot Points** | Classic floor trader levels calculated from previous session. PP = (H + L + C) / 3, with R1-R3 above and S1-S3 below. |
 | **Fibonacci Retracements** | Key retracement levels (23.6%, 38.2%, 50%, 61.8%, 78.6%) from swing high to swing low. Used for pullback entries. |
+
+---
+
+## UI Terms
+
+### Flip Card
+
+**Definition:** A UI pattern where a card displays different content on "front" and "back" sides, toggled by user interaction.
+
+**In TUI (Terminal UI):**
+- **Trigger:** Focus a symbol card and press Enter or Space
+- **Front:** Price, change, sparkline chart, trend/signal badges, position info
+- **Back:** Strategy details (entry, exit, risk, R:R, indicators, EOD/Swing badge)
+
+**In Web UI:**
+- **Trigger:** Click on a symbol card
+- **Front:** Price, chart, position summary
+- **Back:** Strategy configuration details
+
+---
+
+### Signal Badge
+
+**Definition:** A visual indicator showing the current trading signal for a symbol.
+
+| Signal | Badge Color | Meaning |
+|--------|-------------|---------|
+| `BUY` | Green | Strategy recommends entering long |
+| `SELL` | Red | Strategy recommends entering short |
+| `HOLD` | Gray | No action recommended |
+
+---
+
+### Trend Badge
+
+**Definition:** A visual indicator showing the current market structure trend.
+
+| Trend | Badge Color | Structure |
+|-------|-------------|-----------|
+| `BULLISH` | Green | HH + HL pattern |
+| `BEARISH` | Red | LH + LL pattern |
+| `NEUTRAL` | Gray | No clear structure |
 
 ---
 
