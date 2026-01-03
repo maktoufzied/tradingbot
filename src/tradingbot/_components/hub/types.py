@@ -286,6 +286,24 @@ class ChartUpdate:
 
 
 @dataclass(slots=True)
+class SymbolStrategyConfig:
+    """Per-symbol strategy configuration."""
+
+    preset_name: str
+    entry_strategy: str
+    exit_strategy: str
+    risk_pct: float
+    rr_ratio: float
+    indicators: list[str]
+    filter_mode: str = "all"
+    eod_exit: bool = True
+    partial_exits: str = ""  # Summary like "1R→50%, 2R→25%" or empty
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
 class StrategyInfo:
     """Strategy/preset configuration info."""
 
@@ -295,6 +313,9 @@ class StrategyInfo:
     risk_pct: float
     rr_ratio: float
     indicators: list[str]
+    symbol_strategies: dict[str, str] = field(default_factory=dict)
+    # Per-symbol strategy details (symbol -> full config)
+    symbol_configs: dict[str, SymbolStrategyConfig] = field(default_factory=dict)
 
     @classmethod
     def default(cls) -> StrategyInfo:
@@ -305,10 +326,28 @@ class StrategyInfo:
             risk_pct=0.01,
             rr_ratio=1.5,
             indicators=[],
+            symbol_strategies={},
+            symbol_configs={},
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        # Convert SymbolStrategyConfig objects to dicts
+        d["symbol_configs"] = {k: v.to_dict() for k, v in self.symbol_configs.items()}
+        return d
+
+    def get_symbol_config(self, symbol: str) -> SymbolStrategyConfig:
+        """Get strategy config for a specific symbol, falling back to global defaults."""
+        if symbol in self.symbol_configs:
+            return self.symbol_configs[symbol]
+        return SymbolStrategyConfig(
+            preset_name=self.preset_name,
+            entry_strategy=self.entry_strategy,
+            exit_strategy=self.exit_strategy,
+            risk_pct=self.risk_pct,
+            rr_ratio=self.rr_ratio,
+            indicators=self.indicators,
+        )
 
 
 @dataclass

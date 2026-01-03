@@ -107,6 +107,8 @@ const defaultStrategy: StrategyInfo = {
   risk_pct: 0.01,
   rr_ratio: 1.5,
   indicators: [],
+  symbol_strategies: {},
+  symbol_configs: {},
 };
 
 export const useTradingStore = create<TradingState>((set) => ({
@@ -199,6 +201,23 @@ export const useStatus = () => useTradingStore((s) => s.status);
 export const useChart = (symbol: string) => useTradingStore((s) => s.charts[symbol]);
 export const useRecentTrades = () => useTradingStore((s) => s.recentTrades);
 export const useStrategy = () => useTradingStore((s) => s.strategy);
+export const useSymbolStrategy = (symbol: string) => useTradingStore((s) => s.strategy.symbol_strategies[symbol] || '');
+export const useSymbolConfig = (symbol: string) => useTradingStore((s) => {
+  // Return per-symbol config if available, otherwise return global strategy as fallback
+  const symbolConfig = s.strategy.symbol_configs[symbol];
+  if (symbolConfig) return symbolConfig;
+  return {
+    preset_name: s.strategy.preset_name,
+    entry_strategy: s.strategy.entry_strategy,
+    exit_strategy: s.strategy.exit_strategy,
+    risk_pct: s.strategy.risk_pct,
+    rr_ratio: s.strategy.rr_ratio,
+    indicators: s.strategy.indicators,
+    filter_mode: 'all',
+    eod_exit: true,
+    partial_exits: '',
+  };
+});
 export const useSymbols = () => useTradingStore(useShallow((s) => Object.keys(s.tickers)));
 export const useAllTickers = () => useTradingStore((s) => s.tickers);
 export const useAllPositions = () => useTradingStore((s) => s.positions);

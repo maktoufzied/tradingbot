@@ -59,7 +59,7 @@ class TradingEngine:
         symbols: Collection[str],
         broker: BrokerProtocol,
         feed: DataFeedProtocol,
-        signal_generator: SignalGenerator,
+        signal_generators: dict[str, SignalGenerator],
         position_sizer: PositionSizer,
         risk_manager: RiskManager,
         rr_ratio: float = 2.0,
@@ -67,20 +67,20 @@ class TradingEngine:
         allow_short: bool = False,
         callbacks: EngineCallbacks | None = None,
         persist_state: bool = True,
-        strategy_name: str | None = None,
+        strategy_names: dict[str, str] | None = None,
     ) -> None:
         self._symbols = list(set(symbols))
         self._dry_run = dry_run
         self._allow_short = allow_short
         self._broker = broker
         self._feed = feed
-        self._sig_gen = signal_generator
+        self._sig_gens = signal_generators
         self._pos_sizer = position_sizer
         self._risk_mgr = risk_manager
         self._rr_ratio = rr_ratio
         self._cb = callbacks or EngineCallbacks()
         self._persist_state = persist_state
-        self._strategy_name = strategy_name
+        self._strategy_names = strategy_names or {}
 
         # State tracking
         self._positions: dict[str, Position] = {}
@@ -108,6 +108,11 @@ class TradingEngine:
     @property
     def dry_run(self) -> bool:
         return self._dry_run
+
+    @property
+    def strategy_names(self) -> dict[str, str]:
+        """Get per-symbol strategy name mapping."""
+        return self._strategy_names
 
     async def _emit_message(self, message: str, level: MessageLevel = MessageLevel.INFO) -> None:
         await self._cb.emit_message(MessageEvent(message, level))
@@ -303,9 +308,11 @@ class TradingEngine:
                         await self._cb.emit_bar(BarEvent(bar=bar, signal=Signal.HOLD, trend="NEUTRAL", position=None))
                     # Emit final bar with actual signal/trend
                     last_bar = bars_to_emit[-1]
-                    signal, details = self._sig_gen.generate(hist_df, len(hist_df) - 1, False)
-                    trend = str(details.get("trend", "NEUTRAL"))
-                    await self._cb.emit_bar(BarEvent(bar=last_bar, signal=signal, trend=trend, position=None))
+                    sig_gen = self._sig_gens.get(symbol)
+                    if sig_gen:
+                        signal, details = sig_gen.generate(hist_df, len(hist_df) - 1, False)
+                        trend = str(details.get("trend", "NEUTRAL"))
+                        await self._cb.emit_bar(BarEvent(bar=last_bar, signal=signal, trend=trend, position=None))
             except Exception as e:
                 await self._emit_message(f"✗ {symbol}: {e}", MessageLevel.ERROR)
 
@@ -379,9 +386,10 @@ class TradingEngine:
                 continue
 
             # Calculate stop/TP from current market structure
-            if bp.symbol in self._bars and len(self._bars[bp.symbol]) >= MIN_BARS_REQUIRED:
+            sig_gen = self._sig_gens.get(bp.symbol)
+            if sig_gen and bp.symbol in self._bars and len(self._bars[bp.symbol]) >= MIN_BARS_REQUIRED:
                 df = self._bars_to_df(bp.symbol)
-                exit_params = self._sig_gen.calc_exit(bp.direction, bp.avg_entry_price, df, self._rr_ratio)
+                exit_params = sig_gen.calc_exit(bp.direction, bp.avg_entry_price, df, self._rr_ratio)
                 stop, tp = exit_params.stop_loss, exit_params.take_profit
             else:
                 stop = bp.avg_entry_price * (0.98 if bp.direction == "LONG" else 1.02)
@@ -455,7 +463,11 @@ class TradingEngine:
         if position:
             await self._check_exit(bar, position)
 
-        signal, details = self._sig_gen.generate(df, len(df) - 1, bool(position))
+        # Get the signal generator for this symbol
+        sig_gen = self._sig_gens.get(bar.symbol)
+        if sig_gen is None:
+            return  # No strategy configured for this symbol
+        signal, details = sig_gen.generate(df, len(df) - 1, bool(position))
 
         # Check if we should open a new position
         can_open = (
@@ -496,7 +508,10 @@ class TradingEngine:
         price = bar.close
         idx = len(df) - 1
 
-        exit_params = self._sig_gen.calc_exit(direction, price, df, self._rr_ratio)
+        sig_gen = self._sig_gens.get(bar.symbol)
+        if sig_gen is None:
+            return  # No strategy configured
+        exit_params = sig_gen.calc_exit(direction, price, df, self._rr_ratio)
         stop, tp = exit_params.stop_loss, exit_params.take_profit
         size = self._pos_sizer.calc_size(price, stop)
 
@@ -656,7 +671,7 @@ class TradingEngine:
                     pnl=pnl,
                     pnl_pct=pnl_pct,
                     exit_reason=reason,
-                    strategy=self._strategy_name,
+                    strategy=self._strategy_names.get(bar.symbol),
                 )
 
             await self._emit_message(
@@ -751,7 +766,7 @@ class TradingEngine:
                     pnl=pnl,
                     pnl_pct=pnl_pct,
                     exit_reason=exit_reason,
-                    strategy=self._strategy_name,
+                    strategy=self._strategy_names.get(bar.symbol),
                 )
             return
 
@@ -799,7 +814,7 @@ class TradingEngine:
                     pnl=pnl,
                     pnl_pct=pnl_pct,
                     exit_reason=exit_reason,
-                    strategy=self._strategy_name,
+                    strategy=self._strategy_names.get(bar.symbol),
                 )
 
             if self._risk_mgr.check_circuit_breaker():

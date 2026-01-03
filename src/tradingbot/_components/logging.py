@@ -53,7 +53,7 @@ def configure_logging(
 
     # File handler (optional)
     if log_file:
-        file_path = Path(log_file)
+        file_path = Path(log_file).expanduser()
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(file_path, encoding="utf-8")
         file_handler.setLevel(log_level)

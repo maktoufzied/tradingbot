@@ -422,6 +422,10 @@ paper = true                     # Use paper trading endpoint
 
 [tradingbot.cache]
 source = "yahoo"                 # Default data source for caching
+
+[tradingbot.logging]
+level = "INFO"                   # DEBUG, INFO, WARNING, ERROR
+# log_file = "~/.tradingbot/logs/trading.log"  # Optional file output
 ```
 
 ### Entry Strategies

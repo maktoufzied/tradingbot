@@ -12,7 +12,6 @@ from tradingbot._components.hub.types import (
     AccountSnapshot,
     RiskStatus,
     SessionStats,
-    StrategyInfo,
 )
 
 from ..theme import THEME
@@ -276,77 +275,8 @@ class RiskPanel(Widget):
         status_line.update(status_text)
 
 
-class StrategyPanel(Widget):
-    """Strategy/preset information panel."""
-
-    DEFAULT_CSS = """
-    StrategyPanel {
-        height: 100%;
-        width: 1fr;
-        padding: 0 1;
-    }
-
-    StrategyPanel Static {
-        height: 1;
-    }
-    """
-
-    strategy: reactive[StrategyInfo | None] = reactive(None)
-
-    def compose(self) -> ComposeResult:
-        yield Static("STRATEGY", classes="panel-title")
-        yield Static("", id="preset-line")
-        yield Static("", id="entry-exit-line")
-        yield Static("", id="risk-line")
-
-    def on_mount(self) -> None:
-        self._update_display()
-
-    def watch_strategy(self, strategy: StrategyInfo | None) -> None:
-        self._update_display()
-
-    def _update_display(self) -> None:
-        strategy = self.strategy
-
-        try:
-            preset_line = self.query_one("#preset-line", Static)
-            entry_exit_line = self.query_one("#entry-exit-line", Static)
-            risk_line = self.query_one("#risk-line", Static)
-        except NoMatches:
-            return
-
-        if not strategy:
-            preset_line.update(Text("Preset --", style=THEME.text_dim))
-            entry_exit_line.update(Text("Entry/Exit --", style=THEME.text_dim))
-            risk_line.update(Text("Risk --", style=THEME.text_dim))
-            return
-
-        # Preset name
-        preset_text = Text()
-        preset_text.append(strategy.preset_name.upper(), style=f"bold {THEME.primary}")
-        preset_line.update(preset_text)
-
-        # Entry/Exit strategies
-        entry_exit_text = Text()
-        entry_exit_text.append(strategy.entry_strategy, style=THEME.neutral)
-        entry_exit_text.append(" \u2192 ", style=THEME.text_dim)
-        entry_exit_text.append(strategy.exit_strategy, style=THEME.neutral)
-        entry_exit_line.update(entry_exit_text)
-
-        # Risk params
-        risk_text = Text()
-        risk_text.append("R:", style=THEME.text_dim)
-        risk_text.append(f"{strategy.risk_pct * 100:.1f}%", style=THEME.text)
-        risk_text.append(" RR:", style=THEME.text_dim)
-        risk_text.append(f"{strategy.rr_ratio}", style=THEME.text)
-        if strategy.indicators:
-            risk_text.append(" ", style="")
-            risk_text.append(",".join(strategy.indicators), style=THEME.text_secondary)
-        risk_line.update(risk_text)
-
-
 class StatsBar(Widget):
-    """Combined stats bar with Session, Account, Risk, and Strategy panels."""
+    """Combined stats bar with Session, Account, and Risk panels."""
 
     DEFAULT_CSS = """
     StatsBar {
@@ -372,7 +302,6 @@ class StatsBar(Widget):
             yield SessionPanel(id="session-panel")
             yield AccountPanel(id="account-panel")
             yield RiskPanel(id="risk-panel")
-            yield StrategyPanel(id="strategy-panel")
 
     def update_stats(self, stats: SessionStats) -> None:
         """Update session stats."""
@@ -395,13 +324,5 @@ class StatsBar(Widget):
         try:
             panel = self.query_one("#risk-panel", RiskPanel)
             panel.risk = risk
-        except NoMatches:
-            pass
-
-    def update_strategy(self, strategy: StrategyInfo) -> None:
-        """Update strategy info."""
-        try:
-            panel = self.query_one("#strategy-panel", StrategyPanel)
-            panel.strategy = strategy
         except NoMatches:
             pass

@@ -91,6 +91,8 @@ class TradingApp(App[None]):
         self._card_slots: list[SymbolCard] = []
         self._is_replay = False
         self._replay_time_str = ""
+        self._symbol_strategies: dict[str, str] = {}
+        self._strategy_info: StrategyInfo | None = None
 
     @property
     def _page_symbols(self) -> list[str]:
@@ -261,11 +263,16 @@ class TradingApp(App[None]):
 
     def _on_strategy(self, strategy: StrategyInfo) -> None:
         """Handle strategy info (called once at startup)."""
-        try:
-            bar = self.query_one("#stats-bar", StatsBar)
-            self._call_safe(bar.update_strategy, strategy)
-        except NoMatches:
-            pass
+        # Store strategy info and per-symbol strategies for card display
+        self._strategy_info = strategy
+        self._symbol_strategies = strategy.symbol_strategies or {}
+
+        # Update card headers with strategy names and pass strategy info
+        for card in self._card_slots:
+            if card.symbol and card.symbol != "---":
+                strategy_name = self._symbol_strategies.get(card.symbol, "")
+                card.strategy_name = strategy_name
+                card.set_strategy_info(strategy)
 
     # --- Actions ---
 
@@ -297,13 +304,17 @@ class TradingApp(App[None]):
         self._current_page = page
         page_symbols = self._page_symbols
 
-        # Update each card slot with new symbol
+        # Update each card slot with new symbol and strategy name
         for i, card in enumerate(self._card_slots):
             if i < len(page_symbols):
-                card.set_symbol(page_symbols[i])
+                symbol = page_symbols[i]
+                strategy_name = self._symbol_strategies.get(symbol, "")
+                card.set_symbol(symbol, strategy_name)
+                if self._strategy_info:
+                    card.set_strategy_info(self._strategy_info)
                 card.display = True
             else:
-                card.set_symbol("---")
+                card.set_symbol("---", "")
                 card.display = False
 
         # Load data for new page symbols from hub state

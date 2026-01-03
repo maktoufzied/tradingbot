@@ -105,6 +105,13 @@ paper = true                 # Use paper trading endpoint
 # commission_per_share = 0.005
 
 # =============================================================================
+# LOGGING - Log level and optional file output
+# =============================================================================
+[tradingbot.logging]
+level = "INFO"                   # DEBUG, INFO, WARNING, ERROR
+log_file = "~/.tradingbot/logs/trading.log"  # Optional file output
+
+# =============================================================================
 # CUSTOM PRESETS - Define your own trading configurations
 # =============================================================================
 # [tradingbot.presets.my_preset]

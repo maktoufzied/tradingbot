@@ -119,6 +119,18 @@ export interface ChartUpdate {
   swing_lows: number[];
 }
 
+export interface SymbolStrategyConfig {
+  preset_name: string;
+  entry_strategy: string;
+  exit_strategy: string;
+  risk_pct: number;
+  rr_ratio: number;
+  indicators: string[];
+  filter_mode: string;
+  eod_exit: boolean;
+  partial_exits: string;
+}
+
 export interface StrategyInfo {
   preset_name: string;
   entry_strategy: string;
@@ -126,6 +138,8 @@ export interface StrategyInfo {
   risk_pct: number;
   rr_ratio: number;
   indicators: string[];
+  symbol_strategies: Record<string, string>;
+  symbol_configs: Record<string, SymbolStrategyConfig>;
 }
 
 export interface GlobalState {

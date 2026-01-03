@@ -1,12 +1,18 @@
 """CLI entry point and callbacks for the trading engine."""
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import threading
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
+
+if TYPE_CHECKING:
+    from tradingbot._components.hub.types import SymbolStrategyConfig
 
 from tradingbot import (
     BarEvent,
@@ -261,26 +267,28 @@ async def run_live(
     symbols: list[str],
     broker: BrokerProtocol,
     feed: DataFeedProtocol,
-    signal_generator: SignalGenerator,
+    signal_generators: dict[str, SignalGenerator],
     position_sizer: PositionSizer,
     risk_manager: RiskManager,
     rr_ratio: float = 2.0,
     dry_run: bool = False,
     allow_short: bool = False,
     callbacks: EngineCallbacks | None = None,
+    strategy_names: dict[str, str] | None = None,
 ) -> None:
     """Run trading engine."""
     engine = TradingEngine(
         symbols=symbols,
         broker=broker,
         feed=feed,
-        signal_generator=signal_generator,
+        signal_generators=signal_generators,
         position_sizer=position_sizer,
         risk_manager=risk_manager,
         rr_ratio=rr_ratio,
         dry_run=dry_run,
         allow_short=allow_short,
         callbacks=callbacks,
+        strategy_names=strategy_names,
     )
 
     try:
@@ -297,7 +305,7 @@ def _run_with_modern_tui(
     symbols: list[str],
     broker: BrokerProtocol,
     feed: DataFeedProtocol,
-    signal_generator: SignalGenerator,
+    signal_generators: dict[str, SignalGenerator],
     position_sizer: PositionSizer,
     risk_manager: RiskManager,
     rr_ratio: float,
@@ -308,11 +316,11 @@ def _run_with_modern_tui(
     serve_web: bool = False,
     web_port: int | None = None,
     preset_name: str = "custom",
-    entry_strategy: str = "swing_break",
-    exit_strategy: str = "swing",
+    strategy_names: dict[str, str] | None = None,
     risk_pct: float = 0.01,
     indicators: list[str] | None = None,
     is_replay: bool = False,
+    symbol_configs: dict[str, SymbolStrategyConfig] | None = None,
 ) -> None:
     """Run live trading with modern hub-based TUI.
 
@@ -325,17 +333,24 @@ def _run_with_modern_tui(
     from tradingbot._components.hub.types import StrategyInfo
     from tradingbot._components.tui.app import TradingApp as ModernTradingApp
 
+    strategy_names = strategy_names or {}
+    symbol_configs = symbol_configs or {}
+
     # Create the event hub
     hub = EventHub()
 
-    # Set strategy info
+    # Set strategy info (use first symbol's strategy for display, or "multi-strategy")
+    first_symbol = symbols[0] if symbols else ""
+    first_sig_gen = signal_generators.get(first_symbol)
     strategy_info = StrategyInfo(
         preset_name=preset_name,
-        entry_strategy=entry_strategy,
-        exit_strategy=exit_strategy,
+        entry_strategy=first_sig_gen.entry_name if first_sig_gen else "swing_break",
+        exit_strategy=first_sig_gen.exit_name if first_sig_gen else "swing",
         risk_pct=risk_pct,
         rr_ratio=rr_ratio,
         indicators=indicators or [],
+        symbol_strategies=strategy_names,
+        symbol_configs=symbol_configs,
     )
     hub.set_strategy(strategy_info)
 
@@ -376,13 +391,14 @@ def _run_with_modern_tui(
                 symbols=symbols,
                 broker=broker,
                 feed=feed,
-                signal_generator=signal_generator,
+                signal_generators=signal_generators,
                 position_sizer=position_sizer,
                 risk_manager=risk_manager,
                 rr_ratio=rr_ratio,
                 dry_run=dry_run,
                 allow_short=allow_short,
                 callbacks=adapter.callbacks,
+                strategy_names=strategy_names,
             )
 
     # Start WebSocket server in background thread (needs its own event loop)
@@ -442,7 +458,7 @@ def _run_headless_with_hub(
     symbols: list[str],
     broker: BrokerProtocol,
     feed: DataFeedProtocol,
-    signal_generator: SignalGenerator,
+    signal_generators: dict[str, SignalGenerator],
     position_sizer: PositionSizer,
     risk_manager: RiskManager,
     rr_ratio: float,
@@ -452,11 +468,11 @@ def _run_headless_with_hub(
     serve_web: bool = False,
     web_port: int | None = None,
     preset_name: str = "custom",
-    entry_strategy: str = "swing_break",
-    exit_strategy: str = "swing",
+    strategy_names: dict[str, str] | None = None,
     risk_pct: float = 0.01,
     indicators: list[str] | None = None,
     is_replay: bool = False,
+    symbol_configs: dict[str, SymbolStrategyConfig] | None = None,
 ) -> None:
     """Run headless with hub-based architecture (WebSocket + optional web UI).
 
@@ -469,17 +485,24 @@ def _run_headless_with_hub(
 
     from tradingbot._components.hub.types import StrategyInfo
 
+    strategy_names = strategy_names or {}
+    symbol_configs = symbol_configs or {}
+
     # Create the event hub
     hub = EventHub()
 
-    # Set strategy info
+    # Set strategy info (use first symbol's strategy for display, or "multi-strategy")
+    first_symbol = symbols[0] if symbols else ""
+    first_sig_gen = signal_generators.get(first_symbol)
     strategy_info = StrategyInfo(
         preset_name=preset_name,
-        entry_strategy=entry_strategy,
-        exit_strategy=exit_strategy,
+        entry_strategy=first_sig_gen.entry_name if first_sig_gen else "swing_break",
+        exit_strategy=first_sig_gen.exit_name if first_sig_gen else "swing",
         risk_pct=risk_pct,
         rr_ratio=rr_ratio,
         indicators=indicators or [],
+        symbol_strategies=strategy_names,
+        symbol_configs=symbol_configs,
     )
     hub.set_strategy(strategy_info)
 
@@ -516,13 +539,14 @@ def _run_headless_with_hub(
                 symbols=symbols,
                 broker=broker,
                 feed=feed,
-                signal_generator=signal_generator,
+                signal_generators=signal_generators,
                 position_sizer=position_sizer,
                 risk_manager=risk_manager,
                 rr_ratio=rr_ratio,
                 dry_run=dry_run,
                 allow_short=allow_short,
                 callbacks=adapter.callbacks,
+                strategy_names=strategy_names,
             )
         finally:
             await server.stop()
@@ -586,32 +610,112 @@ Examples:
     )
     args = parser.parse_args()
 
+    # Parse symbols with optional per-symbol presets (e.g., "SPY:day_momentum" or "AAPL")
     symbols: list[str] = []
+    symbol_presets: dict[str, str] = {}  # symbol -> preset name
     for sym in args.symbols:
-        symbols.extend(s.strip().upper() for s in sym.split(",") if s.strip())
+        for s in sym.split(","):
+            s = s.strip().upper()
+            if not s:
+                continue
+            if ":" in s:
+                symbol, preset_name = s.split(":", 1)
+                symbols.append(symbol)
+                symbol_presets[symbol] = preset_name.lower()
+            else:
+                symbols.append(s)
 
     bot_cfg = get_bot_config()
     strategy_cfg = get_strategy_config()
     engine_cfg = get_engine_config()
 
-    # Load preset if specified
-    preset = None
+    # Load default preset if specified via --preset
+    default_preset = None
     if args.preset:
-        preset = get_preset(args.preset)
+        default_preset = get_preset(args.preset)
 
-    # Apply values: CLI args > preset > config defaults
-    risk_pct = args.risk if args.risk is not None else (preset.risk_pct if preset else strategy_cfg.risk_pct)
-    rr_ratio = args.rr if args.rr is not None else (preset.rr_ratio if preset else strategy_cfg.rr_ratio)
-    entry_strategy = args.strategy if args.strategy is not None else (preset.entry if preset else strategy_cfg.entry)
-    exit_strategy = preset.exit if preset else strategy_cfg.exit
-    indicators = preset.indicators if preset else []
-    preset_name = preset.name if preset else "custom"
+    # Default values from CLI args > preset > config
+    default_risk_pct = (
+        args.risk if args.risk is not None else (default_preset.risk_pct if default_preset else strategy_cfg.risk_pct)
+    )
+    default_rr_ratio = (
+        args.rr if args.rr is not None else (default_preset.rr_ratio if default_preset else strategy_cfg.rr_ratio)
+    )
+    default_entry = (
+        args.strategy if args.strategy is not None else (default_preset.entry if default_preset else strategy_cfg.entry)
+    )
+    default_exit = default_preset.exit if default_preset else strategy_cfg.exit
+    default_indicators = default_preset.indicators if default_preset else []
+    default_preset_name = default_preset.name if default_preset else "custom"
+    default_filter_mode = default_preset.filter_mode if default_preset else "all"
+    default_eod_exit = default_preset.eod_exit if default_preset else True
+    default_partial_exits = default_preset.partial_exit_levels if default_preset else ()
 
     # Use config if --atr-sizing not explicitly passed
     use_atr = args.atr_sizing if args.atr_sizing else strategy_cfg.atr_sizing
 
-    signal_generator = SignalGenerator(strategy_cfg.swing_lb, entry_strategy=entry_strategy)
-    position_sizer = PositionSizer(bot_cfg.capital, risk_pct, use_atr_sizing=use_atr)
+    def format_partial_exits(levels: tuple[object, ...]) -> str:
+        """Format partial exit levels into a summary string like '1R→50%, 2R→25%'."""
+        if not levels:
+            return ""
+        parts = [f"{lvl.r_multiple}R→{int(lvl.exit_pct * 100)}%" for lvl in levels]  # type: ignore[attr-defined]
+        return ", ".join(parts)
+
+    # Create per-symbol SignalGenerators, strategy names, and configs
+    from tradingbot._components.hub.types import SymbolStrategyConfig
+
+    signal_generators: dict[str, SignalGenerator] = {}
+    strategy_names: dict[str, str] = {}  # symbol -> display name (preset or "custom")
+    symbol_configs: dict[str, SymbolStrategyConfig] = {}  # symbol -> full strategy config
+
+    for symbol in symbols:
+        if symbol in symbol_presets:
+            # Symbol has a specific preset
+            preset = get_preset(symbol_presets[symbol])
+            signal_generators[symbol] = SignalGenerator(
+                strategy_cfg.swing_lb,
+                entry_strategy=preset.entry,
+                exit_strategy=preset.exit,
+            )
+            strategy_names[symbol] = preset.name
+            symbol_configs[symbol] = SymbolStrategyConfig(
+                preset_name=preset.name,
+                entry_strategy=preset.entry,
+                exit_strategy=preset.exit,
+                risk_pct=preset.risk_pct,
+                rr_ratio=preset.rr_ratio,
+                indicators=list(preset.indicators),
+                filter_mode=preset.filter_mode,
+                eod_exit=preset.eod_exit,
+                partial_exits=format_partial_exits(preset.partial_exit_levels),
+            )
+        else:
+            # Use default preset/strategy
+            signal_generators[symbol] = SignalGenerator(
+                strategy_cfg.swing_lb,
+                entry_strategy=default_entry,
+                exit_strategy=default_exit,
+            )
+            # Ensure all symbols have strategy names for consistent display
+            strategy_names[symbol] = default_preset_name
+            symbol_configs[symbol] = SymbolStrategyConfig(
+                preset_name=default_preset_name,
+                entry_strategy=default_entry,
+                exit_strategy=default_exit,
+                risk_pct=default_risk_pct,
+                rr_ratio=default_rr_ratio,
+                indicators=list(default_indicators),
+                filter_mode=default_filter_mode,
+                eod_exit=default_eod_exit,
+                partial_exits=format_partial_exits(default_partial_exits),
+            )
+
+    # For backward compatibility, use first symbol's config for global values
+    rr_ratio = default_rr_ratio
+    indicators = default_indicators
+    preset_name = default_preset_name if not symbol_presets else "multi-strategy"
+
+    position_sizer = PositionSizer(bot_cfg.capital, default_risk_pct, use_atr_sizing=use_atr)
 
     # For replay mode, disable trading hours restriction since we're replaying historical data
     risk_config = engine_cfg.risk
@@ -649,7 +753,7 @@ Examples:
             symbols=symbols,
             broker=broker,
             feed=feed,
-            signal_generator=signal_generator,
+            signal_generators=signal_generators,
             position_sizer=position_sizer,
             risk_manager=risk_manager,
             rr_ratio=rr_ratio,
@@ -660,11 +764,11 @@ Examples:
             serve_web=args.web,
             web_port=args.web_port,
             preset_name=preset_name,
-            entry_strategy=entry_strategy,
-            exit_strategy=exit_strategy,
-            risk_pct=risk_pct,
+            strategy_names=strategy_names,
+            risk_pct=default_risk_pct,
             indicators=indicators,
             is_replay=args.replay,
+            symbol_configs=symbol_configs,
         )
     elif args.web:
         # Headless mode with web interface (includes WebSocket server)
@@ -672,7 +776,7 @@ Examples:
             symbols=symbols,
             broker=broker,
             feed=feed,
-            signal_generator=signal_generator,
+            signal_generators=signal_generators,
             position_sizer=position_sizer,
             risk_manager=risk_manager,
             rr_ratio=rr_ratio,
@@ -682,11 +786,11 @@ Examples:
             serve_web=args.web,
             web_port=args.web_port,
             preset_name=preset_name,
-            entry_strategy=entry_strategy,
-            exit_strategy=exit_strategy,
-            risk_pct=risk_pct,
+            strategy_names=strategy_names,
+            risk_pct=default_risk_pct,
             indicators=indicators,
             is_replay=args.replay,
+            symbol_configs=symbol_configs,
         )
     else:
         with contextlib.suppress(KeyboardInterrupt):
@@ -695,7 +799,8 @@ Examples:
                     symbols=symbols,
                     broker=broker,
                     feed=feed,
-                    signal_generator=signal_generator,
+                    signal_generators=signal_generators,
+                    strategy_names=strategy_names,
                     position_sizer=position_sizer,
                     risk_manager=risk_manager,
                     rr_ratio=rr_ratio,
