@@ -104,6 +104,17 @@ uv run tradingbot-cache maintain     # Run cache maintenance
 
 This project has specialized sub-agents for specific tasks. Use them proactively:
 
+### cto
+
+Use this agent for high-level architectural decisions:
+
+- Evaluating different technical approaches (e.g., single engine vs. multi-engine)
+- Designing new system components
+- Making trade-offs between complexity, maintainability, and extensibility
+- Planning implementation phases for large features
+
+The agent provides structured analysis with options, trade-offs, and recommendations.
+
 ### code-reviewer
 
 **ALWAYS call this agent at the end of any significant code change.** This includes:
@@ -175,6 +186,16 @@ Use this agent when:
 - Planning how to integrate an indicator into the codebase
 
 The agent provides implementation suggestions following project patterns (Polars, type hints, naming conventions).
+
+### ux-designer
+
+Use this agent when:
+- Adding new UI components to TUI or Web dashboard
+- Redesigning existing interface layouts
+- Reviewing usability of trading workflows
+- Ensuring consistency between TUI and Web interfaces
+
+The agent provides mockups, design rationale, and implementation notes for both Textual (TUI) and React/Tailwind (Web).
 
 ## Key Concepts
 
