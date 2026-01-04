@@ -10,7 +10,7 @@ interface PriceChartProps {
   height?: number;
 }
 
-export function PriceChart({ chartData, position, height = 150 }: PriceChartProps) {
+export function PriceChart({ chartData, position, height }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -20,6 +20,8 @@ export function PriceChart({ chartData, position, height = 150 }: PriceChartProp
   // Create chart on mount
   useEffect(() => {
     if (!containerRef.current) return;
+
+    const containerHeight = height ?? (containerRef.current.clientHeight || 150);
 
     const chart = createChart(containerRef.current, {
       layout: {
@@ -44,11 +46,10 @@ export function PriceChart({ chartData, position, height = 150 }: PriceChartProp
         borderColor: theme.border,
       },
       timeScale: {
+        visible: height === undefined, // Show time scale in modal view
         borderColor: theme.border,
-        timeVisible: true,
-        secondsVisible: false,
       },
-      height,
+      height: containerHeight,
     });
 
     const series = chart.addSeries(CandlestickSeries, {
@@ -71,15 +72,23 @@ export function PriceChart({ chartData, position, height = 150 }: PriceChartProp
     // Handle resize
     const handleResize = () => {
       if (containerRef.current) {
-        chart.applyOptions({ width: containerRef.current.clientWidth });
+        const newWidth = containerRef.current.clientWidth;
+        const newHeight = height ?? containerRef.current.clientHeight;
+        chart.applyOptions({ width: newWidth, height: newHeight });
       }
     };
 
+    // Use ResizeObserver for container size changes
+    const resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(containerRef.current);
+
     window.addEventListener('resize', handleResize);
-    handleResize();
+    // Delay initial resize to ensure container has layout
+    requestAnimationFrame(handleResize);
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
       chart.remove();
     };
   }, [height]);
@@ -94,7 +103,7 @@ export function PriceChart({ chartData, position, height = 150 }: PriceChartProp
       // Get timezone offset in seconds (negative for west of UTC)
       const tzOffsetSeconds = now.getTimezoneOffset() * 60;
 
-      // Filter to today's data only, excluding invalid points
+      // Include all valid data points (don't filter by today - replay mode uses historical data)
       const rawData = chartData.timestamps
         .map((timestamp, i) => {
           const open = chartData.opens[i];
@@ -107,10 +116,6 @@ export function PriceChart({ chartData, position, height = 150 }: PriceChartProp
           const date = new Date(isoStr);
           const utcTime = Math.floor(date.getTime() / 1000);
           if (isNaN(utcTime) || utcTime <= 0) return null;
-          // Only include today's data (compare in local time)
-          const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-          const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          if (localDate.getTime() !== todayDate.getTime()) return null;
           // Shift UTC to local time for display (lightweight-charts shows UTC)
           const localTime = utcTime - tzOffsetSeconds;
           return { time: localTime, open, high, low, close, utcDate: date };
@@ -129,6 +134,7 @@ export function PriceChart({ chartData, position, height = 150 }: PriceChartProp
 
       if (data.length > 0) {
         seriesRef.current.setData(data);
+        chartRef.current?.timeScale().fitContent();
 
         // Add markers at 5m boundaries (strategy evaluation points)
         if (markersRef.current) {
@@ -171,8 +177,8 @@ export function PriceChart({ chartData, position, height = 150 }: PriceChartProp
         color: theme.neutral,
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: 'Entry',
+        axisLabelVisible: false,
+        title: `Entry $${position.entry_price.toFixed(2)}`,
       });
       priceLinesRef.current.push(entryLine);
 
@@ -183,8 +189,8 @@ export function PriceChart({ chartData, position, height = 150 }: PriceChartProp
           color: theme.negative,
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: 'SL',
+          axisLabelVisible: false,
+          title: `SL $${position.stop_loss.toFixed(2)}`,
         });
         priceLinesRef.current.push(slLine);
       }
@@ -196,13 +202,13 @@ export function PriceChart({ chartData, position, height = 150 }: PriceChartProp
           color: theme.positive,
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: 'TP',
+          axisLabelVisible: false,
+          title: `TP $${position.take_profit.toFixed(2)}`,
         });
         priceLinesRef.current.push(tpLine);
       }
     }
   }, [position?.is_open, position?.entry_price, position?.stop_loss, position?.take_profit]);
 
-  return <div ref={containerRef} className="w-full" />;
+  return <div ref={containerRef} className="w-full h-full" />;
 }

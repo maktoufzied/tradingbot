@@ -221,3 +221,6 @@ export const useSymbolConfig = (symbol: string) => useTradingStore((s) => {
 export const useSymbols = () => useTradingStore(useShallow((s) => Object.keys(s.tickers)));
 export const useAllTickers = () => useTradingStore((s) => s.tickers);
 export const useAllPositions = () => useTradingStore((s) => s.positions);
+export const useSymbolTrades = (symbol: string) => useTradingStore(
+  useShallow((s) => s.recentTrades.filter((t) => t.symbol === symbol))
+);
