@@ -120,10 +120,57 @@ class StrategyConfig:
 
 
 @dataclass(frozen=True)
+class SymbolAllocation:
+    """Capital allocation for a single symbol."""
+
+    symbol: str
+    weight_pct: float  # 0.0-1.0 (50% = 0.5)
+
+    def __post_init__(self) -> None:
+        if not 0.0 < self.weight_pct <= 1.0:
+            raise ValueError(f"weight_pct must be >0.0 and <=1.0, got {self.weight_pct}")
+
+
+@dataclass(frozen=True)
+class AllocationConfig:
+    """Per-symbol capital allocation configuration."""
+
+    enabled: bool = False
+    allocations: tuple[SymbolAllocation, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.enabled:
+            if not self.allocations:
+                raise ValueError("allocations required when enabled=true")
+            total = sum(a.weight_pct for a in self.allocations)
+            if not 0.9999 <= total <= 1.0001:
+                raise ValueError(f"allocations must sum to 100%, got {total * 100:.2f}%")
+
+    def get_weight(self, symbol: str) -> float:
+        """Get weight for a symbol (0.0 if not found)."""
+        for alloc in self.allocations:
+            if alloc.symbol == symbol:
+                return alloc.weight_pct
+        return 0.0
+
+    def validate_symbols(self, symbols: list[str]) -> None:
+        """Ensure all trading symbols have allocations."""
+        allocated_symbols = {a.symbol for a in self.allocations}
+        missing = set(symbols) - allocated_symbols
+        extra = allocated_symbols - set(symbols)
+
+        if missing:
+            raise ValueError(f"Missing allocations for: {', '.join(sorted(missing))}")
+        if extra:
+            raise ValueError(f"Allocations for non-trading symbols: {', '.join(sorted(extra))}")
+
+
+@dataclass(frozen=True)
 class BotConfig:
     """Bot configuration - account-level settings."""
 
     capital: float = 100000  # Starting capital ($)
+    allocation: AllocationConfig = field(default_factory=AllocationConfig)
 
 
 @dataclass(frozen=True)
@@ -311,8 +358,21 @@ def _parse_config(data: dict[str, Any]) -> Config:
     )
 
     bot_data = root.get("bot", {})
+
+    # Parse allocation config
+    alloc_data = bot_data.get("allocation", {})
+    if alloc_data.get("enabled", False):
+        allocations_list = alloc_data.get("allocations", [])
+        parsed_allocations = tuple(
+            SymbolAllocation(symbol=a["symbol"].upper(), weight_pct=a["weight_pct"]) for a in allocations_list
+        )
+        allocation = AllocationConfig(enabled=True, allocations=parsed_allocations)
+    else:
+        allocation = AllocationConfig()
+
     bot = BotConfig(
         capital=bot_data.get("capital", 100000),
+        allocation=allocation,
     )
 
     engine_data = root.get("engine", {})

@@ -268,7 +268,7 @@ async def run_live(
     broker: BrokerProtocol,
     feed: DataFeedProtocol,
     signal_generators: dict[str, SignalGenerator],
-    position_sizer: PositionSizer,
+    position_sizers: dict[str, PositionSizer],
     risk_manager: RiskManager,
     rr_ratio: float = 2.0,
     dry_run: bool = False,
@@ -282,7 +282,7 @@ async def run_live(
         broker=broker,
         feed=feed,
         signal_generators=signal_generators,
-        position_sizer=position_sizer,
+        position_sizers=position_sizers,
         risk_manager=risk_manager,
         rr_ratio=rr_ratio,
         dry_run=dry_run,
@@ -306,7 +306,7 @@ def _run_with_modern_tui(
     broker: BrokerProtocol,
     feed: DataFeedProtocol,
     signal_generators: dict[str, SignalGenerator],
-    position_sizer: PositionSizer,
+    position_sizers: dict[str, PositionSizer],
     risk_manager: RiskManager,
     rr_ratio: float,
     dry_run: bool,
@@ -392,7 +392,7 @@ def _run_with_modern_tui(
                 broker=broker,
                 feed=feed,
                 signal_generators=signal_generators,
-                position_sizer=position_sizer,
+                position_sizers=position_sizers,
                 risk_manager=risk_manager,
                 rr_ratio=rr_ratio,
                 dry_run=dry_run,
@@ -459,7 +459,7 @@ def _run_headless_with_hub(
     broker: BrokerProtocol,
     feed: DataFeedProtocol,
     signal_generators: dict[str, SignalGenerator],
-    position_sizer: PositionSizer,
+    position_sizers: dict[str, PositionSizer],
     risk_manager: RiskManager,
     rr_ratio: float,
     dry_run: bool,
@@ -540,7 +540,7 @@ def _run_headless_with_hub(
                 broker=broker,
                 feed=feed,
                 signal_generators=signal_generators,
-                position_sizer=position_sizer,
+                position_sizers=position_sizers,
                 risk_manager=risk_manager,
                 rr_ratio=rr_ratio,
                 dry_run=dry_run,
@@ -608,6 +608,11 @@ Examples:
         action="store_true",
         help="Enable partial profit taking (backtest mode via preset/config)",
     )
+    parser.add_argument(
+        "--allocations",
+        type=str,
+        help="Per-symbol capital allocations (e.g., SPY:50,AAPL:30,QQQ:20 for 50%%/30%%/20%%)",
+    )
     args = parser.parse_args()
 
     # Parse symbols with optional per-symbol presets (e.g., "SPY:day_momentum" or "AAPL")
@@ -628,6 +633,33 @@ Examples:
     bot_cfg = get_bot_config()
     strategy_cfg = get_strategy_config()
     engine_cfg = get_engine_config()
+
+    # Parse CLI allocations and merge with TOML config
+    from tradingbot.config import AllocationConfig, SymbolAllocation
+
+    allocation_config = bot_cfg.allocation
+    if args.allocations:
+        # Parse CLI: "SPY:50,AAPL:30,QQQ:20"
+        cli_allocations: list[SymbolAllocation] = []
+        total_pct = 0.0
+        for part in args.allocations.split(","):
+            part = part.strip()
+            if ":" not in part:
+                parser.error(f"Invalid allocation format: {part}. Use SYMBOL:PCT (e.g., SPY:50)")
+            sym, pct_str = part.split(":", 1)
+            try:
+                pct = float(pct_str.strip())
+            except ValueError:
+                parser.error(f"Invalid percentage: {pct_str}")
+            if not 0 < pct <= 100:
+                parser.error(f"Percentage must be >0 and <=100, got {pct}")
+            cli_allocations.append(SymbolAllocation(symbol=sym.strip().upper(), weight_pct=pct / 100))
+            total_pct += pct
+
+        if not 99.99 <= total_pct <= 100.01:
+            parser.error(f"Allocations must sum to 100%, got {total_pct:.2f}%")
+
+        allocation_config = AllocationConfig(enabled=True, allocations=tuple(cli_allocations))
 
     # Load default preset if specified via --preset
     default_preset = None
@@ -715,7 +747,24 @@ Examples:
     indicators = default_indicators
     preset_name = default_preset_name if not symbol_presets else "multi-strategy"
 
-    position_sizer = PositionSizer(bot_cfg.capital, default_risk_pct, use_atr_sizing=use_atr)
+    # Create per-symbol PositionSizers when allocation is enabled
+    position_sizers: dict[str, PositionSizer] = {}
+    if allocation_config.enabled:
+        allocation_config.validate_symbols(symbols)
+        console.print("[bold cyan]Capital Allocation:[/bold cyan]")
+        for symbol in symbols:
+            weight = allocation_config.get_weight(symbol)
+            symbol_capital = bot_cfg.capital * weight
+            # Get symbol-specific risk_pct from preset or default
+            symbol_risk = symbol_configs[symbol].risk_pct if symbol in symbol_configs else default_risk_pct
+            position_sizers[symbol] = PositionSizer(symbol_capital, symbol_risk, use_atr_sizing=use_atr)
+            console.print(f"  {symbol}: ${symbol_capital:,.0f} ({weight:.0%})")
+    else:
+        # Shared pool - all symbols use same sizer
+        shared_sizer = PositionSizer(bot_cfg.capital, default_risk_pct, use_atr_sizing=use_atr)
+        for symbol in symbols:
+            position_sizers[symbol] = shared_sizer
+        console.print(f"[bold cyan]Capital:[/bold cyan] ${bot_cfg.capital:,.0f} (shared pool)")
 
     # For replay mode, disable trading hours restriction since we're replaying historical data
     risk_config = engine_cfg.risk
@@ -754,7 +803,7 @@ Examples:
             broker=broker,
             feed=feed,
             signal_generators=signal_generators,
-            position_sizer=position_sizer,
+            position_sizers=position_sizers,
             risk_manager=risk_manager,
             rr_ratio=rr_ratio,
             dry_run=args.dry_run,
@@ -777,7 +826,7 @@ Examples:
             broker=broker,
             feed=feed,
             signal_generators=signal_generators,
-            position_sizer=position_sizer,
+            position_sizers=position_sizers,
             risk_manager=risk_manager,
             rr_ratio=rr_ratio,
             dry_run=args.dry_run,
@@ -801,7 +850,7 @@ Examples:
                     feed=feed,
                     signal_generators=signal_generators,
                     strategy_names=strategy_names,
-                    position_sizer=position_sizer,
+                    position_sizers=position_sizers,
                     risk_manager=risk_manager,
                     rr_ratio=rr_ratio,
                     dry_run=args.dry_run,

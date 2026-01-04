@@ -60,7 +60,7 @@ class TradingEngine:
         broker: BrokerProtocol,
         feed: DataFeedProtocol,
         signal_generators: dict[str, SignalGenerator],
-        position_sizer: PositionSizer,
+        position_sizers: dict[str, PositionSizer],
         risk_manager: RiskManager,
         rr_ratio: float = 2.0,
         dry_run: bool = False,
@@ -75,7 +75,11 @@ class TradingEngine:
         self._broker = broker
         self._feed = feed
         self._sig_gens = signal_generators
-        self._pos_sizer = position_sizer
+        # Validate all symbols have position sizers
+        missing_sizers = set(self._symbols) - set(position_sizers.keys())
+        if missing_sizers:
+            raise ValueError(f"Missing position sizers for: {', '.join(sorted(missing_sizers))}")
+        self._pos_sizers = position_sizers
         self._risk_mgr = risk_manager
         self._rr_ratio = rr_ratio
         self._cb = callbacks or EngineCallbacks()
@@ -513,7 +517,11 @@ class TradingEngine:
             return  # No strategy configured
         exit_params = sig_gen.calc_exit(direction, price, df, self._rr_ratio)
         stop, tp = exit_params.stop_loss, exit_params.take_profit
-        size = self._pos_sizer.calc_size(price, stop)
+        pos_sizer = self._pos_sizers.get(bar.symbol)
+        if pos_sizer is None:
+            logger.warning(f"No position sizer for {bar.symbol}")
+            return
+        size = pos_sizer.calc_size(price, stop, df)
 
         account = self._broker.get_account()
         self._risk_mgr.update_position_count(len(self._positions))
