@@ -197,6 +197,16 @@ Use this agent when:
 
 The agent provides mockups, design rationale, and implementation notes for both Textual (TUI) and React/Tailwind (Web).
 
+### frontend-dev
+
+Use this agent when:
+- Implementing React/Tailwind UI components from mockups
+- Building new dashboard features following the design system
+- Ensuring code adheres to `web/DESIGN_SYSTEM.md` patterns
+- Converting ux-designer output into working React code
+
+The agent follows the established Bloomberg Terminal aesthetic and ensures pixel-perfect consistency with existing components.
+
 ## Key Concepts
 
 - Swing points: Local highs/lows used to identify market structure
