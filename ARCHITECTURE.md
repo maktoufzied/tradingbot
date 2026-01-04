@@ -918,6 +918,7 @@ class IndicatorProtocol(Protocol):
 | **Observer** | Callbacks, hub subscriptions |
 | **Protocol** | Interface definitions |
 | **Dataclass** | Immutable config objects |
+| **Bloomberg Terminal** | Web UI aesthetic (see [`web/DESIGN_SYSTEM.md`](web/DESIGN_SYSTEM.md)) |
 
 ## Entry Points
 

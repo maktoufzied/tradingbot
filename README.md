@@ -764,6 +764,14 @@ class MyExitStrategy:
 register_exit(MyExitStrategy())
 ```
 
+## Frontend Development
+
+The web dashboard follows a Bloomberg Terminal aesthetic. See [`web/DESIGN_SYSTEM.md`](web/DESIGN_SYSTEM.md) for:
+- Color palette and semantic colors
+- Component templates and patterns
+- Typography and spacing conventions
+- Interactive element guidelines (flip cards, modals, charts)
+
 ## Running Tests
 
 ```bash
