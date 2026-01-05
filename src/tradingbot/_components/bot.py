@@ -82,8 +82,16 @@ class MarketStructureBot:
         partial_exit_levels: tuple[PartialExitLevel, ...] = (),
         eod_exit: bool = False,
         eod_exit_minutes_before: int = 15,
+        indicators: list[str] | None = None,
+        filter_mode: str | None = None,
     ):
-        self.sig_gen = SignalGenerator(swing_lb, entry_strategy=entry_strategy, exit_strategy=exit_strategy)
+        self.sig_gen = SignalGenerator(
+            swing_lb,
+            entry_strategy=entry_strategy,
+            exit_strategy=exit_strategy,
+            indicators=indicators,
+            filter_mode=filter_mode,
+        )
         self.pos_sizer = PositionSizer(capital, risk_pct, use_atr_sizing=use_atr_sizing)
         self.rr_ratio = rr_ratio
         self.stop_pct = stop_pct
@@ -439,6 +447,8 @@ class MarketStructureBot:
                 gross_pnl=total_gross_pnl,
                 execution_costs=costs.total,
                 partial_exits=p.partial_exits,
+                stop_loss=p.stop_loss,
+                take_profit=p.take_profit,
             )
         )
         self.pos_sizer.capital += net_pnl  # Only add remaining position P&L (partial exits already added)

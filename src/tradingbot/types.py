@@ -97,6 +97,8 @@ class Trade:
     gross_pnl: float | None = None  # P&L before costs (None for backward compat)
     execution_costs: float | None = None  # Total execution costs
     partial_exits: list[PartialExit] | None = None  # Partial exits taken during trade
+    stop_loss: float | None = None  # Stop loss price
+    take_profit: float | None = None  # Take profit price
 
 
 # Live trading models

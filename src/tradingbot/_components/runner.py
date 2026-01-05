@@ -145,6 +145,9 @@ def run_single_backtest(
     # EOD exit: preset > config (typically True for day trading presets)
     use_eod_exit = preset_obj.eod_exit if preset_obj else strategy_cfg.eod_exit
     eod_minutes = strategy_cfg.eod_exit_minutes_before
+    # Indicators: preset > config
+    indicators = list(preset_obj.indicators) if preset_obj and preset_obj.indicators else None
+    filter_mode = preset_obj.filter_mode if preset_obj else None
 
     # Build execution model: CLI args > provider config > defaults (zero)
     provider_cfg = get_provider_config()
@@ -183,6 +186,7 @@ def run_single_backtest(
         else ""
     )
     partial_info = f"[cyan]partial: {len(partial_levels)} levels[/cyan]" if partial_levels else ""
+    indicators_info = f"[magenta]filters: {', '.join(indicators)}[/magenta]" if indicators else ""
     console.print(
         f"  {preset_info}"
         f"[dim]{period} {interval}[/dim] | "
@@ -193,6 +197,7 @@ def run_single_backtest(
         f"{' | ' + atr_info if atr_info else ''}"
         f"{' | ' + trail_info if trail_info else ''}"
         f"{' | ' + partial_info if partial_info else ''}"
+        f"{' | ' + indicators_info if indicators_info else ''}"
     )
     console.print(f"  {costs_info}")
     if verbose and speed > 0:
@@ -216,6 +221,8 @@ def run_single_backtest(
         partial_exit_levels=partial_levels,
         eod_exit=use_eod_exit,
         eod_exit_minutes_before=eod_minutes,
+        indicators=indicators,
+        filter_mode=filter_mode,
     )
 
     callbacks = make_verbose_callbacks() if verbose else None
@@ -302,7 +309,11 @@ def run_single_backtest(
         trades_table = Table(title="Recent Trades", box=None)
         trades_table.add_column("Date", justify="left")
         trades_table.add_column("Dir", justify="center")
+        trades_table.add_column("Size", justify="right")
         trades_table.add_column("Entry", justify="right")
+        trades_table.add_column("SL", justify="right")
+        trades_table.add_column("TP", justify="right")
+        trades_table.add_column("Partials", justify="left")
         trades_table.add_column("Exit", justify="right")
         trades_table.add_column("P&L", justify="right")
         trades_table.add_column("Hold", justify="right")
@@ -320,11 +331,27 @@ def run_single_backtest(
         for t in bot.trades[-10:]:
             pnl_style = "green" if t.pnl > 0 else "red"
             reason = exit_labels.get(t.exit_reason, t.exit_reason)
+            sl_str = f"${t.stop_loss:.2f}" if t.stop_loss else "-"
+            tp_str = f"${t.take_profit:.2f}" if t.take_profit else "-"
+
+            # Format partial exits: "50%@1R:+500"
+            if t.partial_exits:
+                partials_parts = []
+                for pe in t.partial_exits:
+                    pct = int(pe.exit_size / t.size * 100)
+                    partials_parts.append(f"[cyan]{pct}%@{pe.r_multiple:.0f}R:+{pe.pnl:,.0f}[/cyan]")
+                partials_str = " ".join(partials_parts)
+            else:
+                partials_str = "[dim]-[/dim]"
 
             trades_table.add_row(
                 t.entry_time.strftime("%Y-%m-%d"),
                 t.direction[:1],  # L or S
+                f"{t.size:,.0f}",
                 f"${t.entry_price:.2f}",
+                f"[red]{sl_str}[/red]",
+                f"[green]{tp_str}[/green]",
+                partials_str,
                 f"${t.exit_price:.2f}",
                 f"[{pnl_style}]${t.pnl:+,.2f}[/{pnl_style}]",
                 f"{t.holding_period}",  # bars

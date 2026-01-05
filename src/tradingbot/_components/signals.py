@@ -1,5 +1,7 @@
 """Signal generation using the new strategy architecture."""
 
+from dataclasses import replace
+
 import polars as pl
 
 from tradingbot.config import get_indicator_config, get_strategy_config
@@ -27,11 +29,18 @@ class SignalGenerator:
         swing_lookback: int = 5,
         entry_strategy: str | None = None,
         exit_strategy: str | None = None,
+        indicators: list[str] | None = None,
+        filter_mode: str | None = None,
     ) -> None:
         self.swing_lookback = swing_lookback
         self._entry: EntryStrategy = self._load_entry(entry_strategy)
         self._exit: ExitStrategy = self._load_exit(exit_strategy)
         self._indicator_config = get_indicator_config()
+        # Override indicator config if provided (e.g., from preset)
+        if indicators is not None:
+            self._indicator_config = replace(self._indicator_config, enabled=indicators)
+        if filter_mode is not None:
+            self._indicator_config = replace(self._indicator_config, filter_mode=filter_mode)
         self._indicator_registry = get_indicator_registry()
 
     def _load_entry(self, name: str | None) -> EntryStrategy:
