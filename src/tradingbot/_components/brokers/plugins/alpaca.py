@@ -92,6 +92,9 @@ class AlpacaBroker(BrokerProtocol):
 
             # Use bracket order if SL/TP provided
             if order.stop_loss is not None and order.take_profit is not None:
+                # Round prices to 2 decimals (Alpaca rejects sub-penny prices)
+                sl_price = round(order.stop_loss, 2)
+                tp_price = round(order.take_profit, 2)
                 order_request = MarketOrderRequest(
                     symbol=order.symbol,
                     qty=order.size,
@@ -99,8 +102,8 @@ class AlpacaBroker(BrokerProtocol):
                     time_in_force=TimeInForce.GTC,  # Good-til-canceled for bracket
                     client_order_id=order.client_id,
                     order_class=OrderClass.BRACKET,
-                    stop_loss=StopLossRequest(stop_price=order.stop_loss),
-                    take_profit=TakeProfitRequest(limit_price=order.take_profit),
+                    stop_loss=StopLossRequest(stop_price=sl_price),
+                    take_profit=TakeProfitRequest(limit_price=tp_price),
                 )
             else:
                 # Simple market order
