@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 import { theme } from '../../styles/theme';
 
 interface SparklineProps {
@@ -48,11 +48,12 @@ export function Sparkline({ data, height = 70, color, entryPrice }: SparklinePro
     return { linePath: path, areaPath: area, entryY: entryLineY };
   }, [data, height, entryPrice]);
 
+  const id = useId();
+  const gradientId = `sparkline-gradient-${id}`;
+
   if (data.length < 2) {
     return <div className="w-full" style={{ height }} />;
   }
-
-  const gradientId = `sparkline-gradient-${Math.random().toString(36).substr(2, 9)}`;
 
   return (
     <div className="relative w-full" style={{ height }}>

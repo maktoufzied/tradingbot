@@ -1,7 +1,7 @@
 from tradingbot.types import BarOrigin, Position, Signal, SwingPoint, Trade, Trend
 
 from ._components.bot import MarketStructureBot
-from ._components.brokers import get_registry as get_broker_registry
+from ._components.brokers import get_broker_registry
 from ._components.engine import (
     BarEvent,
     EngineCallbacks,
@@ -15,8 +15,7 @@ from ._components.engine import (
     TradingEngine,
 )
 from ._components.execution import ExecutionModel
-from ._components.feeds import DataFeed
-from ._components.feeds import get_registry as get_feed_registry
+from ._components.feeds import DataFeed, get_feed_registry
 from ._components.optimizer import Optimizer, ParameterRanges, optimize
 from ._components.risk import PositionSizer
 from ._components.risk_manager import RiskManager

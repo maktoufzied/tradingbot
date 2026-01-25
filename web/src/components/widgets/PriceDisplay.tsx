@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import clsx from 'clsx';
 
 interface PriceDisplayProps {
@@ -10,15 +10,18 @@ interface PriceDisplayProps {
 
 export function PriceDisplay({ price, change, changePct, size = 'md' }: PriceDisplayProps) {
   const prevPriceRef = useRef(price);
-  const [flashClass, setFlashClass] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (price !== prevPriceRef.current) {
+    const el = containerRef.current;
+    if (price !== prevPriceRef.current && el) {
       const direction = price > prevPriceRef.current ? 'flash-up' : 'flash-down';
-      setFlashClass(direction);
+      el.classList.add(direction);
       prevPriceRef.current = price;
 
-      const timeout = setTimeout(() => setFlashClass(null), 500);
+      const timeout = setTimeout(() => {
+        el.classList.remove('flash-up', 'flash-down');
+      }, 500);
       return () => clearTimeout(timeout);
     }
   }, [price]);
@@ -26,7 +29,7 @@ export function PriceDisplay({ price, change, changePct, size = 'md' }: PriceDis
   const isPositive = change >= 0;
 
   return (
-    <div className={clsx('rounded px-1', flashClass)}>
+    <div ref={containerRef} className="rounded px-1">
       <div
         className={clsx(
           'mono font-semibold',

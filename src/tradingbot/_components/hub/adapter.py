@@ -19,6 +19,7 @@ from tradingbot._components.engine.events import (
     StatsUpdatedEvent,
     TradeClosedEvent,
 )
+from tradingbot._components.state import get_trades
 from tradingbot.types import Bar, BarOrigin
 
 from .hub import EventHub
@@ -118,6 +119,9 @@ class EngineAdapter:
 
         # Initialize risk status
         await self.hub.update_risk(RiskStatus.default())
+
+        # Load today's trades from database so UI shows them on connect
+        self._load_historical_trades()
 
     async def _on_stopped(self, event: EngineStoppedEvent) -> None:
         """Handle engine stop - update final stats."""
@@ -472,3 +476,38 @@ class EngineAdapter:
             swing_lows=[],
         )
         await self.hub.update_chart(chart)
+
+    # --- Historical Data Loading ---
+
+    def _load_historical_trades(self) -> None:
+        """Load today's trades from database to populate UI on connect."""
+        today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        trades = get_trades(start=today_start, limit=50)
+
+        for trade in reversed(trades):  # Oldest first so newest ends up at top
+            is_winner = trade.pnl > 0
+            alert = TradeAlert(
+                type="EXIT",
+                symbol=trade.symbol,
+                direction=trade.direction,
+                price=trade.exit_price,
+                size=trade.size,
+                stop_loss=None,
+                take_profit=None,
+                pnl=trade.pnl,
+                pnl_pct=trade.pnl_pct,
+                reason=trade.exit_reason,
+                strategy=trade.strategy,
+                timestamp=trade.exited_at,
+                is_winner=is_winner,
+            )
+            # Add directly to hub's recent trades (sync, no broadcast needed)
+            self.hub._recent_trades.insert(0, alert)
+            self.hub._recent_trades = self.hub._recent_trades[:50]
+
+            # Also update stats tracking
+            self._trade_pnls.append(trade.pnl)
+            if is_winner:
+                self._current_streak = max(1, self._current_streak + 1)
+            else:
+                self._current_streak = min(-1, self._current_streak - 1)

@@ -59,6 +59,6 @@ class DataFeed:
         return cls._cached_feed.history(symbol, start_date, end_date, period, interval, refresh=refresh)
 
 
-def get_registry() -> FeedRegistry:
+def get_feed_registry() -> FeedRegistry:
     """Get the feed registry singleton."""
     return FeedRegistry()

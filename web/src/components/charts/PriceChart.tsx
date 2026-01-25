@@ -48,6 +48,15 @@ export function PriceChart({ chartData, position, height }: PriceChartProps) {
       timeScale: {
         visible: height === undefined, // Show time scale in modal view
         borderColor: theme.border,
+        timeVisible: true,
+        secondsVisible: false,
+        tickMarkFormatter: (time: number) => {
+          // Timestamps are already shifted to local time, use UTC methods to avoid double-conversion
+          const date = new Date(time * 1000);
+          const hours = date.getUTCHours().toString().padStart(2, '0');
+          const minutes = date.getUTCMinutes().toString().padStart(2, '0');
+          return `${hours}:${minutes}`;
+        },
       },
       height: containerHeight,
     });

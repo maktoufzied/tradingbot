@@ -57,7 +57,8 @@ signal_period = 9
 # BOT - Account-level settings
 # =============================================================================
 [tradingbot.bot]
-capital = 100000             # Starting capital ($)
+# Capital is fetched from broker for live trading.
+# For backtesting, use --capital or --budget CLI flags.
 
 # =============================================================================
 # CACHE - Local market data storage (source derived from engine.provider)
@@ -78,7 +79,7 @@ path = "~/.cache/tradingbot/tradingbot.duckdb"
 # ENGINE - Trading provider configuration
 # =============================================================================
 [tradingbot.engine]
-provider = "alpaca"          # Provider: alpaca, paper
+provider = "alpaca"          # Provider: alpaca, paper, yahoo
 bar_interval = "5m"          # Bar interval: 1m, 5m, 15m
 
 [tradingbot.engine.risk]
@@ -135,17 +136,130 @@ log_file = "~/.tradingbot/logs/trading.log"  # Optional file output
 # ⚠ Warning: High overfitting risk detected (75% degradation)
 # Using conservative risk (1%) instead of optimized (2%)
 [tradingbot.presets.apld]
-description = "APLD conservative - swing_lb=3, Alpaca zero-commission"
-interval = "1h"
-period = "1y"
+description = "APLD"
+interval = "5m"
+period = "1mo"
 entry = "swing_break"
 exit = "swing"
 swing_lb = 3                 # Consensus across all folds
-risk_pct = 0.01              # Conservative (optimized was 2%, but high degradation)
+risk_pct = 0.02              # Conservative (optimized was 2%, but high degradation)
 rr_ratio = 2.0               # Consensus from folds 2 & 3
 eod_exit = false
-indicators = ["adx"]         # Only trade when trending (ADX > 25)
+# indicators = ["adx"]         # Only trade when trending (ADX > 25)
+# filter_mode = "all"
+# partial_exit_levels = [
+#     {r_multiple = 1.0, exit_pct = 0.5},  # Exit 50% at 1R, move stop to breakeven
+# ]
+
+# Walk-forward validated presets (positive OOS returns)
+[tradingbot.presets.mara]
+description = "Optimized for MARA, return=+47.7%, DD=2.8%"
+interval = "1h"
+period = "1y"
+swing_lb = 5
+risk_pct = 0.02
+rr_ratio = 1.0
+stop_pct = 0.01
+indicators = []  # No indicator filter
+filter_mode = "none"
+
+[tradingbot.presets.coin]
+description = "Optimized for COIN, return=+6.2%, DD=3.8%"
+interval = "1h"
+period = "1y"
+swing_lb = 10
+risk_pct = 0.02
+rr_ratio = 1.0
+stop_pct = 0.01
+indicators = []  # No indicator filter
+filter_mode = "none"
+
+[tradingbot.presets.amd]
+description = "Optimized for AMD, return=+15.1%, DD=5.1%"
+interval = "1h"
+period = "1y"
+swing_lb = 8
+risk_pct = 0.02
+rr_ratio = 1.2
+stop_pct = 0.01
+indicators = []  # No indicator filter
+filter_mode = "none"
+
+# Presets with ADX trend filter
+[tradingbot.presets.mara_adx]
+description = "MARA with ADX trend filter"
+interval = "1h"
+period = "1y"
+swing_lb = 5
+risk_pct = 0.02
+rr_ratio = 1.0
+stop_pct = 0.01
+indicators = ["adx"]
 filter_mode = "all"
-partial_exit_levels = [
-    {r_multiple = 1.0, exit_pct = 0.5},  # Exit 50% at 1R, move stop to breakeven
-]
+
+[tradingbot.presets.coin_adx]
+description = "COIN with ADX trend filter"
+interval = "1h"
+period = "1y"
+swing_lb = 10
+risk_pct = 0.02
+rr_ratio = 1.0
+stop_pct = 0.01
+indicators = ["adx"]
+filter_mode = "all"
+
+[tradingbot.presets.amd_adx]
+description = "AMD with ADX trend filter"
+interval = "1h"
+period = "1y"
+swing_lb = 8
+risk_pct = 0.02
+rr_ratio = 1.2
+stop_pct = 0.01
+indicators = ["adx"]
+filter_mode = "all"
+
+# RSI filter presets
+[tradingbot.presets.mara_rsi]
+description = "MARA with RSI filter"
+interval = "1h"
+period = "1y"
+swing_lb = 5
+risk_pct = 0.02
+rr_ratio = 1.0
+stop_pct = 0.01
+indicators = ["rsi"]
+filter_mode = "all"
+
+[tradingbot.presets.coin_rsi]
+description = "COIN with RSI filter"
+interval = "1h"
+period = "1y"
+swing_lb = 10
+risk_pct = 0.02
+rr_ratio = 1.0
+stop_pct = 0.01
+indicators = ["rsi"]
+filter_mode = "all"
+
+[tradingbot.presets.amd_rsi]
+description = "AMD with RSI filter"
+interval = "1h"
+period = "1y"
+swing_lb = 8
+risk_pct = 0.02
+rr_ratio = 1.2
+stop_pct = 0.01
+indicators = ["rsi"]
+filter_mode = "all"
+
+# Gap and Go presets for momentum stocks
+[tradingbot.presets.rgc]
+description = "RGC gap-and-go momentum, +$2,169 backtest"
+interval = "5m"
+period = "1mo"
+entry = "gap_and_go"
+exit = "swing"
+risk_pct = 0.02
+rr_ratio = 1.5
+eod_exit = false

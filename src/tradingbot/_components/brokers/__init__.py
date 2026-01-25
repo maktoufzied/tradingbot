@@ -3,8 +3,8 @@
 from tradingbot.interfaces import BrokerProtocol
 from tradingbot.plugins import bootstrap
 
-from .registry import Broker, get_registry
+from .registry import Broker, get_broker_registry
 
-__all__ = ["Broker", "BrokerProtocol", "get_registry"]
+__all__ = ["Broker", "BrokerProtocol", "get_broker_registry"]
 
-bootstrap(get_registry, BrokerProtocol, __name__, "live", "broker", default="paper")
+bootstrap(get_broker_registry, BrokerProtocol, __name__, "live", "broker", default="paper")

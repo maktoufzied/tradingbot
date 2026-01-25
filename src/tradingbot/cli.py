@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import threading
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -27,7 +28,6 @@ from tradingbot import (
     SignalGenerator,
     TradeClosedEvent,
     TradingEngine,
-    get_broker_registry,
     get_feed_registry,
 )
 from tradingbot._components.hub import EngineAdapter, EventHub, HubServer
@@ -275,6 +275,7 @@ async def run_live(
     allow_short: bool = False,
     callbacks: EngineCallbacks | None = None,
     strategy_names: dict[str, str] | None = None,
+    on_engine_ready: Callable[[TradingEngine], None] | None = None,
 ) -> None:
     """Run trading engine."""
     engine = TradingEngine(
@@ -290,6 +291,10 @@ async def run_live(
         callbacks=callbacks,
         strategy_names=strategy_names,
     )
+
+    # Notify caller that engine is ready (for command handler setup)
+    if on_engine_ready:
+        on_engine_ready(engine)
 
     try:
         await engine.start()
@@ -372,6 +377,23 @@ def _run_with_modern_tui(
     provider_name = broker.name.title()  # "alpaca" -> "Alpaca", "paper" -> "Paper"
     adapter = EngineAdapter(hub, symbols, is_replay=is_replay, provider=provider_name)
 
+    # Engine reference for command handling
+    engine_ref: list[TradingEngine | None] = [None]
+
+    def on_engine_ready(engine: TradingEngine) -> None:
+        engine_ref[0] = engine
+
+    async def handle_command(command: str, params: dict[str, Any]) -> bool:
+        """Handle UI commands like close_position."""
+        if command == "close_position":
+            symbol = params.get("symbol")
+            if not isinstance(symbol, str) or not symbol or engine_ref[0] is None:
+                return False
+            return await engine_ref[0].close_position_manually(symbol)
+        return False
+
+    hub.set_command_handler(handle_command)
+
     class ModernTUIApp(ModernTradingApp):
         """Modern TUI app with integrated trading engine."""
 
@@ -399,6 +421,7 @@ def _run_with_modern_tui(
                 allow_short=allow_short,
                 callbacks=adapter.callbacks,
                 strategy_names=strategy_names,
+                on_engine_ready=on_engine_ready,
             )
 
     # Start WebSocket server in background thread (needs its own event loop)
@@ -609,9 +632,10 @@ Examples:
         help="Enable partial profit taking (backtest mode via preset/config)",
     )
     parser.add_argument(
-        "--allocations",
+        "--budget",
         type=str,
-        help="Per-symbol capital allocations (e.g., SPY:50,AAPL:30,QQQ:20 for 50%%/30%%/20%%)",
+        metavar="AMOUNT",
+        help="Fixed budget per trade: dollar amount (e.g., 5000) or percentage (e.g., 50%%). Overrides risk-based sizing.",
     )
     args = parser.parse_args()
 
@@ -634,32 +658,35 @@ Examples:
     strategy_cfg = get_strategy_config()
     engine_cfg = get_engine_config()
 
-    # Parse CLI allocations and merge with TOML config
-    from tradingbot.config import AllocationConfig, SymbolAllocation
+    # Create broker to fetch account equity (for live trading, equity comes from broker)
+    from tradingbot._components.brokers.registry import get_broker_registry
+    from tradingbot._components.feeds.registry import get_feed_registry
 
-    allocation_config = bot_cfg.allocation
-    if args.allocations:
-        # Parse CLI: "SPY:50,AAPL:30,QQQ:20"
-        cli_allocations: list[SymbolAllocation] = []
-        total_pct = 0.0
-        for part in args.allocations.split(","):
-            part = part.strip()
-            if ":" not in part:
-                parser.error(f"Invalid allocation format: {part}. Use SYMBOL:PCT (e.g., SPY:50)")
-            sym, pct_str = part.split(":", 1)
-            try:
-                pct = float(pct_str.strip())
-            except ValueError:
-                parser.error(f"Invalid percentage: {pct_str}")
-            if not 0 < pct <= 100:
-                parser.error(f"Percentage must be >0 and <=100, got {pct}")
-            cli_allocations.append(SymbolAllocation(symbol=sym.strip().upper(), weight_pct=pct / 100))
-            total_pct += pct
+    feed: DataFeedProtocol
+    broker: BrokerProtocol
+    if args.replay:
+        from tradingbot._components.brokers.plugins.paper import PaperBroker
+        from tradingbot._components.feeds.plugins.replay import ReplayFeed
 
-        if not 99.99 <= total_pct <= 100.01:
-            parser.error(f"Allocations must sum to 100%, got {total_pct:.2f}%")
+        # Replay mode requires --capital since we're simulating with paper broker
+        if args.capital is None:
+            parser.error("replay mode requires --capital (e.g., --capital 10000)")
+        capital = args.capital
 
-        allocation_config = AllocationConfig(enabled=True, allocations=tuple(cli_allocations))
+        # Update cache before replay
+        console.print("[bold]Updating cache for replay...[/bold]")
+        update_cache_for_replay(symbols, args.replay_days)
+
+        feed = ReplayFeed(delay=args.replay_speed, days=args.replay_days)
+        broker = PaperBroker(initial_capital=capital)
+    else:
+        # Live trading: fetch equity from broker
+        feed_name = "alpaca" if engine_cfg.provider == "alpaca" else "yahoo"
+        feed = get_feed_registry().get(feed_name)
+        broker = get_broker_registry().get(engine_cfg.provider)
+        account = broker.get_account()
+        capital = account.equity
+        console.print(f"[bold cyan]Account equity:[/bold cyan] ${capital:,.2f}")
 
     # Load default preset if specified via --preset
     default_preset = None
@@ -685,6 +712,17 @@ Examples:
 
     # Use config if --atr-sizing not explicitly passed
     use_atr = args.atr_sizing if args.atr_sizing else strategy_cfg.atr_sizing
+
+    # Parse budget (dollar amount or percentage), split between symbols
+    cli_budget: float | None = None
+    if args.budget:
+        if args.budget.endswith("%"):
+            pct = float(args.budget.rstrip("%")) / 100
+            total_budget = capital * pct
+        else:
+            total_budget = float(args.budget)
+        # Split budget equally between symbols
+        cli_budget = total_budget / len(symbols)
 
     def format_partial_exits(levels: tuple[object, ...]) -> str:
         """Format partial exit levels into a summary string like '1R→50%, 2R→25%'."""
@@ -747,24 +785,24 @@ Examples:
     indicators = default_indicators
     preset_name = default_preset_name if not symbol_presets else "multi-strategy"
 
-    # Create per-symbol PositionSizers when allocation is enabled
+    # Create per-symbol PositionSizers
     position_sizers: dict[str, PositionSizer] = {}
-    if allocation_config.enabled:
-        allocation_config.validate_symbols(symbols)
-        console.print("[bold cyan]Capital Allocation:[/bold cyan]")
+    if cli_budget or bot_cfg.budgets.enabled:
+        # Budget-based sizing: CLI budget or per-symbol config budgets
+        console.print("[bold cyan]Capital & Budgets:[/bold cyan]")
         for symbol in symbols:
-            weight = allocation_config.get_weight(symbol)
-            symbol_capital = bot_cfg.capital * weight
-            # Get symbol-specific risk_pct from preset or default
-            symbol_risk = symbol_configs[symbol].risk_pct if symbol in symbol_configs else default_risk_pct
-            position_sizers[symbol] = PositionSizer(symbol_capital, symbol_risk, use_atr_sizing=use_atr)
-            console.print(f"  {symbol}: ${symbol_capital:,.0f} ({weight:.0%})")
+            symbol_budget = cli_budget if cli_budget else bot_cfg.budgets.get_budget(symbol, capital)
+            position_sizers[symbol] = PositionSizer(
+                capital, default_risk_pct, use_atr_sizing=use_atr, budget=symbol_budget
+            )
+            budget_info = f"budget=${symbol_budget:,.0f}" if symbol_budget else "risk-based"
+            console.print(f"  {symbol}: {budget_info}")
     else:
-        # Shared pool - all symbols use same sizer
-        shared_sizer = PositionSizer(bot_cfg.capital, default_risk_pct, use_atr_sizing=use_atr)
+        # Risk-based sizing: shared pool
+        shared_sizer = PositionSizer(capital, default_risk_pct, use_atr_sizing=use_atr)
         for symbol in symbols:
             position_sizers[symbol] = shared_sizer
-        console.print(f"[bold cyan]Capital:[/bold cyan] ${bot_cfg.capital:,.0f} (shared pool)")
+        console.print(f"[bold cyan]Capital:[/bold cyan] ${capital:,.0f} (risk-based sizing)")
 
     # For replay mode, disable trading hours restriction since we're replaying historical data
     risk_config = engine_cfg.risk
@@ -773,28 +811,7 @@ Examples:
 
         risk_config = replace(risk_config, trading_hours_only=False)
 
-    risk_manager = RiskManager(risk_config, bot_cfg.capital)
-
-    # Use replay feed and paper broker if --replay specified
-    feed: DataFeedProtocol
-    broker: BrokerProtocol
-    if args.replay:
-        from tradingbot._components.brokers.plugins.paper import PaperBroker
-        from tradingbot._components.feeds.plugins.replay import ReplayFeed
-
-        # Update cache before replay
-        console.print("[bold]Updating cache for replay...[/bold]")
-        update_cache_for_replay(symbols, args.replay_days)
-
-        feed = ReplayFeed(delay=args.replay_speed, days=args.replay_days)
-        broker = PaperBroker(initial_capital=bot_cfg.capital)
-        # PaperBroker is safe (simulated) so we don't need dry_run
-        # dry_run would prevent orders from reaching the broker, breaking account tracking
-    else:
-        # Derive feed/broker from provider
-        feed_name = "alpaca" if engine_cfg.provider == "alpaca" else "yahoo"
-        feed = get_feed_registry().get(feed_name)
-        broker = get_broker_registry().get(engine_cfg.provider)
+    risk_manager = RiskManager(risk_config, capital)
 
     if args.tui:
         # Modern TUI with hub-based architecture

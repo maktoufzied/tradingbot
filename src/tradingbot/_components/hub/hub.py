@@ -36,6 +36,7 @@ type Unsubscribe = Callable[[], None]
 type SyncCallback = Callable[[Any], None]
 type AsyncCallback = Callable[[Any], Awaitable[None]]
 type Callback = SyncCallback | AsyncCallback
+type CommandHandler = Callable[[str, dict[str, Any]], Awaitable[bool]]
 
 
 @dataclass
@@ -58,6 +59,7 @@ class EventHub:
 
     _callbacks: dict[UIChannel, list[Callback]] = field(default_factory=lambda: defaultdict(list))
     _websockets: set[Any] = field(default_factory=set)
+    _command_handler: CommandHandler | None = field(default=None)
 
     # State storage
     _tickers: dict[str, TickerUpdate] = field(default_factory=dict)
@@ -115,6 +117,34 @@ class EventHub:
     def on_chart(self, callback: Callback) -> Unsubscribe:
         """Register callback for chart data updates."""
         return self.on(UIChannel.CHART, callback)
+
+    def set_command_handler(self, handler: CommandHandler) -> None:
+        """Register command handler for UI commands (e.g., close_position).
+
+        Args:
+            handler: Async function taking (command: str, params: dict) -> bool
+        """
+        self._command_handler = handler
+
+    async def handle_command(self, command: str, params: dict[str, Any]) -> bool:
+        """Handle an incoming command from UI.
+
+        Args:
+            command: Command name (e.g., "close_position")
+            params: Command parameters (e.g., {"symbol": "AAPL"})
+
+        Returns:
+            True if command was handled successfully, False otherwise.
+        """
+        if self._command_handler is None:
+            logger.warning("No command handler registered for command: %s", command)
+            return False
+
+        try:
+            return await self._command_handler(command, params)
+        except Exception:
+            logger.exception("Command handler error for %s", command)
+            return False
 
     # --- State Access ---
 

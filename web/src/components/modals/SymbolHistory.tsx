@@ -25,15 +25,36 @@ export function SymbolHistory({ symbol }: SymbolHistoryProps) {
     const avgLoss = losses.length > 0 ? Math.abs(losses.reduce((sum, t) => sum + (t.pnl ?? 0), 0) / losses.length) : 0;
     const winRate = completed.length > 0 ? (wins.length / completed.length) * 100 : 0;
 
-    // Build equity curve
-    let cumulative = 0;
+    // Build equity curve using reduce to avoid variable reassignment
     const equityCurve = completed
       .slice()
       .reverse()
-      .map((t) => {
-        cumulative += t.pnl ?? 0;
-        return cumulative;
-      });
+      .reduce<number[]>((acc, t) => {
+        const prev = acc.length > 0 ? acc[acc.length - 1] : 0;
+        acc.push(prev + (t.pnl ?? 0));
+        return acc;
+      }, []);
+
+    // Calculate time-based stats
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(todayStart);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay()); // Start of week (Sunday)
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const filterByDate = (trades: typeof completed, since: Date) => {
+      return trades.filter((t) => new Date(t.timestamp) >= since);
+    };
+
+    const dailyTrades = filterByDate(completed, todayStart);
+    const weeklyTrades = filterByDate(completed, weekStart);
+    const monthlyTrades = filterByDate(completed, monthStart);
+
+    const calcPeriodStats = (periodTrades: typeof completed) => ({
+      pnl: periodTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0),
+      wins: periodTrades.filter((t) => t.is_winner === true).length,
+      losses: periodTrades.filter((t) => t.is_winner === false).length,
+    });
 
     return {
       totalPnl,
@@ -45,6 +66,9 @@ export function SymbolHistory({ symbol }: SymbolHistoryProps) {
       avgLoss,
       avgR: avgLoss > 0 ? avgWin / avgLoss : 0,
       equityCurve,
+      daily: calcPeriodStats(dailyTrades),
+      weekly: calcPeriodStats(weeklyTrades),
+      monthly: calcPeriodStats(monthlyTrades),
     };
   }, [trades]);
 
@@ -174,9 +198,9 @@ export function SymbolHistory({ symbol }: SymbolHistoryProps) {
 
       {/* 2. Performance Matrix */}
       <div className="grid grid-cols-4 gap-3 shrink-0">
-        <PerformancePod label="Daily" pnl={stats.totalPnl * 0.3} wins={stats.wins} losses={stats.losses} />
-        <PerformancePod label="Weekly" pnl={stats.totalPnl * 0.6} wins={stats.wins} losses={stats.losses} />
-        <PerformancePod label="Monthly" pnl={stats.totalPnl * 0.85} wins={stats.wins} losses={stats.losses} />
+        <PerformancePod label="Daily" pnl={stats.daily.pnl} wins={stats.daily.wins} losses={stats.daily.losses} />
+        <PerformancePod label="Weekly" pnl={stats.weekly.pnl} wins={stats.weekly.wins} losses={stats.weekly.losses} />
+        <PerformancePod label="Monthly" pnl={stats.monthly.pnl} wins={stats.monthly.wins} losses={stats.monthly.losses} />
         <PerformancePod label="All-Time" pnl={stats.totalPnl} wins={stats.wins} losses={stats.losses} featured />
       </div>
 
@@ -263,7 +287,7 @@ function PerformancePod({ label, pnl, wins, losses, featured }: PerformancePodPr
         )}
       </div>
       <div className={clsx('font-mono text-xl font-bold mb-1 relative', pnl >= 0 ? 'text-positive' : 'text-negative')}>
-        {pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(0)}
+        {pnl >= 0 ? '+' : '-'}${Math.abs(pnl).toFixed(0)}
       </div>
       <div className="flex items-center justify-between text-xs relative">
         <div className="flex items-center gap-1">
@@ -273,7 +297,7 @@ function PerformancePod({ label, pnl, wins, losses, featured }: PerformancePodPr
           <div className="w-1.5 h-1.5 rounded-full bg-negative" />
           <span className="text-text-secondary">{losses}L</span>
         </div>
-        <span className="font-mono text-positive font-medium">{winRate.toFixed(0)}%</span>
+        <span className={clsx('font-mono font-medium', winRate >= 50 ? 'text-positive' : 'text-negative')}>{winRate.toFixed(0)}%</span>
       </div>
       <div className="mt-2 h-1 bg-border rounded-full overflow-hidden relative">
         <div

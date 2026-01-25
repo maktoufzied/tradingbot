@@ -79,6 +79,7 @@ class MarketStructureBot:
         allow_short: bool = False,
         execution_model: ExecutionModel | None = None,
         use_atr_sizing: bool = False,
+        budget: float | None = None,
         partial_exit_levels: tuple[PartialExitLevel, ...] = (),
         eod_exit: bool = False,
         eod_exit_minutes_before: int = 15,
@@ -92,7 +93,7 @@ class MarketStructureBot:
             indicators=indicators,
             filter_mode=filter_mode,
         )
-        self.pos_sizer = PositionSizer(capital, risk_pct, use_atr_sizing=use_atr_sizing)
+        self.pos_sizer = PositionSizer(capital, risk_pct, use_atr_sizing=use_atr_sizing, budget=budget)
         self.rr_ratio = rr_ratio
         self.stop_pct = stop_pct
         self.swing_lb = swing_lb

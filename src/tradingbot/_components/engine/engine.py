@@ -47,7 +47,7 @@ from .events import (
 
 logger = get_logger(__name__)
 
-MIN_BARS_REQUIRED: Final[int] = 50
+MIN_BARS_REQUIRED: Final[int] = 20  # ~1.5 hours at 5m bars, enough for swing detection
 MAX_BARS_HISTORY: Final[int] = 500
 
 
@@ -274,6 +274,36 @@ class TradingEngine:
             logger.info("Ended session %d", self._session_id)
 
         await self._cb.emit_stopped(EngineStoppedEvent(risk_manager=self._risk_mgr))
+
+    async def close_position_manually(self, symbol: str) -> bool:
+        """Close a position manually from UI command.
+
+        Args:
+            symbol: Symbol to close position for.
+
+        Returns:
+            True if position was closed, False if no position exists.
+        """
+        if symbol not in self._positions:
+            logger.warning("No position to close for %s", symbol)
+            return False
+
+        # Prevent double-close if automatic exit is already pending
+        if symbol in self._pending_closes:
+            logger.warning("Close already pending for %s", symbol)
+            return False
+
+        position = self._positions[symbol]
+        bars = self._bars.get(symbol)
+        if not bars:
+            logger.warning("No bar data available for %s", symbol)
+            return False
+
+        # Use the most recent bar for exit price
+        last_bar = bars[-1]
+        await self._close_position(last_bar, position, "MANUAL_EXIT")
+        logger.info("Manually closed position for %s", symbol)
+        return True
 
     async def _load_history(self) -> None:
         """Load historical intraday data for each symbol to bootstrap indicators.
@@ -725,6 +755,7 @@ class TradingEngine:
             "TIME_EXIT": "TIME_EXIT",
             "EOD_EXIT": "EOD_EXIT",
             "PARTIAL_EXIT": "PARTIAL_EXIT",
+            "MANUAL_EXIT": "TIME_EXIT",  # Manual exits use TIME_EXIT for persistence
         }
         exit_reason: ExitReason = exit_reason_map.get(reason, "TIME_EXIT")
 

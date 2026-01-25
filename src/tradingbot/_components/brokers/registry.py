@@ -42,6 +42,6 @@ class Broker:
         return impl.get_account()
 
 
-def get_registry() -> BrokerRegistry:
+def get_broker_registry() -> BrokerRegistry:
     """Get the broker registry singleton."""
     return BrokerRegistry()

@@ -33,6 +33,7 @@ class BacktestParams(TypedDict, total=False):
     commission: float
     # Position sizing
     use_atr_sizing: bool
+    budget: float | None  # Fixed dollar budget per trade (overrides risk-based sizing)
     # Trailing stops
     atr_trail: bool
     atr_trail_multiplier: float
@@ -98,6 +99,7 @@ def run_single_backtest(
     spread_bps: float | None = None,
     commission: float | None = None,
     use_atr_sizing: bool = False,
+    budget: float | None = None,
     atr_trail: bool = False,
     atr_trail_multiplier: float | None = None,
     atr_trail_activation_r: float | None = None,
@@ -113,8 +115,17 @@ def run_single_backtest(
 
         preset_obj = get_preset(preset)
 
+    # Budget: CLI arg > config (per-symbol budget)
+    # Note: budget_pcts in config require capital to resolve, handled below
+    budget_val = budget
+    if budget_val is None and bot_cfg.budgets.enabled:
+        budget_val = bot_cfg.budgets.get_budget(symbol, capital)
+
     # Apply values: CLI args > preset > config defaults
-    capital_val = capital if capital is not None else bot_cfg.capital
+    # Capital must come from --capital or --budget (no config default)
+    capital_val = capital if capital is not None else budget_val
+    if capital_val is None:
+        raise ValueError("backtesting requires --capital or --budget")
     risk_pct = risk if risk is not None else (preset_obj.risk_pct if preset_obj else strategy_cfg.risk_pct)
     rr_ratio = rr if rr is not None else (preset_obj.rr_ratio if preset_obj else strategy_cfg.rr_ratio)
     stop_pct = preset_obj.stop_pct if preset_obj else 0.01
@@ -178,6 +189,7 @@ def run_single_backtest(
         else "[dim]no costs[/dim]"
     )
     atr_info = "[cyan]ATR-sized[/cyan]" if use_atr else ""
+    budget_info = f"[cyan]budget=${budget_val:,.0f}[/cyan]" if budget_val else ""
     trail_info = (
         f"[cyan]ATR-trail ({trail_multiplier}× @ {trail_activation}R)[/cyan]"
         if use_atr_trail and trail_activation > 0
@@ -194,6 +206,7 @@ def run_single_backtest(
         f"entry=[cyan]{entry_name}[/cyan] exit=[cyan]{exit_name}[/cyan] | "
         f"risk=[cyan]{risk_pct * 100:.1f}%[/cyan] rr=[cyan]{rr_ratio}:1[/cyan] | "
         f"[dim]{short_info}[/dim]"
+        f"{' | ' + budget_info if budget_info else ''}"
         f"{' | ' + atr_info if atr_info else ''}"
         f"{' | ' + trail_info if trail_info else ''}"
         f"{' | ' + partial_info if partial_info else ''}"
@@ -215,6 +228,7 @@ def run_single_backtest(
         allow_short=allow_short,
         execution_model=execution_model,
         use_atr_sizing=use_atr,
+        budget=budget_val,
         atr_trail=use_atr_trail,
         atr_trail_multiplier=trail_multiplier,
         atr_trail_activation_r=trail_activation,

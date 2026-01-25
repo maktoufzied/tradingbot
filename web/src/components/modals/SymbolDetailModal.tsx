@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTicker, usePosition, useChart, useSymbolStrategy, useSymbolConfig } from '../../store/tradingStore';
+import { sendCommand } from '../../hooks/useWebSocket';
 import { PriceChart } from '../charts/PriceChart';
 import { SymbolHistory } from './SymbolHistory';
 import { TrendBadge } from '../widgets/TrendBadge';
@@ -159,7 +160,10 @@ export function SymbolDetailModal({ symbol, onClose }: SymbolDetailModalProps) {
                       <div>Vol: <span className="font-mono">{(ticker.volume / 1000000).toFixed(1)}M</span></div>
                     </div>
                     {hasPosition && (
-                      <button className="px-4 py-2 bg-negative/20 text-negative hover:bg-negative/30 rounded-lg transition font-medium text-sm">
+                      <button
+                        onClick={() => sendCommand('close_position', { symbol })}
+                        className="px-4 py-2 bg-negative/20 text-negative hover:bg-negative/30 rounded-lg transition font-medium text-sm"
+                      >
                         Close Position
                       </button>
                     )}

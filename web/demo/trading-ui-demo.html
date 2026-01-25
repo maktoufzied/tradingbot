@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trading Dashboard - UI Demo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg: '#0a0a0f',
+            surface: '#12121a',
+            'surface-dark': '#0f0f18',
+            'surface-light': '#1a1a24',
+            primary: '#f59e0b',
+            'primary-dim': '#d97706',
+            positive: '#10b981',
+            'positive-dim': '#059669',
+            negative: '#ef4444',
+            'negative-dim': '#dc2626',
+            neutral: '#06b6d4',
+            accent: '#8b5cf6',
+            border: '#2a2a3a',
+            'border-dim': '#1a1a2a',
+            text: '#ffffff',
+            'text-secondary': '#b0b0b8',
+            'text-dim': '#6a6a7a',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #0a0a0f 0%, #12121a 50%, #0f0f18 100%);
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Glassmorphism card */
+    .glass-card {
+      background: rgba(18, 18, 26, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .glass-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(245, 158, 11, 0.3);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), 0 0 20px rgba(245, 158, 11, 0.1);
+    }
+
+    /* Sparkline animation */
+    .sparkline-bar {
+      animation: sparkline-grow 0.5s ease-out forwards;
+      transform-origin: bottom;
+    }
+
+    @keyframes sparkline-grow {
+      from { transform: scaleY(0); }
+      to { transform: scaleY(1); }
+    }
+
+    /* Pulse animation for active positions */
+    .position-pulse {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    /* Modal animation */
+    .modal-backdrop {
+      opacity: 0;
+      transition: opacity 0.3s ease-out;
+    }
+
+    .modal-backdrop.active {
+      opacity: 1;
+    }
+
+    .modal-content {
+      transform: scale(0.95) translateY(20px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .modal-backdrop.active .modal-content {
+      transform: scale(1) translateY(0);
+      opacity: 1;
+    }
+
+    /* Price change flash */
+    .price-up {
+      animation: flash-green 0.5s ease-out;
+    }
+
+    .price-down {
+      animation: flash-red 0.5s ease-out;
+    }
+
+    @keyframes flash-green {
+      0% { background-color: rgba(16, 185, 129, 0.3); }
+      100% { background-color: transparent; }
+    }
+
+    @keyframes flash-red {
+      0% { background-color: rgba(239, 68, 68, 0.3); }
+      100% { background-color: transparent; }
+    }
+
+    /* Risk gauge */
+    .risk-gauge {
+      background: linear-gradient(90deg,
+        #ef4444 0%,
+        #f59e0b 50%,
+        #10b981 100%
+      );
+    }
+
+    /* Chart area gradient */
+    .chart-gradient {
+      background: linear-gradient(180deg,
+        rgba(16, 185, 129, 0.1) 0%,
+        rgba(16, 185, 129, 0) 100%
+      );
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #0f0f18;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #2a2a3a;
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3a3a4a;
+    }
+
+    /* Number animation */
+    .number-morph {
+      transition: all 0.3s ease-out;
+    }
+  </style>
+</head>
+<body class="min-h-screen text-text">
+  <!-- Header -->
+  <header class="sticky top-0 z-40 bg-surface-dark/90 backdrop-blur-md border-b border-border">
+    <div class="max-w-7xl mx-auto px-4 py-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <h1 class="text-xl font-bold text-primary">TRADINGBOT</h1>
+          <span class="px-2 py-1 bg-positive/20 text-positive text-xs font-medium rounded-full flex items-center gap-1">
+            <span class="w-2 h-2 bg-positive rounded-full animate-pulse"></span>
+            LIVE
+          </span>
+        </div>
+
+        <div class="flex items-center gap-6">
+          <!-- P&L Summary -->
+          <div class="flex items-center gap-4">
+            <div class="text-right">
+              <div class="text-xs text-text-dim">Day P&L</div>
+              <div class="text-lg font-bold text-positive mono">+$1,247.32</div>
+            </div>
+            <div class="w-px h-8 bg-border"></div>
+            <div class="text-right">
+              <div class="text-xs text-text-dim">Win Rate</div>
+              <div class="text-lg font-bold text-text mono">60%</div>
+            </div>
+            <div class="w-px h-8 bg-border"></div>
+            <div class="text-right">
+              <div class="text-xs text-text-dim">Open Risk</div>
+              <div class="flex items-center gap-2">
+                <div class="w-16 h-2 bg-surface rounded-full overflow-hidden">
+                  <div class="h-full bg-gradient-to-r from-positive to-primary" style="width: 45%"></div>
+                </div>
+                <span class="text-sm mono text-text-secondary">2.1%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Time -->
+          <div class="text-right">
+            <div class="text-xs text-text-dim">Market Time</div>
+            <div class="text-lg font-medium mono" id="market-time">14:32:15</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto px-4 py-6">
+    <!-- Market Pulse Strip -->
+    <div class="mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-medium text-text-dim uppercase tracking-wider">Market Pulse</h2>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-text-dim">Click any card to expand</span>
+        </div>
+      </div>
+
+      <!-- Cards Grid -->
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4" id="cards-grid">
+        <!-- Cards will be generated by JS -->
+      </div>
+    </div>
+
+    <!-- Stats Row -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <!-- Session Stats -->
+      <div class="glass-card rounded-xl p-4">
+        <h3 class="text-xs font-medium text-primary uppercase tracking-wider mb-3">Session</h3>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <div class="text-2xl font-bold mono">5</div>
+            <div class="text-xs text-text-dim">Trades</div>
+          </div>
+          <div>
+            <div class="text-2xl font-bold mono text-positive">3</div>
+            <div class="text-xs text-text-dim">Winners</div>
+          </div>
+          <div>
+            <div class="text-lg font-bold mono text-positive">+$1,500</div>
+            <div class="text-xs text-text-dim">Gross P&L</div>
+          </div>
+          <div>
+            <div class="text-lg font-bold mono">-$252</div>
+            <div class="text-xs text-text-dim">Commissions</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Account Stats -->
+      <div class="glass-card rounded-xl p-4">
+        <h3 class="text-xs font-medium text-primary uppercase tracking-wider mb-3">Account</h3>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <div class="text-2xl font-bold mono">$25,432</div>
+            <div class="text-xs text-text-dim">Equity</div>
+          </div>
+          <div>
+            <div class="text-2xl font-bold mono text-neutral">$18,200</div>
+            <div class="text-xs text-text-dim">Buying Power</div>
+          </div>
+          <div>
+            <div class="text-lg font-bold mono">$7,232</div>
+            <div class="text-xs text-text-dim">Cash</div>
+          </div>
+          <div>
+            <div class="text-lg font-bold mono text-primary">28%</div>
+            <div class="text-xs text-text-dim">Margin Used</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Risk Stats -->
+      <div class="glass-card rounded-xl p-4">
+        <h3 class="text-xs font-medium text-primary uppercase tracking-wider mb-3">Risk</h3>
+        <div class="space-y-3">
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-text-dim">Daily Drawdown</span>
+              <span class="mono">1.2% / 3%</span>
+            </div>
+            <div class="h-2 bg-surface rounded-full overflow-hidden">
+              <div class="h-full bg-gradient-to-r from-positive to-primary rounded-full" style="width: 40%"></div>
+            </div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-text-dim">Open Risk</span>
+              <span class="mono">2.1% / 5%</span>
+            </div>
+            <div class="h-2 bg-surface rounded-full overflow-hidden">
+              <div class="h-full bg-gradient-to-r from-positive to-primary rounded-full" style="width: 42%"></div>
+            </div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-text-dim">Positions</span>
+              <span class="mono">3 / 5</span>
+            </div>
+            <div class="h-2 bg-surface rounded-full overflow-hidden">
+              <div class="h-full bg-primary rounded-full" style="width: 60%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Trade Log -->
+    <div class="glass-card rounded-xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-border flex items-center justify-between">
+        <h3 class="text-sm font-medium text-primary uppercase tracking-wider">Trade Log</h3>
+        <div class="flex items-center gap-2">
+          <button class="px-2 py-1 text-xs text-text-dim hover:text-text rounded transition-colors">All</button>
+          <button class="px-2 py-1 text-xs bg-surface-light text-text rounded">Today</button>
+          <button class="px-2 py-1 text-xs text-text-dim hover:text-text rounded transition-colors">Week</button>
+        </div>
+      </div>
+      <div class="divide-y divide-border/50">
+        <!-- Trade entries -->
+        <div class="px-4 py-3 flex items-center gap-4 hover:bg-surface-light/30 transition-colors">
+          <span class="text-xs text-text-dim mono w-12">14:31</span>
+          <span class="w-2 h-2 bg-positive rounded-full"></span>
+          <span class="font-medium text-primary w-16">SPY</span>
+          <span class="px-2 py-0.5 bg-positive/20 text-positive text-xs font-medium rounded">BUY</span>
+          <span class="text-text-secondary mono flex-1">$589.20 → TP $595.40</span>
+          <span class="text-text-dim text-xs">Risk: 1.0%</span>
+          <div class="w-24 h-1.5 bg-surface rounded-full overflow-hidden">
+            <div class="h-full bg-positive rounded-full" style="width: 65%"></div>
+          </div>
+        </div>
+        <div class="px-4 py-3 flex items-center gap-4 hover:bg-surface-light/30 transition-colors bg-positive/5">
+          <span class="text-xs text-text-dim mono w-12">14:28</span>
+          <span class="w-2 h-2 bg-positive rounded-full"></span>
+          <span class="font-medium text-primary w-16">AAPL</span>
+          <span class="px-2 py-0.5 bg-positive/20 text-positive text-xs font-medium rounded">EXIT</span>
+          <span class="text-positive mono flex-1">+$234.50 (+2.1%)</span>
+          <span class="text-text-dim text-xs">18m • TP Hit</span>
+          <div class="w-24 h-1.5 bg-surface rounded-full overflow-hidden">
+            <div class="h-full bg-positive rounded-full" style="width: 100%"></div>
+          </div>
+        </div>
+        <div class="px-4 py-3 flex items-center gap-4 hover:bg-surface-light/30 transition-colors bg-negative/5">
+          <span class="text-xs text-text-dim mono w-12">14:15</span>
+          <span class="w-2 h-2 bg-negative rounded-full"></span>
+          <span class="font-medium text-primary w-16">TSLA</span>
+          <span class="px-2 py-0.5 bg-negative/20 text-negative text-xs font-medium rounded">EXIT</span>
+          <span class="text-negative mono flex-1">-$87.20 (-0.9%)</span>
+          <span class="text-text-dim text-xs">8m • SL Hit</span>
+          <div class="w-24 h-1.5 bg-surface rounded-full overflow-hidden">
+            <div class="h-full bg-negative rounded-full" style="width: 100%"></div>
+          </div>
+        </div>
+        <div class="px-4 py-3 flex items-center gap-4 hover:bg-surface-light/30 transition-colors bg-primary/5">
+          <span class="text-xs text-text-dim mono w-12">14:10</span>
+          <span class="w-2 h-2 bg-primary rounded-full"></span>
+          <span class="font-medium text-primary w-16">NVDA</span>
+          <span class="px-2 py-0.5 bg-primary/20 text-primary text-xs font-medium rounded">BLOCKED</span>
+          <span class="text-text-secondary mono flex-1">Max positions reached</span>
+          <span class="text-text-dim text-xs">Risk limit</span>
+          <div class="w-24 h-1.5 bg-surface rounded-full overflow-hidden">
+            <div class="h-full bg-border rounded-full" style="width: 0%"></div>
+          </div>
+        </div>
+        <div class="px-4 py-3 flex items-center gap-4 hover:bg-surface-light/30 transition-colors">
+          <span class="text-xs text-text-dim mono w-12">13:45</span>
+          <span class="w-2 h-2 bg-positive rounded-full"></span>
+          <span class="font-medium text-primary w-16">META</span>
+          <span class="px-2 py-0.5 bg-positive/20 text-positive text-xs font-medium rounded">BUY</span>
+          <span class="text-text-secondary mono flex-1">$582.30 → TP $592.00</span>
+          <span class="text-text-dim text-xs">Risk: 1.0%</span>
+          <div class="w-24 h-1.5 bg-surface rounded-full overflow-hidden">
+            <div class="h-full bg-positive rounded-full" style="width: 35%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal -->
+  <div id="modal" class="fixed inset-0 z-50 hidden modal-backdrop bg-bg/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="modal-content glass-card rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-border flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <h2 class="text-2xl font-bold text-primary" id="modal-symbol">SPY</h2>
+          <span class="px-2 py-1 text-xs font-medium rounded bg-surface-light text-text-dim" id="modal-strategy">momentum</span>
+          <span class="px-2 py-1 text-xs font-medium rounded" id="modal-position-badge"></span>
+        </div>
+        <button onclick="closeModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-light transition-colors">
+          <svg class="w-5 h-5 text-text-dim" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+        <!-- Price Header -->
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-baseline gap-4">
+            <span class="text-4xl font-bold mono" id="modal-price">$591.42</span>
+            <span class="text-xl font-medium" id="modal-change"></span>
+          </div>
+          <div class="flex items-center gap-4 text-sm text-text-dim">
+            <span>H: <span class="text-text mono" id="modal-high">$593.20</span></span>
+            <span>L: <span class="text-text mono" id="modal-low">$587.15</span></span>
+            <span>Vol: <span class="text-text mono" id="modal-volume">42.3M</span></span>
+          </div>
+        </div>
+
+        <!-- Candlestick Chart Area -->
+        <div class="bg-surface rounded-xl p-4 mb-4">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <button class="px-3 py-1 text-xs bg-primary/20 text-primary rounded-full">1D</button>
+              <button class="px-3 py-1 text-xs text-text-dim hover:text-text rounded-full">5D</button>
+              <button class="px-3 py-1 text-xs text-text-dim hover:text-text rounded-full">1M</button>
+            </div>
+            <span class="text-xs text-text-dim">Candlestick Chart</span>
+          </div>
+          <div class="h-52" id="modal-chart">
+            <!-- Candlestick chart will be rendered here -->
+          </div>
+        </div>
+
+        <!-- Two Column Layout: Position & Strategy -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+          <!-- Position Details -->
+          <div id="modal-position-details">
+            <!-- Will be filled by JS -->
+          </div>
+
+          <!-- Strategy Details -->
+          <div class="bg-surface rounded-xl p-4">
+            <div class="text-xs text-primary uppercase tracking-wider mb-3 font-medium">Strategy Configuration</div>
+            <div id="modal-strategy-details">
+              <!-- Will be filled by JS -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Signal & Trend Row -->
+        <div class="grid grid-cols-2 gap-4">
+          <div class="bg-surface rounded-xl p-4">
+            <div class="text-xs text-text-dim uppercase tracking-wider mb-2">Trend</div>
+            <div class="flex items-center gap-2" id="modal-trend">
+              <span class="text-2xl">↑</span>
+              <span class="text-xl font-bold text-positive">BULLISH</span>
+            </div>
+          </div>
+          <div class="bg-surface rounded-xl p-4">
+            <div class="text-xs text-text-dim uppercase tracking-wider mb-2">Signal</div>
+            <div class="flex items-center gap-2" id="modal-signal">
+              <span class="w-3 h-3 bg-positive rounded-full"></span>
+              <span class="text-xl font-bold text-positive">BUY</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Generate OHLC candlestick data from a base price
+    function generateOHLC(basePrice, count = 30) {
+      const candles = [];
+      let price = basePrice * 0.98;
+
+      for (let i = 0; i < count; i++) {
+        const volatility = basePrice * 0.005;
+        const open = price;
+        const change = (Math.random() - 0.45) * volatility * 2;
+        const close = open + change;
+        const high = Math.max(open, close) + Math.random() * volatility;
+        const low = Math.min(open, close) - Math.random() * volatility;
+
+        candles.push({ open, high, low, close, time: i });
+        price = close;
+      }
+      return candles;
+    }
+
+    // Mock data with strategy details and OHLC
+    const stockData = [
+      {
+        symbol: 'SPY',
+        strategy: {
+          name: 'momentum',
+          entry: 'swing_break',
+          exit: 'swing',
+          risk_pct: 1.0,
+          rr_ratio: 2.0,
+          indicators: ['adx', 'ema_trend'],
+          filter_mode: 'all',
+          eod_exit: false,
+          partial_exits: '50% @ 1R'
+        },
+        price: 591.42,
+        change: 2.15,
+        changePct: 0.37,
+        high: 593.20,
+        low: 587.15,
+        volume: 42300000,
+        trend: 'BULLISH',
+        signal: 'BUY',
+        position: {
+          direction: 'LONG',
+          entry: 589.20,
+          size: 50,
+          sl: 587.10,
+          tp: 595.40,
+          pnl: 111.00,
+          pnlPct: 1.88,
+          minutes: 12
+        },
+        sparkline: [45, 48, 52, 55, 50, 58, 62, 65, 60, 68, 72, 75, 70, 78, 82, 85, 80, 88, 92, 90],
+        candles: null // will be generated
+      },
+      {
+        symbol: 'QQQ',
+        strategy: {
+          name: 'swing',
+          entry: 'pullback',
+          exit: 'trailing_atr',
+          risk_pct: 1.5,
+          rr_ratio: 2.5,
+          indicators: ['rsi', 'macd'],
+          filter_mode: 'any',
+          eod_exit: false,
+          partial_exits: null
+        },
+        price: 518.23,
+        change: -1.42,
+        changePct: -0.27,
+        high: 521.50,
+        low: 516.80,
+        volume: 38500000,
+        trend: 'BEARISH',
+        signal: 'HOLD',
+        position: null,
+        sparkline: [85, 82, 78, 75, 72, 68, 65, 62, 58, 55, 52, 50, 48, 52, 48, 45, 42, 45, 42, 40],
+        candles: null
+      },
+      {
+        symbol: 'AAPL',
+        strategy: {
+          name: 'breakout',
+          entry: 'range_break',
+          exit: 'fixed_rr',
+          risk_pct: 1.0,
+          rr_ratio: 3.0,
+          indicators: ['volume_spike', 'atr'],
+          filter_mode: 'all',
+          eod_exit: true,
+          partial_exits: '33% @ 1R, 33% @ 2R'
+        },
+        price: 243.15,
+        change: 1.23,
+        changePct: 0.51,
+        high: 244.80,
+        low: 241.20,
+        volume: 52100000,
+        trend: 'BULLISH',
+        signal: 'HOLD',
+        position: {
+          direction: 'LONG',
+          entry: 241.20,
+          size: 30,
+          sl: 239.50,
+          tp: 248.00,
+          pnl: 58.50,
+          pnlPct: 0.81,
+          minutes: 45
+        },
+        sparkline: [40, 42, 45, 48, 52, 55, 58, 62, 65, 68, 72, 70, 75, 78, 82, 85, 88, 85, 90, 92],
+        candles: null
+      },
+      {
+        symbol: 'NVDA',
+        strategy: {
+          name: 'mean_rev',
+          entry: 'oversold_bounce',
+          exit: 'mean_reversion',
+          risk_pct: 0.75,
+          rr_ratio: 1.5,
+          indicators: ['rsi', 'bollinger'],
+          filter_mode: 'all',
+          eod_exit: true,
+          partial_exits: null
+        },
+        price: 138.42,
+        change: 4.21,
+        changePct: 3.14,
+        high: 139.50,
+        low: 134.20,
+        volume: 89200000,
+        trend: 'BULLISH',
+        signal: 'BUY',
+        position: null,
+        sparkline: [30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 82, 85, 88, 90, 92, 94, 96, 98, 100],
+        candles: null
+      },
+      {
+        symbol: 'TSLA',
+        strategy: {
+          name: 'scalp',
+          entry: 'momentum_burst',
+          exit: 'quick_profit',
+          risk_pct: 0.5,
+          rr_ratio: 1.0,
+          indicators: ['vwap', 'ema_9'],
+          filter_mode: 'all',
+          eod_exit: true,
+          partial_exits: null
+        },
+        price: 248.50,
+        change: -2.95,
+        changePct: -1.17,
+        high: 252.30,
+        low: 247.10,
+        volume: 112000000,
+        trend: 'BEARISH',
+        signal: 'SELL',
+        position: {
+          direction: 'SHORT',
+          entry: 251.20,
+          size: 25,
+          sl: 254.00,
+          tp: 245.00,
+          pnl: 67.50,
+          pnlPct: 1.07,
+          minutes: 8
+        },
+        sparkline: [90, 88, 85, 82, 78, 75, 72, 68, 65, 62, 58, 55, 52, 50, 48, 45, 42, 40, 38, 35],
+        candles: null
+      },
+      {
+        symbol: 'META',
+        strategy: {
+          name: 'swing',
+          entry: 'pullback',
+          exit: 'swing',
+          risk_pct: 1.0,
+          rr_ratio: 2.0,
+          indicators: ['ema_trend'],
+          filter_mode: 'all',
+          eod_exit: false,
+          partial_exits: '50% @ 1.5R'
+        },
+        price: 582.30,
+        change: 4.65,
+        changePct: 0.81,
+        high: 585.40,
+        low: 578.20,
+        volume: 18900000,
+        trend: 'BULLISH',
+        signal: 'HOLD',
+        position: null,
+        sparkline: [50, 52, 55, 58, 60, 62, 65, 68, 70, 72, 75, 78, 80, 82, 85, 82, 80, 78, 82, 85],
+        candles: null
+      }
+    ];
+
+    // Generate candle data for each stock
+    stockData.forEach(stock => {
+      stock.candles = generateOHLC(stock.price, 30);
+    });
+
+    // Generate candlestick chart SVG
+    function generateCandlestickChart(candles, position = null) {
+      const width = 700;
+      const height = 200;
+      const padding = { top: 20, right: 60, bottom: 20, left: 10 };
+      const chartWidth = width - padding.left - padding.right;
+      const chartHeight = height - padding.top - padding.bottom;
+
+      // Find price range
+      const allPrices = candles.flatMap(c => [c.high, c.low]);
+      if (position) {
+        allPrices.push(position.sl, position.tp, position.entry);
+      }
+      const minPrice = Math.min(...allPrices) * 0.999;
+      const maxPrice = Math.max(...allPrices) * 1.001;
+      const priceRange = maxPrice - minPrice;
+
+      // Scale functions
+      const scaleY = (price) => padding.top + chartHeight - ((price - minPrice) / priceRange) * chartHeight;
+      const candleWidth = chartWidth / candles.length * 0.7;
+      const candleGap = chartWidth / candles.length;
+
+      let candlesSvg = '';
+      candles.forEach((candle, i) => {
+        const x = padding.left + i * candleGap + candleGap / 2;
+        const isGreen = candle.close >= candle.open;
+        const color = isGreen ? '#10b981' : '#ef4444';
+        const bodyTop = scaleY(Math.max(candle.open, candle.close));
+        const bodyBottom = scaleY(Math.min(candle.open, candle.close));
+        const bodyHeight = Math.max(1, bodyBottom - bodyTop);
+
+        // Wick
+        candlesSvg += `<line x1="${x}" y1="${scaleY(candle.high)}" x2="${x}" y2="${scaleY(candle.low)}" stroke="${color}" stroke-width="1"/>`;
+        // Body
+        candlesSvg += `<rect x="${x - candleWidth/2}" y="${bodyTop}" width="${candleWidth}" height="${bodyHeight}" fill="${isGreen ? color : color}" stroke="${color}" rx="1"/>`;
+      });
+
+      // Position lines (SL, TP, Entry)
+      let positionLines = '';
+      if (position) {
+        // Entry line
+        positionLines += `
+          <line x1="${padding.left}" y1="${scaleY(position.entry)}" x2="${width - padding.right}" y2="${scaleY(position.entry)}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4"/>
+          <text x="${width - padding.right + 5}" y="${scaleY(position.entry) + 4}" fill="#f59e0b" font-size="10" class="mono">Entry $${position.entry.toFixed(2)}</text>
+        `;
+        // Stop Loss line
+        positionLines += `
+          <line x1="${padding.left}" y1="${scaleY(position.sl)}" x2="${width - padding.right}" y2="${scaleY(position.sl)}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4"/>
+          <text x="${width - padding.right + 5}" y="${scaleY(position.sl) + 4}" fill="#ef4444" font-size="10" class="mono">SL $${position.sl.toFixed(2)}</text>
+        `;
+        // Take Profit line
+        positionLines += `
+          <line x1="${padding.left}" y1="${scaleY(position.tp)}" x2="${width - padding.right}" y2="${scaleY(position.tp)}" stroke="#10b981" stroke-width="1.5" stroke-dasharray="4"/>
+          <text x="${width - padding.right + 5}" y="${scaleY(position.tp) + 4}" fill="#10b981" font-size="10" class="mono">TP $${position.tp.toFixed(2)}</text>
+        `;
+      }
+
+      // Grid lines
+      const gridLines = 5;
+      let gridSvg = '';
+      for (let i = 0; i <= gridLines; i++) {
+        const y = padding.top + (chartHeight / gridLines) * i;
+        const price = maxPrice - (priceRange / gridLines) * i;
+        gridSvg += `<line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="#2a2a3a" stroke-width="0.5"/>`;
+        gridSvg += `<text x="${width - padding.right + 5}" y="${y + 4}" fill="#6a6a7a" font-size="9" class="mono">$${price.toFixed(2)}</text>`;
+      }
+
+      return `
+        <svg width="100%" height="100%" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+          ${gridSvg}
+          ${candlesSvg}
+          ${positionLines}
+        </svg>
+      `;
+    }
+
+    // Generate sparkline SVG - uses viewBox for responsive scaling
+    function generateSparkline(data, color = '#10b981') {
+      const viewWidth = 100;
+      const viewHeight = 40;
+      const max = Math.max(...data);
+      const min = Math.min(...data);
+      const range = max - min || 1;
+
+      const points = data.map((val, i) => {
+        const x = (i / (data.length - 1)) * viewWidth;
+        const y = viewHeight - ((val - min) / range) * viewHeight;
+        return `${x},${y}`;
+      }).join(' ');
+
+      const areaPoints = `0,${viewHeight} ${points} ${viewWidth},${viewHeight}`;
+      const gradientId = `spark-${color.replace('#', '')}-${Math.random().toString(36).substr(2, 9)}`;
+
+      return `
+        <svg width="100%" height="100%" viewBox="0 0 ${viewWidth} ${viewHeight}" preserveAspectRatio="none" class="overflow-visible">
+          <defs>
+            <linearGradient id="${gradientId}" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" style="stop-color:${color};stop-opacity:0.3"/>
+              <stop offset="100%" style="stop-color:${color};stop-opacity:0"/>
+            </linearGradient>
+          </defs>
+          <polygon points="${areaPoints}" fill="url(#${gradientId})" />
+          <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+        </svg>
+      `;
+    }
+
+    // Generate card HTML
+    function generateCard(stock, index) {
+      const isPositive = stock.change >= 0;
+      const changeColor = isPositive ? 'text-positive' : 'text-negative';
+      const sparkColor = isPositive ? '#10b981' : '#ef4444';
+      const arrow = isPositive ? '▲' : '▼';
+
+      // Position badge (LONG/SHORT)
+      let positionBadge = '';
+      if (stock.position) {
+        const dirColor = stock.position.direction === 'LONG' ? 'bg-positive/20 text-positive' : 'bg-negative/20 text-negative';
+        const dirArrow = stock.position.direction === 'LONG' ? '▲' : '▼';
+        positionBadge = `<span class="px-1.5 py-0.5 text-xs font-bold rounded ${dirColor}">${dirArrow} ${stock.position.direction}</span>`;
+      }
+
+      // Signal badge (BUY/SELL/HOLD)
+      let signalBadge = '';
+      if (stock.signal === 'BUY') {
+        signalBadge = `<span class="px-1.5 py-0.5 text-xs font-bold rounded bg-positive/20 text-positive">● BUY</span>`;
+      } else if (stock.signal === 'SELL') {
+        signalBadge = `<span class="px-1.5 py-0.5 text-xs font-bold rounded bg-negative/20 text-negative">● SELL</span>`;
+      }
+
+      // Trend indicator
+      let trendIndicator = '';
+      if (stock.trend === 'BULLISH') {
+        trendIndicator = `<span class="text-positive text-xs">↑ BULLISH</span>`;
+      } else if (stock.trend === 'BEARISH') {
+        trendIndicator = `<span class="text-negative text-xs">↓ BEARISH</span>`;
+      } else {
+        trendIndicator = `<span class="text-text-dim text-xs">─ NEUTRAL</span>`;
+      }
+
+      // P&L display
+      let pnlDisplay = '';
+      if (stock.position) {
+        const pnlColor = stock.position.pnl >= 0 ? 'text-positive' : 'text-negative';
+        const pnlSign = stock.position.pnl >= 0 ? '+' : '';
+        pnlDisplay = `<div class="flex items-center justify-between mt-2 pt-2 border-t border-border/30">
+          <span class="mono font-semibold ${pnlColor}">${pnlSign}$${stock.position.pnl.toFixed(2)}</span>
+          <span class="text-xs ${pnlColor}">${pnlSign}${stock.position.pnlPct.toFixed(2)}%</span>
+        </div>`;
+      } else {
+        pnlDisplay = `<div class="flex items-center justify-center mt-2 pt-2 border-t border-border/30 text-text-dim text-xs">No position</div>`;
+      }
+
+      return `
+        <div class="glass-card rounded-xl p-4 cursor-pointer" onclick="openModal(${index})">
+          <!-- Header: Symbol + Signal + Position -->
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="text-lg font-bold text-primary">${stock.symbol}</span>
+              ${signalBadge}
+            </div>
+            ${positionBadge}
+          </div>
+
+          <!-- Price + Change -->
+          <div class="mb-2">
+            <span class="text-2xl font-bold mono">$${stock.price.toFixed(2)}</span>
+            <span class="${changeColor} text-sm mono ml-2">${arrow} ${isPositive ? '+' : ''}${stock.change.toFixed(2)}</span>
+            <div class="${changeColor} text-sm mono">(${isPositive ? '+' : ''}${stock.changePct.toFixed(2)}%)</div>
+          </div>
+
+          <!-- Sparkline - full width -->
+          <div class="w-full h-12 mb-2">
+            ${generateSparkline(stock.sparkline, sparkColor)}
+          </div>
+
+          <!-- Trend -->
+          <div class="flex items-center justify-between">
+            ${trendIndicator}
+          </div>
+
+          <!-- P&L -->
+          ${pnlDisplay}
+        </div>
+      `;
+    }
+
+    // Generate full chart path for modal
+    function generateChartPath(data, width = 700, height = 180) {
+      const max = Math.max(...data);
+      const min = Math.min(...data);
+      const range = max - min || 1;
+      const padding = 10;
+
+      const points = data.map((val, i) => {
+        const x = (i / (data.length - 1)) * width;
+        const y = padding + (height - 2 * padding) - ((val - min) / range) * (height - 2 * padding);
+        return { x, y };
+      });
+
+      const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+      const areaPath = `${linePath} L ${width} ${height} L 0 ${height} Z`;
+
+      return { linePath, areaPath };
+    }
+
+    // Open modal
+    function openModal(index) {
+      const stock = stockData[index];
+      const modal = document.getElementById('modal');
+
+      // Update modal content
+      document.getElementById('modal-symbol').textContent = stock.symbol;
+      document.getElementById('modal-strategy').textContent = stock.strategy.name;
+      document.getElementById('modal-price').textContent = `$${stock.price.toFixed(2)}`;
+
+      // High/Low/Volume
+      document.getElementById('modal-high').textContent = `$${stock.high.toFixed(2)}`;
+      document.getElementById('modal-low').textContent = `$${stock.low.toFixed(2)}`;
+      document.getElementById('modal-volume').textContent = `${(stock.volume / 1000000).toFixed(1)}M`;
+
+      const isPositive = stock.change >= 0;
+      const changeEl = document.getElementById('modal-change');
+      changeEl.className = `text-xl font-medium ${isPositive ? 'text-positive' : 'text-negative'}`;
+      changeEl.textContent = `${isPositive ? '▲' : '▼'} ${isPositive ? '+' : ''}${stock.change.toFixed(2)} (${isPositive ? '+' : ''}${stock.changePct.toFixed(2)}%)`;
+
+      // Position badge
+      const positionBadge = document.getElementById('modal-position-badge');
+      if (stock.position) {
+        const dirColor = stock.position.direction === 'LONG' ? 'bg-positive/20 text-positive' : 'bg-negative/20 text-negative';
+        positionBadge.className = `px-2 py-1 text-xs font-medium rounded ${dirColor}`;
+        positionBadge.textContent = `${stock.position.direction === 'LONG' ? '▲' : '▼'} ${stock.position.direction}`;
+        positionBadge.style.display = '';
+      } else {
+        positionBadge.style.display = 'none';
+      }
+
+      // Trend
+      const trendEl = document.getElementById('modal-trend');
+      const trendColor = stock.trend === 'BULLISH' ? 'text-positive' : stock.trend === 'BEARISH' ? 'text-negative' : 'text-text-dim';
+      const trendArrow = stock.trend === 'BULLISH' ? '↑' : stock.trend === 'BEARISH' ? '↓' : '─';
+      trendEl.innerHTML = `<span class="text-2xl">${trendArrow}</span><span class="text-xl font-bold ${trendColor}">${stock.trend}</span>`;
+
+      // Signal
+      const signalEl = document.getElementById('modal-signal');
+      const signalColor = stock.signal === 'BUY' ? 'text-positive bg-positive' : stock.signal === 'SELL' ? 'text-negative bg-negative' : 'text-text-dim bg-text-dim';
+      signalEl.innerHTML = `<span class="w-3 h-3 ${signalColor.split(' ')[1]} rounded-full"></span><span class="text-xl font-bold ${signalColor.split(' ')[0]}">${stock.signal}</span>`;
+
+      // Render candlestick chart
+      const chartContainer = document.getElementById('modal-chart');
+      chartContainer.innerHTML = generateCandlestickChart(stock.candles, stock.position);
+
+      // Strategy details
+      const strategyDetails = document.getElementById('modal-strategy-details');
+      const strat = stock.strategy;
+      strategyDetails.innerHTML = `
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <div class="text-xs text-text-dim mb-1">Entry Strategy</div>
+            <div class="text-sm font-semibold text-text">${strat.entry}</div>
+          </div>
+          <div>
+            <div class="text-xs text-text-dim mb-1">Exit Strategy</div>
+            <div class="text-sm font-semibold text-text">${strat.exit}</div>
+          </div>
+          <div>
+            <div class="text-xs text-text-dim mb-1">Risk per Trade</div>
+            <div class="text-sm font-semibold text-accent">${strat.risk_pct}%</div>
+          </div>
+          <div>
+            <div class="text-xs text-text-dim mb-1">Risk:Reward</div>
+            <div class="text-sm font-semibold text-accent">1:${strat.rr_ratio}</div>
+          </div>
+        </div>
+
+        <!-- Indicators -->
+        <div class="mb-3">
+          <div class="text-xs text-text-dim mb-2">Indicators (${strat.filter_mode})</div>
+          <div class="flex flex-wrap gap-1">
+            ${strat.indicators.map(ind => `
+              <span class="px-2 py-0.5 bg-surface-dark rounded-full text-xs font-medium text-text-secondary">${ind.toUpperCase()}</span>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- Badges -->
+        <div class="flex flex-wrap gap-2">
+          <span class="px-2 py-0.5 rounded text-xs font-medium ${strat.eod_exit ? 'bg-primary/20 text-primary' : 'bg-positive/20 text-positive'}">
+            ${strat.eod_exit ? 'EOD Exit' : 'Swing'}
+          </span>
+          ${strat.partial_exits ? `
+            <span class="px-2 py-0.5 bg-accent/20 text-accent rounded text-xs font-medium">
+              Partial: ${strat.partial_exits}
+            </span>
+          ` : ''}
+        </div>
+      `;
+
+      // Position details
+      const positionDetails = document.getElementById('modal-position-details');
+      if (stock.position) {
+        const pnlColor = stock.position.pnl >= 0 ? 'text-positive' : 'text-negative';
+        const pnlSign = stock.position.pnl >= 0 ? '+' : '';
+        const progress = ((stock.price - stock.position.entry) / (stock.position.tp - stock.position.entry)) * 100;
+        const progressClamped = Math.max(0, Math.min(100, progress));
+
+        positionDetails.innerHTML = `
+          <div class="bg-surface rounded-xl p-4 h-full">
+            <div class="text-xs text-primary uppercase tracking-wider mb-3 font-medium">Active Position</div>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <div class="text-xs text-text-dim mb-1">Entry</div>
+                <div class="text-lg font-bold mono">$${stock.position.entry.toFixed(2)}</div>
+              </div>
+              <div>
+                <div class="text-xs text-text-dim mb-1">Size</div>
+                <div class="text-lg font-bold mono">${stock.position.size} sh</div>
+              </div>
+              <div>
+                <div class="text-xs text-text-dim mb-1">Stop Loss</div>
+                <div class="text-lg font-bold mono text-negative">$${stock.position.sl.toFixed(2)}</div>
+              </div>
+              <div>
+                <div class="text-xs text-text-dim mb-1">Take Profit</div>
+                <div class="text-lg font-bold mono text-positive">$${stock.position.tp.toFixed(2)}</div>
+              </div>
+            </div>
+
+            <!-- Risk/Reward Gauge -->
+            <div class="mb-3">
+              <div class="relative h-2 bg-gradient-to-r from-negative via-primary to-positive rounded-full">
+                <div class="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg border-2 border-primary" style="left: calc(${progressClamped}% - 6px)"></div>
+              </div>
+              <div class="text-center text-xs text-text-dim mt-1">${progressClamped.toFixed(0)}% to target</div>
+            </div>
+
+            <div class="flex items-center justify-between pt-3 border-t border-border">
+              <div>
+                <span class="text-xs text-text-dim">P&L:</span>
+                <span class="text-lg font-bold mono ${pnlColor} ml-1">${pnlSign}$${stock.position.pnl.toFixed(2)}</span>
+                <span class="text-xs ${pnlColor}">(${pnlSign}${stock.position.pnlPct.toFixed(2)}%)</span>
+              </div>
+              <div class="text-text-dim text-xs">
+                <span class="mono text-text">${stock.position.minutes}m</span>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        positionDetails.innerHTML = `
+          <div class="bg-surface rounded-xl p-4 h-full flex flex-col justify-center items-center">
+            <div class="text-text-dim mb-2">No active position</div>
+            <div class="text-xs text-text-dim">Waiting for ${stock.signal === 'BUY' ? 'buy' : stock.signal === 'SELL' ? 'sell' : ''} signal confirmation...</div>
+          </div>
+        `;
+      }
+
+      // Show modal
+      modal.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        modal.classList.add('active');
+      });
+    }
+
+    // Close modal
+    function closeModal() {
+      const modal = document.getElementById('modal');
+      modal.classList.remove('active');
+      setTimeout(() => {
+        modal.classList.add('hidden');
+      }, 300);
+    }
+
+    // Close on escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    // Close on backdrop click
+    document.getElementById('modal').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeModal();
+    });
+
+    // Initialize cards
+    function initCards() {
+      const grid = document.getElementById('cards-grid');
+      grid.innerHTML = stockData.map((stock, index) => generateCard(stock, index)).join('');
+    }
+
+    // Update market time
+    function updateTime() {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
+      document.getElementById('market-time').textContent = timeStr;
+    }
+
+    // Simulate price updates
+    function simulatePriceUpdates() {
+      stockData.forEach((stock, index) => {
+        // Random small price change
+        const change = (Math.random() - 0.5) * 0.1;
+        stock.price = parseFloat((stock.price + change).toFixed(2));
+        stock.change = parseFloat((stock.change + change).toFixed(2));
+
+        // Update sparkline
+        stock.sparkline.shift();
+        stock.sparkline.push(stock.sparkline[stock.sparkline.length - 1] + (Math.random() - 0.5) * 5);
+      });
+
+      initCards();
+    }
+
+    // Initialize
+    initCards();
+    updateTime();
+    setInterval(updateTime, 1000);
+    setInterval(simulatePriceUpdates, 3000);
+  </script>
+</body>
+</html>

@@ -57,7 +57,11 @@ def compute_baseline_atr(df: pl.DataFrame, period: int = BASELINE_PERIOD) -> flo
 class PositionSizer:
     """Calculates position size based on risk percentage and tracks capital.
 
-    Supports optional ATR-based volatility adjustment:
+    Supports two sizing modes:
+    1. Risk-based (default): position size = risk_amount / stop_distance
+    2. Budget-based: position size = budget / entry_price (ignores stop)
+
+    Also supports optional ATR-based volatility adjustment:
     - When use_atr_sizing=True, position size scales inversely with volatility
     - High volatility (ATR > baseline) = smaller positions
     - Low volatility (ATR < baseline) = larger positions (capped)
@@ -68,11 +72,13 @@ class PositionSizer:
         capital: float,
         risk_pct: float = 0.01,
         use_atr_sizing: bool = False,
+        budget: float | None = None,
     ):
         self.initial: float = capital
         self.capital: float = capital
         self.risk_pct: float = risk_pct
         self.use_atr_sizing: bool = use_atr_sizing
+        self.budget: float | None = budget  # Fixed dollar budget (overrides risk-based)
 
     def calc_size(
         self,
@@ -91,6 +97,11 @@ class PositionSizer:
             Whole shares (rounded down) since most brokers don't support
             fractional shares for all order types.
         """
+        # Budget-based sizing: use full budget regardless of stop distance
+        if self.budget is not None:
+            return float(int(self.budget / entry)) if entry > 0 else 0.0
+
+        # Risk-based sizing: position size = risk_amount / stop_distance
         risk_amt: float = self.capital * self.risk_pct
         risk_per_unit: float = abs(entry - stop)
         base_size = risk_amt / risk_per_unit if risk_per_unit > 0 else 0.0

@@ -83,6 +83,12 @@ Examples:
 
     # Position sizing options
     parser.add_argument(
+        "--budget",
+        type=str,
+        metavar="AMOUNT",
+        help="Fixed budget per trade: dollar amount (e.g., 5000) or percentage (e.g., 50%%). Overrides risk-based sizing.",
+    )
+    parser.add_argument(
         "--atr-sizing",
         action="store_true",
         help="Enable ATR-based volatility-adjusted position sizing (reduces size in high volatility)",
@@ -185,6 +191,23 @@ Examples:
     # Resolve partial exit levels
     partial_levels = DEFAULT_PARTIAL_EXITS if args.partial_exits else None
 
+    # Require --capital or --budget for backtesting
+    if args.capital is None and args.budget is None:
+        parser.error("backtesting requires --capital or --budget (e.g., --capital 10000 or --budget 1000)")
+
+    # Parse budget (dollar amount or percentage), split between symbols
+    budget: float | None = None
+    if args.budget:
+        if args.budget.endswith("%"):
+            if args.capital is None:
+                parser.error("percentage budget (e.g., --budget 50%) requires --capital")
+            pct = float(args.budget.rstrip("%")) / 100
+            total_budget = args.capital * pct
+        else:
+            total_budget = float(args.budget)
+        # Split budget equally between symbols
+        budget = total_budget / len(args.symbols)
+
     try:
         if len(args.symbols) == 1:
             run_single_backtest(
@@ -209,6 +232,7 @@ Examples:
                 atr_trail_multiplier=args.atr_trail_mult,
                 atr_trail_activation_r=args.atr_trail_start,
                 partial_exit_levels=partial_levels,
+                budget=budget,
             )
         else:
             run_multi_backtest(
@@ -233,6 +257,7 @@ Examples:
                 atr_trail_multiplier=args.atr_trail_mult,
                 atr_trail_activation_r=args.atr_trail_start,
                 partial_exit_levels=partial_levels,
+                budget=budget,
             )
     except ValueError as e:
         import sys

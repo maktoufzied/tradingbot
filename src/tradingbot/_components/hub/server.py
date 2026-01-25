@@ -233,6 +233,19 @@ class HubServer:
             await websocket.send(json.dumps(snapshot))
             return
 
+        # Handle commands (e.g., close_position)
+        if "command" in data:
+            command = data["command"]
+            params = data.get("params", {})
+            success = await self.hub.handle_command(command, params)
+            response = {
+                "type": "command_response",
+                "command": command,
+                "success": success,
+            }
+            await websocket.send(json.dumps(response))
+            return
+
 
 async def run_server(
     hub: EventHub,

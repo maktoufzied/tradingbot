@@ -20,8 +20,21 @@ interface UseWebSocketOptions {
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000];
 const PING_INTERVAL = 30000;
 
+// Global WebSocket reference for sendCommand
+let globalWsRef: WebSocket | null = null;
+
 // Helper to get store actions without subscribing
 const getActions = () => useTradingStore.getState();
+
+/**
+ * Send a command to the backend via WebSocket.
+ * Can be called from anywhere in the app.
+ */
+export function sendCommand(command: string, params: Record<string, unknown> = {}): void {
+  if (globalWsRef?.readyState === WebSocket.OPEN) {
+    globalWsRef.send(JSON.stringify({ command, params }));
+  }
+}
 
 export function useWebSocket({ url, autoConnect = true }: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -108,6 +121,7 @@ export function useWebSocket({ url, autoConnect = true }: UseWebSocketOptions) {
 
       ws.onopen = () => {
         console.log('WebSocket connected');
+        globalWsRef = ws;
         getActions().setConnected(true);
         reconnectAttemptsRef.current = 0;
         startPingInterval();
@@ -171,6 +185,12 @@ export function useWebSocket({ url, autoConnect = true }: UseWebSocketOptions) {
     }
   }, []);
 
+  const sendCommand = useCallback((command: string, params: Record<string, unknown> = {}) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ command, params }));
+    }
+  }, []);
+
   // Auto-connect on mount (intentionally omitting connect/disconnect from deps to avoid infinite loop)
   useEffect(() => {
     if (autoConnect) {
@@ -187,6 +207,7 @@ export function useWebSocket({ url, autoConnect = true }: UseWebSocketOptions) {
     connect,
     disconnect,
     refresh,
+    sendCommand,
     isConnected: wsRef.current?.readyState === WebSocket.OPEN,
   };
 }

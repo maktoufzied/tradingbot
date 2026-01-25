@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SymbolCard Redesign Demo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg: '#0a0a0f',
+            surface: '#12121a',
+            'surface-dark': '#0d0d14',
+            'surface-light': '#1a1a24',
+            border: '#2a2a3a',
+            'border-dim': '#1a1a2a',
+            text: '#e0e0e8',
+            'text-secondary': '#a0a0b0',
+            'text-dim': '#6a6a7a',
+            primary: '#ffaa00',
+            accent: '#00d4ff',
+            positive: '#00ff88',
+            negative: '#ff3366',
+            warning: '#ffaa00',
+            neutral: '#888899',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #0a0a0f; }
+    .mono { font-family: 'SF Mono', 'Fira Code', monospace; }
+
+    /* Sparkline animation */
+    .sparkline-path {
+      stroke-dasharray: 1000;
+      stroke-dashoffset: 1000;
+      animation: draw 1.5s ease-out forwards;
+    }
+    @keyframes draw {
+      to { stroke-dashoffset: 0; }
+    }
+
+    /* Modal animation */
+    .modal-backdrop {
+      animation: fadeIn 0.2s ease-out;
+    }
+    .modal-content {
+      animation: slideUp 0.3s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(20px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* Tab indicator */
+    .tab-active {
+      position: relative;
+    }
+    .tab-active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: #ffaa00;
+    }
+
+    /* Custom scrollbar (Bloomberg style) */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #0a0a0f;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #ffaa00;
+      border-radius: 2px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #ff8800;
+    }
+
+  </style>
+</head>
+<body class="min-h-screen p-8">
+  <div class="max-w-6xl mx-auto">
+    <h1 class="text-2xl font-bold text-text mb-2">SymbolCard Redesign Demo</h1>
+    <p class="text-text-dim mb-8">Click any card to open the detail modal with TradingView chart. Press Esc or click backdrop to close.</p>
+
+    <!-- Cards Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="cards-grid">
+      <!-- Cards will be inserted here by JS -->
+    </div>
+
+    <!-- Comparison Section -->
+    <div class="mt-12 pt-8 border-t border-border">
+      <h2 class="text-xl font-bold text-text mb-4">Before / After Comparison</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div>
+          <h3 class="text-text-secondary mb-3">Before: Candlestick (hard to read)</h3>
+          <div class="bg-surface rounded-lg border border-border p-4">
+            <div class="h-[110px] bg-surface-dark rounded flex items-center justify-center">
+              <svg width="280" height="90" viewBox="0 0 280 90">
+                <!-- Simulated cramped candlesticks -->
+                <g transform="translate(10, 10)">
+                  <line x1="5" y1="20" x2="5" y2="60" stroke="#00ff88" stroke-width="1"/>
+                  <rect x="2" y="30" width="6" height="20" fill="#00ff88"/>
+                  <line x1="20" y1="25" x2="20" y2="65" stroke="#ff3366" stroke-width="1"/>
+                  <rect x="17" y="35" width="6" height="15" fill="#ff3366"/>
+                  <line x1="35" y1="15" x2="35" y2="55" stroke="#00ff88" stroke-width="1"/>
+                  <rect x="32" y="25" width="6" height="18" fill="#00ff88"/>
+                  <line x1="50" y1="20" x2="50" y2="70" stroke="#ff3366" stroke-width="1"/>
+                  <rect x="47" y="30" width="6" height="25" fill="#ff3366"/>
+                  <line x1="65" y1="30" x2="65" y2="60" stroke="#00ff88" stroke-width="1"/>
+                  <rect x="62" y="35" width="6" height="15" fill="#00ff88"/>
+                  <line x1="80" y1="25" x2="80" y2="55" stroke="#00ff88" stroke-width="1"/>
+                  <rect x="77" y="30" width="6" height="12" fill="#00ff88"/>
+                  <line x1="95" y1="20" x2="95" y2="50" stroke="#ff3366" stroke-width="1"/>
+                  <rect x="92" y="28" width="6" height="14" fill="#ff3366"/>
+                  <line x1="110" y1="22" x2="110" y2="58" stroke="#00ff88" stroke-width="1"/>
+                  <rect x="107" y="30" width="6" height="16" fill="#00ff88"/>
+                  <line x1="125" y1="18" x2="125" y2="52" stroke="#00ff88" stroke-width="1"/>
+                  <rect x="122" y="25" width="6" height="14" fill="#00ff88"/>
+                  <line x1="140" y1="15" x2="140" y2="48" stroke="#ff3366" stroke-width="1"/>
+                  <rect x="137" y="22" width="6" height="18" fill="#ff3366"/>
+                  <line x1="155" y1="20" x2="155" y2="45" stroke="#00ff88" stroke-width="1"/>
+                  <rect x="152" y="25" width="6" height="12" fill="#00ff88"/>
+                  <line x1="170" y1="18" x2="170" y2="42" stroke="#00ff88" stroke-width="1"/>
+                  <rect x="167" y="22" width="6" height="10" fill="#00ff88"/>
+                  <line x1="185" y1="12" x2="185" y2="40" stroke="#00ff88" stroke-width="1"/>
+                  <rect x="182" y="18" width="6" height="14" fill="#00ff88"/>
+                  <line x1="200" y1="10" x2="200" y2="35" stroke="#ff3366" stroke-width="1"/>
+                  <rect x="197" y="15" width="6" height="12" fill="#ff3366"/>
+                  <line x1="215" y1="8" x2="215" y2="30" stroke="#00ff88" stroke-width="1"/>
+                  <rect x="212" y="12" width="6" height="10" fill="#00ff88"/>
+                  <line x1="230" y1="5" x2="230" y2="28" stroke="#00ff88" stroke-width="1"/>
+                  <rect x="227" y="10" width="6" height="12" fill="#00ff88"/>
+                  <line x1="245" y1="8" x2="245" y2="25" stroke="#00ff88" stroke-width="1"/>
+                  <rect x="242" y="12" width="6" height="8" fill="#00ff88"/>
+                </g>
+              </svg>
+            </div>
+            <p class="text-text-dim text-xs mt-2 text-center">Candlesticks blur together at small size</p>
+          </div>
+        </div>
+        <div>
+          <h3 class="text-text-secondary mb-3">After: Sparkline (clear trend)</h3>
+          <div class="bg-surface rounded-lg border border-border p-4">
+            <div class="h-[110px] bg-surface-dark rounded flex items-center justify-center">
+              <svg width="280" height="70" viewBox="0 0 280 70">
+                <defs>
+                  <linearGradient id="demo-gradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#00ff88" stop-opacity="0.3"/>
+                    <stop offset="100%" stop-color="#00ff88" stop-opacity="0"/>
+                  </linearGradient>
+                </defs>
+                <path d="M0,50 Q20,48 40,45 T80,40 T120,35 T160,25 T200,20 T240,15 T280,12"
+                      fill="none" stroke="#00ff88" stroke-width="2" stroke-linecap="round"/>
+                <path d="M0,50 Q20,48 40,45 T80,40 T120,35 T160,25 T200,20 T240,15 T280,12 L280,70 L0,70 Z"
+                      fill="url(#demo-gradient)"/>
+              </svg>
+            </div>
+            <p class="text-text-dim text-xs mt-2 text-center">Clean line shows trend at a glance</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Container -->
+  <div id="modal-container"></div>
+
+  <script>
+    // Sample data for demo
+    const symbols = [
+      {
+        symbol: 'SPY',
+        price: 452.30,
+        change: 2.15,
+        changePct: 0.48,
+        high: 453.12,
+        low: 448.90,
+        volume: 45300000,
+        trend: 'BULLISH',
+        signal: 'BUY',
+        position: {
+          isOpen: true,
+          direction: 'LONG',
+          entryPrice: 450.15,
+          stopLoss: 448.90,
+          takeProfit: 454.65,
+          size: 150,
+          holdingMinutes: 45,
+          unrealizedPnl: 321.75,
+          unrealizedPnlPct: 0.71
+        },
+        strategy: {
+          name: 'momentum',
+          entry: 'structure_break',
+          exit: 'rr_targets',
+          risk: 1.0,
+          rr: 2.0,
+          indicators: ['ema_50', 'rsi'],
+          filterMode: 'OR',
+          eodExit: false,
+          partialExits: '50%@1R'
+        },
+        sparklineData: [448, 447.5, 449, 448.2, 449.5, 450, 449, 450.5, 451, 450.2, 451.5, 452, 451, 452.5, 453, 452.2, 452.8, 453.5, 452.5, 452.3]
+      },
+      {
+        symbol: 'QQQ',
+        price: 378.45,
+        change: -1.23,
+        changePct: -0.32,
+        high: 380.20,
+        low: 376.80,
+        volume: 32100000,
+        trend: 'BEARISH',
+        signal: 'HOLD',
+        position: null,
+        strategy: {
+          name: 'reversal',
+          entry: 'pullback',
+          exit: 'trailing_stop',
+          risk: 0.5,
+          rr: 3.0,
+          indicators: ['vwap', 'macd'],
+          filterMode: 'AND',
+          eodExit: true,
+          partialExits: null
+        },
+        sparklineData: [381, 380.5, 380.8, 380, 379.2, 379.5, 379, 378.2, 378.5, 378, 377.5, 378, 377.2, 376.8, 377.5, 377, 376.5, 377, 376.2, 378.45]
+      },
+      {
+        symbol: 'AAPL',
+        price: 185.92,
+        change: 0.87,
+        changePct: 0.47,
+        high: 186.50,
+        low: 184.20,
+        volume: 28500000,
+        trend: 'BULLISH',
+        signal: 'BUY',
+        position: {
+          isOpen: true,
+          direction: 'LONG',
+          entryPrice: 185.00,
+          stopLoss: 184.00,
+          takeProfit: 188.00,  // TP at 3R for better partial exit visibility
+          size: 100,
+          holdingMinutes: 23,
+          unrealizedPnl: 92.00,
+          unrealizedPnlPct: 0.50
+        },
+        strategy: {
+          name: 'breakout',
+          entry: 'range_break',
+          exit: 'rr_targets',
+          risk: 1.5,
+          rr: 3.0,  // 3:1 RR
+          indicators: ['atr', 'volume'],
+          filterMode: 'AND',
+          eodExit: false,
+          partialExits: '33%@1R,33%@2R'
+        },
+        sparklineData: [184.5, 184.2, 184.6, 185, 184.8, 185.2, 185, 185.4, 185.2, 185.6, 185.8, 185.4, 186, 186.2, 185.8, 186.4, 186.5, 186, 186.3, 185.92]
+      }
+    ];
+
+    // Generate OHLC data for TradingView chart
+    function generateOHLCData(basePrice, numCandles = 60) {
+      const data = [];
+      const now = new Date();
+      let price = basePrice * 0.995; // Start slightly lower
+
+      for (let i = numCandles; i >= 0; i--) {
+        const time = new Date(now.getTime() - i * 60000); // 1 minute candles
+        const volatility = basePrice * 0.002;
+        const trend = (numCandles - i) / numCandles * 0.01; // Slight upward trend
+
+        const open = price;
+        const change = (Math.random() - 0.45) * volatility + trend * basePrice;
+        const close = open + change;
+        const high = Math.max(open, close) + Math.random() * volatility * 0.5;
+        const low = Math.min(open, close) - Math.random() * volatility * 0.5;
+
+        data.push({
+          time: Math.floor(time.getTime() / 1000),
+          open: parseFloat(open.toFixed(2)),
+          high: parseFloat(high.toFixed(2)),
+          low: parseFloat(low.toFixed(2)),
+          close: parseFloat(close.toFixed(2))
+        });
+
+        price = close;
+      }
+      return data;
+    }
+
+    // Generate sparkline SVG path (full width, no padding)
+    function generateSparklinePath(data, width, height) {
+      const min = Math.min(...data);
+      const max = Math.max(...data);
+      const range = max - min || 1;
+      const padding = 2; // Minimal padding for stroke width
+
+      const points = data.map((val, i) => ({
+        x: (i / (data.length - 1)) * width,
+        y: padding + (1 - (val - min) / range) * (height - padding * 2)
+      }));
+
+      // Create smooth curve using quadratic bezier
+      let path = `M ${points[0].x},${points[0].y}`;
+      for (let i = 1; i < points.length; i++) {
+        const prev = points[i - 1];
+        const curr = points[i];
+        const cpx = (prev.x + curr.x) / 2;
+        path += ` Q ${cpx},${prev.y} ${curr.x},${curr.y}`;
+      }
+
+      // Area path (for gradient fill)
+      const areaPath = path + ` L ${width},${height} L 0,${height} Z`;
+
+      return { linePath: path, areaPath };
+    }
+
+    // Create sparkline SVG (full width)
+    function createSparkline(data, color, height = 60) {
+      const { linePath, areaPath } = generateSparklinePath(data, 100, height);
+      const gradientId = `gradient-${Math.random().toString(36).substr(2, 9)}`;
+
+      return `
+        <svg viewBox="0 0 100 ${height}" preserveAspectRatio="none" class="w-full h-[${height}px]" style="height: ${height}px;">
+          <defs>
+            <linearGradient id="${gradientId}" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="${color}" stop-opacity="0.4"/>
+              <stop offset="100%" stop-color="${color}" stop-opacity="0.05"/>
+            </linearGradient>
+          </defs>
+          <path d="${areaPath}" fill="url(#${gradientId})"/>
+          <path d="${linePath}" fill="none" stroke="${color}" stroke-width="0.8" stroke-linecap="round" class="sparkline-path"/>
+        </svg>
+      `;
+    }
+
+    // Render a single card
+    function renderCard(data) {
+      const color = data.change >= 0 ? '#00ff88' : '#ff3366';
+      const sparkline = createSparkline(data.sparklineData, color, 70);
+      const hasPosition = data.position?.isOpen;
+
+      return `
+        <div class="bg-surface rounded-lg border border-border overflow-hidden cursor-pointer hover:border-primary/50 transition-colors symbol-card"
+             data-symbol="${data.symbol}"
+             onclick="openModal('${data.symbol}')">
+          <!-- Header -->
+          <div class="flex items-center justify-between px-4 py-2 border-b border-border">
+            <div class="flex items-center gap-3">
+              <span class="text-lg font-bold text-primary">${data.symbol}</span>
+              <span class="px-2 py-0.5 text-xs rounded ${data.trend === 'BULLISH' ? 'bg-positive/20 text-positive' : 'bg-negative/20 text-negative'}">
+                ${data.trend}
+              </span>
+              <span class="px-2 py-0.5 text-xs rounded ${data.signal === 'BUY' ? 'bg-positive/20 text-positive' : data.signal === 'SELL' ? 'bg-negative/20 text-negative' : 'bg-neutral/20 text-neutral'}">
+                ${data.signal}
+              </span>
+            </div>
+            <div class="flex items-center gap-2">
+              ${hasPosition ? `
+                <span class="px-2 py-0.5 text-xs font-bold rounded ${data.position.direction === 'LONG' ? 'bg-positive/20 text-positive' : 'bg-negative/20 text-negative'}">
+                  ${data.position.direction === 'LONG' ? '▲' : '▼'} ${data.position.direction}
+                </span>
+              ` : ''}
+              <svg class="w-4 h-4 text-text-dim" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Price + Entry -->
+          <div class="px-4 py-3">
+            <div class="flex items-baseline justify-between">
+              <div class="flex items-baseline gap-3">
+                <span class="text-2xl font-bold text-text mono">$${data.price.toFixed(2)}</span>
+                <span class="text-sm ${data.change >= 0 ? 'text-positive' : 'text-negative'}">
+                  ${data.change >= 0 ? '+' : ''}$${data.change.toFixed(2)} (${data.change >= 0 ? '+' : ''}${data.changePct.toFixed(2)}%)
+                </span>
+              </div>
+              ${hasPosition ? `
+                <div class="text-right">
+                  <span class="text-xs text-text-dim">Entry</span>
+                  <span class="text-sm mono text-primary ml-1">$${data.position.entryPrice.toFixed(2)}</span>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+
+          <!-- Sparkline (full width, no padding) -->
+          <div class="relative">
+            ${sparkline}
+            ${hasPosition ? `
+              <!-- Entry price line overlay -->
+              <div class="absolute left-0 right-0 border-t border-dashed border-primary/60"
+                   style="top: ${getEntryLinePosition(data)}%;"></div>
+            ` : ''}
+          </div>
+
+          <!-- Stats -->
+          <div class="flex justify-between px-4 py-2 text-xs text-text-secondary border-t border-border">
+            <span>H: $${data.high.toFixed(2)}</span>
+            <span>L: $${data.low.toFixed(2)}</span>
+            <span>Vol: ${(data.volume / 1000000).toFixed(1)}M</span>
+          </div>
+
+          <!-- Position (if open) -->
+          ${hasPosition ? `
+            <div class="px-4 py-2 bg-surface-dark border-t border-border">
+              <div class="flex justify-between items-center text-xs">
+                <div class="flex gap-4">
+                  <span><span class="text-text-secondary">SL</span> <span class="mono text-negative">$${data.position.stopLoss.toFixed(2)}</span></span>
+                  <span><span class="text-text-secondary">TP</span> <span class="mono text-positive">$${data.position.takeProfit.toFixed(2)}</span></span>
+                  <span class="whitespace-nowrap"><span class="text-text-secondary">Size</span> <span class="mono text-text">${data.position.size}×$${(data.position.size * data.position.entryPrice / 1000).toFixed(1)}K</span></span>
+                </div>
+                <span class="mono font-semibold ${data.position.unrealizedPnl >= 0 ? 'text-positive' : 'text-negative'}">
+                  ${data.position.unrealizedPnl >= 0 ? '+' : ''}$${data.position.unrealizedPnl.toFixed(2)}
+                </span>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    // Calculate entry line position as percentage from top
+    function getEntryLinePosition(data) {
+      if (!data.position?.isOpen) return 50;
+      const prices = data.sparklineData;
+      const min = Math.min(...prices);
+      const max = Math.max(...prices);
+      const range = max - min || 1;
+      return ((max - data.position.entryPrice) / range) * 100;
+    }
+
+    // Parse partial exits and calculate price levels
+    function getPartialExitLevels(data) {
+      if (!data.position?.isOpen || !data.strategy.partialExits) return [];
+
+      const entry = data.position.entryPrice;
+      const sl = data.position.stopLoss;
+      const tp = data.position.takeProfit;
+      const rValue = Math.abs(entry - sl); // 1R value
+      const range = tp - sl;
+
+      // Parse "50%@1R" or "33%@1R,33%@2R" format
+      const exits = data.strategy.partialExits.split(',').map(exit => {
+        const match = exit.trim().match(/(\d+)%@(\d+)R/);
+        if (!match) return null;
+        const percent = parseInt(match[1]);
+        const rMultiple = parseInt(match[2]);
+        const price = entry + (rValue * rMultiple);
+        const position = ((price - sl) / range) * 100;
+        return { percent, rMultiple, price, position };
+      }).filter(Boolean);
+
+      return exits;
+    }
+
+    // Render modal with TradingView chart
+    function renderModal(data) {
+      const hasPosition = data.position?.isOpen;
+      const partialExits = getPartialExitLevels(data);
+
+      return `
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop" style="background: rgba(0,0,0,0.85); backdrop-filter: blur(4px);" onclick="closeModal(event)">
+          <div class="bg-surface rounded-xl border border-border w-full max-w-5xl h-[85vh] overflow-hidden flex flex-col modal-content" onclick="event.stopPropagation()">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+              <div class="flex items-center gap-4">
+                <h2 class="text-2xl font-bold text-primary">${data.symbol}</h2>
+                <span class="px-2 py-1 text-xs rounded bg-accent/20 text-accent">${data.strategy.name}</span>
+                <span class="px-2 py-1 text-xs rounded ${data.trend === 'BULLISH' ? 'bg-positive/20 text-positive' : 'bg-negative/20 text-negative'}">
+                  ${data.trend}
+                </span>
+                <span class="px-2 py-1 text-xs rounded ${data.signal === 'BUY' ? 'bg-positive/20 text-positive' : data.signal === 'SELL' ? 'bg-negative/20 text-negative' : 'bg-neutral/20 text-neutral'}">
+                  ${data.signal}
+                </span>
+                ${hasPosition ? `
+                  <span class="px-2 py-1 text-xs font-bold rounded ${data.position.direction === 'LONG' ? 'bg-positive/20 text-positive' : 'bg-negative/20 text-negative'}">
+                    ${data.position.direction === 'LONG' ? '▲' : '▼'} ${data.position.direction}
+                  </span>
+                ` : ''}
+              </div>
+              <button onclick="closeModal()" class="p-2 hover:bg-surface-light rounded-lg transition text-text-dim hover:text-text">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex gap-1 px-6 border-b border-border shrink-0">
+              <button class="px-4 py-3 text-sm font-medium text-primary tab-active" onclick="switchTab(this, 'chart')">Chart</button>
+              <button class="px-4 py-3 text-sm font-medium text-text-dim hover:text-text transition" onclick="switchTab(this, 'history')">History</button>
+            </div>
+
+            <!-- Tab Content -->
+            <div class="flex-1 min-h-0 overflow-hidden p-6">
+              <!-- Chart Tab -->
+              <div id="tab-chart" class="tab-content h-full flex flex-col">
+                <!-- Price Header -->
+                <div class="shrink-0 mb-4">
+                  <div class="flex justify-between items-start">
+                    <div class="flex items-baseline gap-3">
+                      <span class="text-4xl font-bold text-text mono">$${data.price.toFixed(2)}</span>
+                      <span class="text-lg ${data.change >= 0 ? 'text-positive' : 'text-negative'}">
+                        ${data.change >= 0 ? '+' : ''}$${data.change.toFixed(2)} (${data.change >= 0 ? '+' : ''}${data.changePct.toFixed(2)}%)
+                      </span>
+                    </div>
+                    <div class="flex items-start gap-4">
+                      <div class="text-right text-sm text-text-secondary">
+                        <div>H: <span class="mono">$${data.high.toFixed(2)}</span></div>
+                        <div>L: <span class="mono">$${data.low.toFixed(2)}</span></div>
+                        <div>Vol: <span class="mono">${(data.volume / 1000000).toFixed(1)}M</span></div>
+                      </div>
+                      ${hasPosition ? `
+                        <button class="px-4 py-2 bg-negative/20 text-negative hover:bg-negative/30 rounded-lg transition font-medium text-sm">
+                          Close Position
+                        </button>
+                      ` : ''}
+                    </div>
+                  </div>
+
+                  ${hasPosition ? `
+                    <!-- Visual Risk Ladder -->
+                    <div class="flex items-center gap-4 mt-4 pt-6 pb-3 px-3 bg-surface-dark rounded-lg border border-border">
+                      <!-- SL/TP Range Bar -->
+                      <div class="flex items-center gap-3 flex-1">
+                        <span class="text-xs mono text-negative font-medium whitespace-nowrap">SL $${data.position.stopLoss.toFixed(2)}</span>
+                        <div class="flex-1 relative">
+                          <!-- Bar container with clear boundaries -->
+                          <div class="relative h-6 bg-surface rounded border-2 border-border overflow-hidden">
+                            <!-- Background gradient showing full range -->
+                            <div class="absolute inset-0 bg-gradient-to-r from-negative/30 via-neutral/20 to-positive/30"></div>
+                            <!-- Progress fill from SL to Current Price -->
+                            <div class="absolute inset-y-0 left-0 bg-gradient-to-r from-negative/50 via-primary/30 to-positive/50"
+                                 style="width: ${((data.price - data.position.stopLoss) / (data.position.takeProfit - data.position.stopLoss) * 100).toFixed(1)}%"></div>
+                            <!-- Entry marker (orange line) -->
+                            <div class="absolute top-0 bottom-0 w-0.5 bg-primary z-10"
+                                 style="left: ${((data.position.entryPrice - data.position.stopLoss) / (data.position.takeProfit - data.position.stopLoss) * 100).toFixed(1)}%"></div>
+                            <!-- Partial exit markers (cyan, show all including TP) -->
+                            ${partialExits.map(exit => `
+                              <div class="absolute top-0 bottom-0 w-0.5 bg-accent z-10" style="left: ${Math.min(exit.position, 99).toFixed(1)}%"></div>
+                            `).join('')}
+                            <!-- Current price dot -->
+                            <div class="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-text rounded-full border-2 border-surface-dark shadow-lg z-20"
+                                 style="left: calc(${((data.price - data.position.stopLoss) / (data.position.takeProfit - data.position.stopLoss) * 100).toFixed(1)}% - 8px)"></div>
+                          </div>
+                          <!-- Labels above bar -->
+                          <div class="absolute -top-5 left-0 right-0 text-[10px] mono">
+                            <!-- Entry label -->
+                            <div class="absolute text-primary font-medium"
+                                 style="left: ${((data.position.entryPrice - data.position.stopLoss) / (data.position.takeProfit - data.position.stopLoss) * 100).toFixed(1)}%; transform: translateX(-50%);">
+                              Entry
+                            </div>
+                            <!-- Partial exit labels with R-multiple -->
+                            ${partialExits.map(exit => `
+                              <div class="absolute text-accent font-medium" style="left: ${Math.min(exit.position, 99).toFixed(1)}%; transform: translateX(-50%);">
+                                ${exit.rMultiple}R
+                              </div>
+                            `).join('')}
+                          </div>
+                        </div>
+                        <span class="text-xs mono text-positive font-medium whitespace-nowrap">TP $${data.position.takeProfit.toFixed(2)}</span>
+                      </div>
+
+                      <!-- Divider -->
+                      <div class="w-px h-8 bg-border"></div>
+
+                      <!-- Stats Pills -->
+                      <div class="flex items-center gap-2 shrink-0">
+                        <span class="px-2.5 py-1 bg-primary/20 text-primary rounded text-xs mono font-medium">
+                          @$${data.position.entryPrice.toFixed(2)}
+                        </span>
+                        <span class="px-2.5 py-1 bg-surface border border-border rounded text-xs mono text-text">
+                          ${data.position.size}sh · $${(data.position.size * data.position.entryPrice / 1000).toFixed(1)}K
+                        </span>
+                        <span class="px-2.5 py-1 bg-surface border border-border rounded text-xs mono text-text-secondary">
+                          ${data.position.holdingMinutes}m
+                        </span>
+                        ${data.strategy.partialExits ? `
+                          <span class="px-2.5 py-1 bg-accent/20 text-accent rounded text-xs mono font-medium">
+                            ${data.strategy.partialExits}
+                          </span>
+                        ` : ''}
+                        <span class="px-3 py-1 rounded text-sm mono font-bold ${data.position.unrealizedPnl >= 0 ? 'bg-positive/20 text-positive' : 'bg-negative/20 text-negative'}">
+                          ${data.position.unrealizedPnl >= 0 ? '+' : ''}$${data.position.unrealizedPnl.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  ` : ''}
+                </div>
+
+                <!-- TradingView Chart -->
+                <div class="bg-surface-dark rounded-lg border border-border overflow-hidden flex-1 min-h-0">
+                  <div id="tv-chart-${data.symbol}" class="w-full h-full"></div>
+                </div>
+              </div>
+
+              <!-- History Tab -->
+              <div id="tab-history" class="tab-content hidden h-full flex flex-col gap-4">
+
+                <!-- 1. Symbol P&L Curve -->
+                <div class="relative h-48 bg-gradient-to-br from-bg via-surface to-bg rounded-lg border border-border p-4 overflow-hidden shrink-0">
+                  <!-- Grid Pattern Background -->
+                  <div class="absolute inset-0 opacity-5" style="background-image: linear-gradient(#ffaa00 1px, transparent 1px), linear-gradient(90deg, #ffaa00 1px, transparent 1px); background-size: 24px 24px;"></div>
+
+                  <!-- Header -->
+                  <div class="relative z-10 flex items-start justify-between mb-2">
+                    <div>
+                      <h3 class="text-xs uppercase tracking-wider text-text-dim mono">${data.symbol} Cumulative P&L</h3>
+                      <div class="flex items-baseline gap-2 mt-1">
+                        <span class="text-2xl mono font-bold text-positive">+$1,892.50</span>
+                        <span class="text-sm mono text-text-secondary">90 trades</span>
+                        <span class="text-xs text-text-dim">since Oct 15</span>
+                      </div>
+                    </div>
+
+                    <!-- Time Range Pills -->
+                    <div class="flex gap-1">
+                      <button class="px-2 py-1 text-xs mono bg-primary/20 text-primary rounded border border-primary/30">1D</button>
+                      <button class="px-2 py-1 text-xs mono text-text-dim hover:text-text hover:bg-surface-light rounded transition">1W</button>
+                      <button class="px-2 py-1 text-xs mono text-text-dim hover:text-text hover:bg-surface-light rounded transition">1M</button>
+                      <button class="px-2 py-1 text-xs mono text-text-dim hover:text-text hover:bg-surface-light rounded transition">ALL</button>
+                    </div>
+                  </div>
+
+                  <!-- SVG Equity Curve -->
+                  <div class="relative h-28">
+                    <svg class="w-full h-full" viewBox="0 0 800 120" preserveAspectRatio="none">
+                      <!-- Grid Lines -->
+                      <line x1="0" y1="30" x2="800" y2="30" stroke="#2a2a3a" stroke-width="1" />
+                      <line x1="0" y1="60" x2="800" y2="60" stroke="#2a2a3a" stroke-width="1" />
+                      <line x1="0" y1="90" x2="800" y2="90" stroke="#2a2a3a" stroke-width="1" />
+
+                      <!-- Area Gradient -->
+                      <defs>
+                        <linearGradient id="equityGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                          <stop offset="0%" stop-color="#ffaa00" stop-opacity="0.3" />
+                          <stop offset="100%" stop-color="#ffaa00" stop-opacity="0" />
+                        </linearGradient>
+                      </defs>
+                      <path d="M 0,100 L 80,95 L 160,85 L 240,80 L 320,70 L 400,75 L 480,60 L 560,50 L 640,45 L 720,35 L 800,25 L 800,120 L 0,120 Z" fill="url(#equityGradient)" />
+
+                      <!-- Equity Line -->
+                      <path d="M 0,100 L 80,95 L 160,85 L 240,80 L 320,70 L 400,75 L 480,60 L 560,50 L 640,45 L 720,35 L 800,25" stroke="#ffaa00" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+
+                      <!-- Trade Markers (Wins=Green, Losses=Red) -->
+                      <circle cx="160" cy="85" r="4" fill="#00ff88" />
+                      <circle cx="320" cy="70" r="4" fill="#00ff88" />
+                      <circle cx="400" cy="75" r="4" fill="#ff3366" />
+                      <circle cx="560" cy="50" r="4" fill="#00ff88" />
+                      <circle cx="720" cy="35" r="4" fill="#00ff88" />
+                    </svg>
+                  </div>
+
+                  <!-- Floating Stat Pills -->
+                  <div class="absolute bottom-4 right-4 flex gap-2">
+                    <div class="bg-positive/10 border border-positive/30 rounded px-2 py-1">
+                      <div class="text-[10px] text-text-dim uppercase">Avg Win</div>
+                      <div class="text-sm mono text-positive font-medium">+$42.50</div>
+                    </div>
+                    <div class="bg-negative/10 border border-negative/30 rounded px-2 py-1">
+                      <div class="text-[10px] text-text-dim uppercase">Avg Loss</div>
+                      <div class="text-sm mono text-negative font-medium">-$28.30</div>
+                    </div>
+                    <div class="bg-accent/10 border border-accent/30 rounded px-2 py-1">
+                      <div class="text-[10px] text-text-dim uppercase">Avg R</div>
+                      <div class="text-sm mono text-accent font-medium">1.5R</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 2. Performance Matrix -->
+                <div class="grid grid-cols-4 gap-3 shrink-0">
+                  <!-- Daily -->
+                  <div class="bg-surface border border-border rounded-lg p-3 hover:border-primary/50 transition-all cursor-pointer group">
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="text-xs uppercase tracking-wider text-text-dim mono">Daily</span>
+                      <svg class="w-3 h-3 text-positive opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z"/>
+                      </svg>
+                    </div>
+                    <div class="mono text-xl font-bold text-text mb-1">+$523</div>
+                    <div class="flex items-center justify-between text-xs">
+                      <div class="flex items-center gap-1">
+                        <div class="w-1.5 h-1.5 rounded-full bg-positive"></div>
+                        <span class="text-text-secondary">3W</span>
+                        <span class="text-text-dim">·</span>
+                        <div class="w-1.5 h-1.5 rounded-full bg-negative"></div>
+                        <span class="text-text-secondary">0L</span>
+                      </div>
+                      <span class="mono text-positive font-medium">100%</span>
+                    </div>
+                    <div class="mt-2 h-1 bg-border rounded-full overflow-hidden">
+                      <div class="h-full bg-gradient-to-r from-positive to-primary" style="width: 100%;"></div>
+                    </div>
+                  </div>
+
+                  <!-- Weekly -->
+                  <div class="bg-surface border border-border rounded-lg p-3 hover:border-primary/50 transition-all cursor-pointer group">
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="text-xs uppercase tracking-wider text-text-dim mono">Weekly</span>
+                      <svg class="w-3 h-3 text-positive opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z"/>
+                      </svg>
+                    </div>
+                    <div class="mono text-xl font-bold text-text mb-1">+$1,136</div>
+                    <div class="flex items-center justify-between text-xs">
+                      <div class="flex items-center gap-1">
+                        <div class="w-1.5 h-1.5 rounded-full bg-positive"></div>
+                        <span class="text-text-secondary">5W</span>
+                        <span class="text-text-dim">·</span>
+                        <div class="w-1.5 h-1.5 rounded-full bg-negative"></div>
+                        <span class="text-text-secondary">2L</span>
+                      </div>
+                      <span class="mono text-positive font-medium">71%</span>
+                    </div>
+                    <div class="mt-2 h-1 bg-border rounded-full overflow-hidden">
+                      <div class="h-full bg-gradient-to-r from-positive to-primary" style="width: 71%;"></div>
+                    </div>
+                  </div>
+
+                  <!-- Monthly -->
+                  <div class="bg-surface border border-border rounded-lg p-3 hover:border-primary/50 transition-all cursor-pointer group">
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="text-xs uppercase tracking-wider text-text-dim mono">Monthly</span>
+                      <svg class="w-3 h-3 text-positive opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z"/>
+                      </svg>
+                    </div>
+                    <div class="mono text-xl font-bold text-text mb-1">+$4,892</div>
+                    <div class="flex items-center justify-between text-xs">
+                      <div class="flex items-center gap-1">
+                        <div class="w-1.5 h-1.5 rounded-full bg-positive"></div>
+                        <span class="text-text-secondary">18W</span>
+                        <span class="text-text-dim">·</span>
+                        <div class="w-1.5 h-1.5 rounded-full bg-negative"></div>
+                        <span class="text-text-secondary">5L</span>
+                      </div>
+                      <span class="mono text-positive font-medium">78%</span>
+                    </div>
+                    <div class="mt-2 h-1 bg-border rounded-full overflow-hidden">
+                      <div class="h-full bg-gradient-to-r from-positive to-primary" style="width: 78%;"></div>
+                    </div>
+                  </div>
+
+                  <!-- All-Time (Featured) -->
+                  <div class="bg-gradient-to-br from-primary/10 via-surface to-surface border border-primary/30 rounded-lg p-3 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-12 h-12 bg-primary/20 blur-2xl"></div>
+                    <div class="flex items-center justify-between mb-2 relative">
+                      <span class="text-xs uppercase tracking-wider text-primary mono font-bold">All-Time</span>
+                      <div class="flex items-center gap-1 text-xs mono text-positive">
+                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                        </svg>
+                        <span>A+</span>
+                      </div>
+                    </div>
+                    <div class="mono text-xl font-bold text-text mb-1 relative">+$1,892</div>
+                    <div class="flex items-center justify-between text-xs relative">
+                      <div class="flex items-center gap-1">
+                        <div class="w-1.5 h-1.5 rounded-full bg-positive"></div>
+                        <span class="text-text-secondary">67W</span>
+                        <span class="text-text-dim">·</span>
+                        <div class="w-1.5 h-1.5 rounded-full bg-negative"></div>
+                        <span class="text-text-secondary">23L</span>
+                      </div>
+                      <span class="mono text-positive font-medium">74%</span>
+                    </div>
+                    <div class="mt-2 h-1 bg-border rounded-full overflow-hidden relative">
+                      <div class="h-full bg-gradient-to-r from-positive via-primary to-accent" style="width: 74%;"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 3. Trade Timeline -->
+                <div class="flex-1 min-h-0 flex flex-col">
+                  <!-- Timeline Header -->
+                  <div class="flex items-center justify-between mb-3 shrink-0">
+                    <h3 class="text-sm uppercase tracking-wider text-text-secondary mono">${data.symbol} Trades</h3>
+                    <div class="flex gap-2">
+                      <button class="px-2 py-1 text-xs mono bg-positive/20 text-positive rounded border border-positive/30">All</button>
+                      <button class="px-2 py-1 text-xs mono text-text-dim hover:text-text rounded transition">Wins</button>
+                      <button class="px-2 py-1 text-xs mono text-text-dim hover:text-text rounded transition">Losses</button>
+                    </div>
+                  </div>
+
+                  <!-- Timeline Items (Scrollable) -->
+                  <div class="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+
+                    <!-- Trade Item (Win) -->
+                    <div class="group bg-surface border border-border rounded-lg hover:border-positive/50 transition-all">
+                      <div class="flex items-center gap-3 p-3 cursor-pointer">
+                        <!-- Time Badge -->
+                        <div class="flex flex-col items-center justify-center bg-surface-dark rounded px-2 py-1 min-w-[56px]">
+                          <span class="text-[10px] text-text-dim mono">Jan 2</span>
+                          <span class="text-xs text-text mono font-bold">10:34</span>
+                        </div>
+
+                        <!-- Trade Details -->
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-center gap-2 mb-0.5">
+                            <span class="text-xs font-medium text-positive">▲ LONG</span>
+                            <span class="text-text-dim">·</span>
+                            <span class="text-xs text-text-secondary">75 sh</span>
+                          </div>
+                          <div class="flex items-center gap-2 text-xs mono">
+                            <span class="text-text-secondary">$449.20</span>
+                            <span class="text-text-dim">→</span>
+                            <span class="text-text">$451.85</span>
+                          </div>
+                        </div>
+
+                        <!-- P&L -->
+                        <div class="flex flex-col items-end">
+                          <span class="text-base mono font-bold text-positive">+$198.75</span>
+                          <span class="text-xs mono text-positive">+0.59%</span>
+                        </div>
+
+                        <!-- Duration -->
+                        <div class="bg-accent/10 rounded px-2 py-1">
+                          <span class="text-xs mono text-accent">1h 23m</span>
+                        </div>
+
+                        <!-- Result Badge -->
+                        <span class="px-2 py-1 bg-positive/20 text-positive rounded text-xs font-medium">TP</span>
+                      </div>
+                    </div>
+
+                    <!-- Trade Item (Loss) -->
+                    <div class="group bg-surface border border-border rounded-lg hover:border-negative/50 transition-all">
+                      <div class="flex items-center gap-3 p-3 cursor-pointer">
+                        <div class="flex flex-col items-center justify-center bg-surface-dark rounded px-2 py-1 min-w-[56px]">
+                          <span class="text-[10px] text-text-dim mono">Jan 2</span>
+                          <span class="text-xs text-text mono font-bold">09:45</span>
+                        </div>
+
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-center gap-2 mb-0.5">
+                            <span class="text-xs font-medium text-negative">▼ SHORT</span>
+                            <span class="text-text-dim">·</span>
+                            <span class="text-xs text-text-secondary">50 sh</span>
+                          </div>
+                          <div class="flex items-center gap-2 text-xs mono">
+                            <span class="text-text-secondary">$450.10</span>
+                            <span class="text-text-dim">→</span>
+                            <span class="text-text">$450.85</span>
+                          </div>
+                        </div>
+
+                        <div class="flex flex-col items-end">
+                          <span class="text-base mono font-bold text-negative">-$75.00</span>
+                          <span class="text-xs mono text-negative">-0.17%</span>
+                        </div>
+
+                        <div class="bg-accent/10 rounded px-2 py-1">
+                          <span class="text-xs mono text-accent">12m</span>
+                        </div>
+
+                        <span class="px-2 py-1 bg-negative/20 text-negative rounded text-xs font-medium">SL</span>
+                      </div>
+                    </div>
+
+                    <!-- Trade Item (Win) -->
+                    <div class="group bg-surface border border-border rounded-lg hover:border-positive/50 transition-all">
+                      <div class="flex items-center gap-3 p-3 cursor-pointer">
+                        <div class="flex flex-col items-center justify-center bg-surface-dark rounded px-2 py-1 min-w-[56px]">
+                          <span class="text-[10px] text-text-dim mono">Dec 29</span>
+                          <span class="text-xs text-text mono font-bold">14:20</span>
+                        </div>
+
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-center gap-2 mb-0.5">
+                            <span class="text-xs font-medium text-positive">▲ LONG</span>
+                            <span class="text-text-dim">·</span>
+                            <span class="text-xs text-text-secondary">150 sh</span>
+                          </div>
+                          <div class="flex items-center gap-2 text-xs mono">
+                            <span class="text-text-secondary">$447.50</span>
+                            <span class="text-text-dim">→</span>
+                            <span class="text-text">$449.80</span>
+                          </div>
+                        </div>
+
+                        <div class="flex flex-col items-end">
+                          <span class="text-base mono font-bold text-positive">+$345.00</span>
+                          <span class="text-xs mono text-positive">+0.51%</span>
+                        </div>
+
+                        <div class="bg-accent/10 rounded px-2 py-1">
+                          <span class="text-xs mono text-accent">2h 05m</span>
+                        </div>
+
+                        <span class="px-2 py-1 bg-positive/20 text-positive rounded text-xs font-medium">TP</span>
+                      </div>
+                    </div>
+
+                    <!-- Trade Item (EOD) -->
+                    <div class="group bg-surface border border-border rounded-lg hover:border-warning/50 transition-all">
+                      <div class="flex items-center gap-3 p-3 cursor-pointer">
+                        <div class="flex flex-col items-center justify-center bg-surface-dark rounded px-2 py-1 min-w-[56px]">
+                          <span class="text-[10px] text-text-dim mono">Dec 28</span>
+                          <span class="text-xs text-text mono font-bold">11:15</span>
+                        </div>
+
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-center gap-2 mb-0.5">
+                            <span class="text-xs font-medium text-positive">▲ LONG</span>
+                            <span class="text-text-dim">·</span>
+                            <span class="text-xs text-text-secondary">100 sh</span>
+                          </div>
+                          <div class="flex items-center gap-2 text-xs mono">
+                            <span class="text-text-secondary">$445.20</span>
+                            <span class="text-text-dim">→</span>
+                            <span class="text-text">$447.90</span>
+                          </div>
+                        </div>
+
+                        <div class="flex flex-col items-end">
+                          <span class="text-base mono font-bold text-positive">+$270.00</span>
+                          <span class="text-xs mono text-positive">+0.61%</span>
+                        </div>
+
+                        <div class="bg-accent/10 rounded px-2 py-1">
+                          <span class="text-xs mono text-accent">4h 45m</span>
+                        </div>
+
+                        <span class="px-2 py-1 bg-warning/20 text-warning rounded text-xs font-medium">EOD</span>
+                      </div>
+                    </div>
+
+                    <!-- Trade Item (Win - Short) -->
+                    <div class="group bg-surface border border-border rounded-lg hover:border-positive/50 transition-all">
+                      <div class="flex items-center gap-3 p-3 cursor-pointer">
+                        <div class="flex flex-col items-center justify-center bg-surface-dark rounded px-2 py-1 min-w-[56px]">
+                          <span class="text-[10px] text-text-dim mono">Dec 27</span>
+                          <span class="text-xs text-text mono font-bold">15:02</span>
+                        </div>
+
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-center gap-2 mb-0.5">
+                            <span class="text-xs font-medium text-negative">▼ SHORT</span>
+                            <span class="text-text-dim">·</span>
+                            <span class="text-xs text-text-secondary">100 sh</span>
+                          </div>
+                          <div class="flex items-center gap-2 text-xs mono">
+                            <span class="text-text-secondary">$448.30</span>
+                            <span class="text-text-dim">→</span>
+                            <span class="text-text">$446.10</span>
+                          </div>
+                        </div>
+
+                        <div class="flex flex-col items-end">
+                          <span class="text-base mono font-bold text-positive">+$220.00</span>
+                          <span class="text-xs mono text-positive">+0.49%</span>
+                        </div>
+
+                        <div class="bg-accent/10 rounded px-2 py-1">
+                          <span class="text-xs mono text-accent">58m</span>
+                        </div>
+
+                        <span class="px-2 py-1 bg-positive/20 text-positive rounded text-xs font-medium">TP</span>
+                      </div>
+                    </div>
+
+                    <!-- Load More -->
+                    <div class="flex items-center justify-center py-3 text-xs text-text-dim mono cursor-pointer hover:text-primary transition-colors">
+                      <span>Load 10 more trades</span>
+                      <svg class="w-4 h-4 ml-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+                      </svg>
+                    </div>
+
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Create TradingView chart
+    function createTVChart(symbol, data) {
+      const container = document.getElementById(`tv-chart-${symbol}`);
+      if (!container) return;
+
+      const chart = LightweightCharts.createChart(container, {
+        layout: {
+          background: { color: '#0d0d14' },
+          textColor: '#a0a0b0',
+        },
+        grid: {
+          vertLines: { color: '#1a1a2a' },
+          horzLines: { color: '#1a1a2a' },
+        },
+        crosshair: {
+          horzLine: { color: '#6a6a7a', labelBackgroundColor: '#12121a' },
+          vertLine: { color: '#6a6a7a', labelBackgroundColor: '#12121a' },
+        },
+        rightPriceScale: {
+          borderColor: '#2a2a3a',
+        },
+        timeScale: {
+          borderColor: '#2a2a3a',
+          timeVisible: true,
+          secondsVisible: false,
+        },
+        width: container.clientWidth,
+        height: container.clientHeight,
+      });
+
+      const candlestickSeries = chart.addCandlestickSeries({
+        upColor: '#00ff88',
+        downColor: '#ff3366',
+        borderUpColor: '#00ff88',
+        borderDownColor: '#ff3366',
+        wickUpColor: '#00ff88',
+        wickDownColor: '#ff3366',
+      });
+
+      // Generate OHLC data
+      const ohlcData = generateOHLCData(data.price);
+      candlestickSeries.setData(ohlcData);
+
+      // Add position lines if open
+      if (data.position?.isOpen) {
+        // Entry line
+        candlestickSeries.createPriceLine({
+          price: data.position.entryPrice,
+          color: '#ffaa00',
+          lineWidth: 1,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: 'Entry',
+        });
+
+        // Stop loss line
+        candlestickSeries.createPriceLine({
+          price: data.position.stopLoss,
+          color: '#ff3366',
+          lineWidth: 1,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: 'SL',
+        });
+
+        // Take profit line
+        candlestickSeries.createPriceLine({
+          price: data.position.takeProfit,
+          color: '#00ff88',
+          lineWidth: 1,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: 'TP',
+        });
+      }
+
+      chart.timeScale().fitContent();
+
+      // Handle resize
+      const resizeObserver = new ResizeObserver(() => {
+        chart.applyOptions({
+          width: container.clientWidth,
+          height: container.clientHeight
+        });
+      });
+      resizeObserver.observe(container);
+
+      return chart;
+    }
+
+    // Modal functions
+    let currentSymbol = null;
+    let currentChart = null;
+
+    function openModal(symbol) {
+      const data = symbols.find(s => s.symbol === symbol);
+      if (!data) return;
+      currentSymbol = symbol;
+      document.getElementById('modal-container').innerHTML = renderModal(data);
+      document.body.style.overflow = 'hidden';
+
+      // Create TradingView chart after DOM is ready
+      requestAnimationFrame(() => {
+        currentChart = createTVChart(symbol, data);
+      });
+    }
+
+    function closeModal(event) {
+      if (event && event.target !== event.currentTarget) return;
+      if (currentChart) {
+        currentChart.remove();
+        currentChart = null;
+      }
+      document.getElementById('modal-container').innerHTML = '';
+      document.body.style.overflow = '';
+      currentSymbol = null;
+    }
+
+    function switchTab(button, tabId) {
+      // Update tab buttons
+      const tabs = button.parentElement.querySelectorAll('button');
+      tabs.forEach(btn => {
+        btn.classList.remove('text-primary', 'tab-active');
+        btn.classList.add('text-text-dim');
+      });
+      button.classList.remove('text-text-dim');
+      button.classList.add('text-primary', 'tab-active');
+
+      // Update tab content
+      document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.add('hidden');
+      });
+      document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && currentSymbol) {
+        closeModal();
+      }
+    });
+
+    // Initialize
+    document.getElementById('cards-grid').innerHTML = symbols.map(renderCard).join('');
+  </script>
+</body>
+</html>
