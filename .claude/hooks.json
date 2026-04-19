@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": {
+          "tool_name": "Edit|Write",
+          "path_pattern": "src/tradingbot/_components/strategies/**/*.py"
+        },
+        "command": "echo '⚠️ Strategy code modified - consider running /validate'"
+      },
+      {
+        "matcher": {
+          "tool_name": "Edit|Write",
+          "path_pattern": "src/tradingbot/_components/indicators/**/*.py"
+        },
+        "command": "echo '⚠️ Indicator code modified - consider running /validate'"
+      },
+      {
+        "matcher": {
+          "tool_name": "Edit|Write",
+          "path_pattern": "src/tradingbot/**/risk*.py"
+        },
+        "command": "echo '🚨 Risk management code modified - MUST run /validate before committing'"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": {
+          "tool_name": "Bash",
+          "command_pattern": "tradingbot-live(?!.*--paper)(?!.*--replay)"
+        },
+        "command": "echo '⚠️ LIVE TRADING DETECTED - Ensure paper testing completed first'"
+      }
+    ]
+  }
+}

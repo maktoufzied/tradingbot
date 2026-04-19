@@ -23,6 +23,7 @@ def _bootstrap() -> None:
         liquidity_sweeps,
         orb,
         order_blocks,
+        power_hour_reversal,
         rsi_divergence,
         swing_break,
         vwap_reversion,

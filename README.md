@@ -353,7 +353,8 @@ Create `tradingbot.toml` in your project root:
 
 # Or configure individually:
 # Entry strategies: swing_break, vwap_reversion, orb, rsi_divergence, atr_breakout,
-#                   gap_and_go, order_blocks, fvg, liquidity_sweeps
+#                   gap_and_go, order_blocks, fvg, liquidity_sweeps,
+#                   power_hour_reversal, power_hour_reversal_relaxed
 entry = "swing_break"
 # Exit strategy: swing, atr, fixed
 exit = "swing"
@@ -448,6 +449,8 @@ level = "INFO"                   # DEBUG, INFO, WARNING, ERROR
 | `order_blocks` | ICT institutional order zones |
 | `fvg` | Fair Value Gaps (imbalance zones) |
 | `liquidity_sweeps` | ICT stop hunts at swing points |
+| `power_hour_reversal` | Mean reversion during power hour (3:00-3:45 PM ET) using VWAP, RSI divergence, volume |
+| `power_hour_reversal_relaxed` | Relaxed power hour with lower thresholds for more signals |
 
 ### Exit Strategies
 

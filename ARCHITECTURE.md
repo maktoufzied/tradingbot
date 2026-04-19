@@ -85,7 +85,7 @@ flowchart LR
 |----------|---------|---------|
 | **BrokerRegistry** | `paper`, `alpaca` | `paper` |
 | **FeedRegistry** | `yahoo`, `alpaca`, `replay` | `yahoo` |
-| **EntryRegistry** | 9 strategies | `swing_break` |
+| **EntryRegistry** | 11 strategies | `swing_break` |
 | **ExitRegistry** | `swing`, `atr`, `fixed` | `swing` |
 | **IndicatorRegistry** | 11 indicators | `rsi`, `macd` |
 

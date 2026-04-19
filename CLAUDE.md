@@ -100,6 +100,21 @@ uv run tradingbot-cache maintain     # Run cache maintenance
 4. New component → Update ARCHITECTURE.md (directory structure, data flow)
 5. Cache changes → Update README.md (cache commands), ARCHITECTURE.md (cache section)
 
+## Slash Commands (Skills)
+
+Quick actions available via `/command`:
+
+| Command | Description |
+|---------|-------------|
+| `/backtest SPY` | Run backtest for a symbol |
+| `/optimize SPY` | Run parameter optimization |
+| `/validate` | Validate recent trading code changes |
+| `/sync-docs` | Check which docs need updating |
+| `/research-indicator ATR` | Research a technical indicator |
+| `/design-ui risk meter` | Design a UI component |
+| `/live SPY` | Start paper trading |
+| `/check` | Run all code quality checks |
+
 ## Sub-Agents
 
 This project has specialized sub-agents for specific tasks. Use them proactively:
@@ -206,6 +221,37 @@ Use this agent when:
 - Converting ux-designer output into working React code
 
 The agent follows the established Bloomberg Terminal aesthetic and ensures pixel-perfect consistency with existing components.
+
+### strategy-researcher
+
+Use this agent when:
+- Exploring new trading strategy concepts before implementation
+- Researching academic papers or market methodologies
+- Designing entry/exit rules with clear edge definitions
+- Evaluating strategy viability for day trading
+
+The agent provides structured strategy proposals with hypothesis, rules, parameters, and testing plans.
+
+### risk-auditor
+
+**Call this agent periodically or before going live.** It audits:
+- Position sizing limits and risk per trade
+- Stop loss integrity across all code paths
+- Market condition handling (gaps, holidays, data issues)
+- System failure scenarios (connection loss, state persistence)
+- Code safety (infinite loops, division by zero, order quantities)
+
+The agent outputs a risk score and prioritized issue list.
+
+### performance-analyst
+
+Use this agent when:
+- Analyzing backtest or live trading results
+- Identifying patterns in wins/losses
+- Looking for time-of-day or market condition correlations
+- Getting data-driven improvement suggestions
+
+The agent provides statistical analysis and actionable recommendations.
 
 ## Key Concepts
 
